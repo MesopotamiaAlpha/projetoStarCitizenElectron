@@ -1,0 +1,38 @@
+{
+  "name": "sc-armor-tracker",
+  "version": "1.0.0",
+  "description": "Star Citizen Armor Tracker",
+  "main": "electron/main.js",
+  "scripts": {
+    "react-start": "cross-env BROWSER=none react-scripts start",
+    "dev": "concurrently \"cross-env BROWSER=none react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "react-build": "react-scripts build",
+    "build": "npm run react-build && electron-builder",
+    "electron": "electron ."
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "lucide-react": "^0.383.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1",
+    "wait-on": "^7.2.0"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version"]
+  },
+  "build": {
+    "appId": "com.sctracker.armor",
+    "productName": "SC Armor Tracker",
+    "files": ["build/**/*", "electron/**/*", "node_modules/**/*"],
+    "directories": { "output": "dist" }
+  },
+  "homepage": "./"
+}
