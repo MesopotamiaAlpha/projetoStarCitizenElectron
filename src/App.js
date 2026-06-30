@@ -62,7 +62,7 @@ function buildMockAPI() {
       state[`p${id}w`]=(state[`p${id}w`]||0)?0:1;
       save(state); return {wishlist:state[`p${id}w`]};
     },
-    updatePieceNotas: async (id,notes) => {
+    updatePieceNotes: async (id,notes) => {
       const state=load(); state[`p${id}n`]=notes; save(state); return {success:true};
     },
     getStats: async () => {
@@ -159,7 +159,7 @@ export default function App() {
 
   const handleTogglePiece         = async id     => { await api.togglePiece(id);         await loadData(); };
   const handleTogglePieceWishlist = async id     => { await api.togglePieceWishlist(id);  await loadData(); };
-  const handleUpdatePieceNotas    = async (id,n) => { await api.updatePieceNotas(id,n);   await loadData(); };
+  const handleupdatePieceNotes    = async (id,n) => { await api.updatePieceNotes(id,n);   await loadData(); };
 
   if (loading) return (
     <div className="app-loading">
@@ -213,15 +213,15 @@ export default function App() {
           </div>
         )}
         <div className="sidebar-footer">
-          <span className="version-badge">v4.5.0</span>
-          <span className="game-version">SC 4.0+</span>
+          <span className="version-badge">v1.0</span>
+          <span className="game-version">SC 4.8.2</span>
         </div>
       </aside>
 
       <main className="main-content">
         {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
-        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotas={handleUpdatePieceNotas} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotas={handleUpdatePieceNotas} />}
+        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
         {activePage==='inventory'  && <InventoryPage />}
         {activePage==='blueprints' && <BlueprintPage />}
         {activePage==='materials'  && <MaterialTrackerPage />}

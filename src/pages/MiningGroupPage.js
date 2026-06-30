@@ -565,7 +565,7 @@ function SessãoCard({ session:s, onEdit, onDelete }) {
   const statusColor     = STATUS_COLORS[s.status]||'var(--text-muted)';
 
   return (
-    <div style={{ background:'var(--bg-card)',border:`1px solid ${s.status==='Completed'?'rgba(0,229,160,0.2)':'var(--border-subtle)'}`,borderRadius:9,overflow:'hidden',marginBottom:10,transition:'all 0.2s' }}>
+    <div style={{ background:'var(--bg-card)',border:`1px solid ${s.status==='Concluída'?'rgba(0,229,160,0.2)':'var(--border-subtle)'}`,borderRadius:9,overflow:'hidden',marginBottom:10,transition:'all 0.2s' }}>
       <div style={{ display:'flex',alignItems:'center',gap:12,padding:'13px 16px',cursor:'pointer' }} onClick={()=>setExpandired(!expanded)}>
         <div style={{ width:38,height:38,borderRadius:8,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:`${statusColor}18`,border:`1px solid ${statusColor}33` }}>
           <Pickaxe size={18} style={{ color:statusColor }}/>
@@ -686,12 +686,12 @@ export default function MiningGrupoPage() {
   }),[section,search,filterStatus]);
 
   // Global stats
-  const allConcluída  = section.filter(s=>s.status==='Completed');
-  const totalScuTodos   = allConcluída.reduce((a,s)=>a+s.ores.reduce((b,o)=>b+(Number(o.refined_scu)||0),0),0);
-  const totalRevTodos   = allConcluída.reduce((a,s)=>a+(Number(s.revenue)||0),0);
-  const totalCostTodos  = allConcluída.reduce((a,s)=>a+s.costs.reduce((b,c)=>b+(Number(c.amount)||0),0),0);
+  const allCompleted  = section.filter(s=>s.status==='Concluída');
+  const totalScuTodos   = allCompleted.reduce((a,s)=>a+s.ores.reduce((b,o)=>b+(Number(o.refined_scu)||0),0),0);
+  const totalRevTodos   = allCompleted.reduce((a,s)=>a+(Number(s.revenue)||0),0);
+  const totalCostTodos  = allCompleted.reduce((a,s)=>a+s.costs.reduce((b,c)=>b+(Number(c.amount)||0),0),0);
   const totalNetTodos   = totalRevTodos - totalCostTodos;
-  const avgScuSessão = allConcluída.length>0?totalScuTodos/allConcluída.length:0;
+  const avgScuSessão = allCompleted.length>0?totalScuTodos/allCompleted.length:0;
 
   const SS={padding:'7px 24px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center'};
 
@@ -700,7 +700,7 @@ export default function MiningGrupoPage() {
       <div className="page-header">
         <div>
           <div className="page-title">MINERAÇÃO EM GRUPO</div>
-          <div className="page-subtitle">{section.length} section · {allConcluída.length} concluídas · {ptSCU(totalScuTodos)} SCU refinado total</div>
+          <div className="page-subtitle">{section.length} section · {allCompleted.length} concluídas · {ptSCU(totalScuTodos)} SCU refinado total</div>
         </div>
         {!showForm&&!editSessão&&activeTab==='section'&&(
           <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 18px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
@@ -764,15 +764,15 @@ export default function MiningGrupoPage() {
               <KPI label="NET Total"          value={`${ptMoney(totalNetTodos)} aUEC`}          color={totalNetTodos>=0?'var(--accent-green)':'var(--accent-red)'}/>
             </div>
             <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:18 }}>
-              <KPI label="Sessões Concluídas" value={allConcluída.length}                     color="var(--accent-green)"/>
+              <KPI label="Sessões Concluídas" value={allCompleted.length}                     color="var(--accent-green)"/>
               <KPI label="Média SCU/Sessão"   value={`${ptSCU(avgScuSessão)} SCU`}          color="var(--accent-gold)"/>
-              <KPI label="Média Net/Sessão"   value={`${ptMoney(allConcluída.length>0?totalNetTodos/allConcluída.length:0)} aUEC`} color="var(--accent-primary)"/>
+              <KPI label="Média Net/Sessão"   value={`${ptMoney(allCompleted.length>0?totalNetTodos/allCompleted.length:0)} aUEC`} color="var(--accent-primary)"/>
             </div>
 
             {/* Per-ore totals */}
             {section.length>0&&(()=>{
               const oreMap={};
-              for(const s of allConcluída) for(const o of s.ores) {
+              for(const s of allCompleted) for(const o of s.ores) {
                 if(!oreMap[o.name]) oreMap[o.name]={name:o.name,raw:0,refined:0,revenue:0};
                 oreMap[o.name].raw     +=(Number(o.raw_scu)||0);
                 oreMap[o.name].refined +=(Number(o.refined_scu)||0);

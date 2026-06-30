@@ -159,7 +159,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
   );
 }
 
-export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotas }) {
+export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onupdatePieceNotes }) {
   const [openPiece, setAbrirPiece] = useState(null);
 
   const liveSet = sets.find(s=>s.id===set.id)||set;
@@ -231,7 +231,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
             {/* Progresso */}
             <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px',marginBottom:14 }}>
               <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8 }}>
-                <span style={{ fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Progressoo</span>
+                <span style={{ fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Progresso</span>
                 <span style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:isComplete?'var(--accent-green)':'var(--accent-primary)' }}>
                   {owned}/{total}
                 </span>
@@ -279,7 +279,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                   piece={pieces.find(lp=>lp.id===p.id)||p}
                   onToggleOwned={onTogglePiece}
                   onToggleWishlist={onTogglePieceWishlist}
-                  onUpdateNotes={onUpdatePieceNotas}
+                  onUpdateNotes={onupdatePieceNotes}
                   isExpanded={openPiece===p.id}
                   onToggleExpand={()=>setAbrirPiece(openPiece===p.id?null:p.id)}
                 />

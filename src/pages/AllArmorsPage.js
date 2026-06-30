@@ -6,13 +6,13 @@ import ArmorSetModal from '../components/ArmorSetModal';
 const TYPE_LABELS = { Light:'Leve', Médio:'Médio', Heavy:'Pesado', Special:'Especial' };
 const SORT_OPTIONS = [
   { value:'name',     label:'Nome (A-Z)' },
-  { value:'progress', label:'Progressoo (maior)' },
+  { value:'progress', label:'Progresso (maior)' },
   { value:'rarity',   label:'Raridade' },
   { value:'type',     label:'Tipo' },
 ];
 const RARITY_ORDER = { Comum:1, Incomum:2, Raro:3, Legendary:4 };
 
-export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotas }) {
+export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onupdatePieceNotes }) {
   const [search,       setSearch]       = useState('');
   const [typeFilter,   setTipoFilter]   = useState('all');
   const [rarityFilter, setRaridadeFilter] = useState('all');
@@ -182,7 +182,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
           onClose={() => setSelectedSet(null)}
           onTogglePiece={onTogglePiece}
           onTogglePieceWishlist={onTogglePieceWishlist}
-          onUpdatePieceNotas={onUpdatePieceNotas}
+          onupdatePieceNotes={onupdatePieceNotes}
         />
       )}
     </div>

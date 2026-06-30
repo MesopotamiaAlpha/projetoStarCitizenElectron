@@ -91,7 +91,7 @@ export default function MiningPage() {
   const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
 
   const TABS = [
-    { id:'locations', label:'Locais de Mining' },
+    { id:'locations', label:'Locais de Mineração' },
     { id:'ores', label:'Minérios & Valores' },
     { id:'lasers', label:'Lasers de Mining' },
     { id:'ships', label:'Naves & Módulos' },

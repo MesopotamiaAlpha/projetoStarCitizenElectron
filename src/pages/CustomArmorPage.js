@@ -234,7 +234,7 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
               <div className="modal-section-title">Informações do Set</div>
               <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12 }}>
                 <div><label style={LS}>Nome Base *</label><input style={IS} value={setData.base_name} onChange={e=>sf('base_name',e.target.value)} placeholder="ex: Citadel"/></div>
-                <div><label style={LS}>Variantee</label><input style={IS} value={setData.variant_name} onChange={e=>sf('variant_name',e.target.value)} placeholder="ex: Base, Brimstone, Desert..."/></div>
+                <div><label style={LS}>Variante</label><input style={IS} value={setData.variant_name} onChange={e=>sf('variant_name',e.target.value)} placeholder="ex: Base, Brimstone, Desert..."/></div>
                 <div><label style={LS}>Fabricante *</label><input style={IS} value={setData.manufacturer} onChange={e=>sf('manufacturer',e.target.value)} placeholder="ex: Clark Defense Systems"/></div>
                 <div><label style={LS}>Categoria</label><input style={IS} value={setData.category} onChange={e=>sf('category',e.target.value)} placeholder="ex: Combat, Recon, Environmental..."/></div>
                 <div>
