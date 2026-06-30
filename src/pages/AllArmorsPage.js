@@ -103,7 +103,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
           onClick={() => setGroupByBase(g=>!g)}
           style={{ display:'flex',alignItems:'center',gap:6 }}
         >
-          {groupByBase ? 'Ver Variantees' : 'Agrupar por Nome'}
+          {groupByBase ? 'Ver Variantes' : 'Agrupar por Nome'}
         </button>
       </div>
 

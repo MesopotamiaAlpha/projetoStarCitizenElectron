@@ -16,7 +16,7 @@ function load(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? 
 function save(key, v)   { localStorage.setItem(key, JSON.stringify(v)); }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const MISSION_TYPES = ['Bounty Hunt','Delivery','Carga Run','Mineiroação','Salvage','FPS Combat','Escort','Investigation','PVP','Base Assault','Drug Run','Mercenary','Blockade Run','Outro'];
+const MISSION_TYPES = ['Bounty Hunt','Delivery','Carga Run','Mining','Salvage','FPS Combat','Escort','Investigation','PVP','Base Assault','Drug Run','Mercenary','Blockade Run','Outro'];
 const FACTIONS      = ['Foxwell Enforcement','Headhunters','Covalex','Shubin Interstellar','Ling Family','InterSec','Rayari','Mile Eckhart','Nine Tails','UEE Navy','Advocacy','CDF','Hurston Security','Levski Security','Free','Outro'];
 const SYSTEMS       = ['Stanton','Pyro','Nyx','Terra'];
 const DIFFICULTIES  = ['Easy','Médio','Hard','Very Hard','Elite'];
@@ -25,7 +25,7 @@ const MONTHS_PT     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Ju
 
 const STATUS_COLORS = { Active:'var(--accent-primary)',Concluída:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055' };
 const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)',Hard:'var(--accent-gold)','Very Hard':'#ff8c00',Elite:'var(--accent-red)' };
-const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mineiroação':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
+const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mining':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function todayStr()   { return new Date().toISOString().slice(0,10); }
@@ -73,7 +73,7 @@ function useObjLibrary() {
 
 // ── Mission Form ──────────────────────────────────────────────────────────────
 function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
-  const [data,setDate]=useState(()=>initial?{...initial,objectives:initial.objectives?.map(o=>({...o}))||[]}:{
+  const [data,setData]=useState(()=>initial?{...initial,objectives:initial.objectives?.map(o=>({...o}))||[]}:{
     id:null,title:'',type:'Bounty Hunt',faction:'Foxwell Enforcement',
     system:'Stanton',location:'',difficulty:'Médio',status:'Ativa',
     reward:0,reputation_gain:0,crew_needed:1,notes:'',bug_description:'',
@@ -84,7 +84,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
   const [showSug,setShowSug]=useState(false);
   const [error,setError]=useState('');
   const [rewardDisplay,setRewardDisplay]=useState(initial?.reward>0?ptMoney(initial.reward):'');
-  const set=(k,v)=>setDate(p=>({...p,[k]:v}));
+  const set=(k,v)=>setData(p=>({...p,[k]:v}));
 
   const suggestions=useMemo(()=>{
     if(!objInput.trim()||objInput.length<2) return [];
@@ -417,7 +417,7 @@ function DonutStat({ value, total, label, color }) {
       <svg width={64} height={64} viewBox="0 0 64 64">
         <circle cx={32} cy={32} r={r} fill="none" stroke="var(--border-subtle)" strokeWidth={6}/>
         <circle cx={32} cy={32} r={r} fill="none" stroke={color} strokeWidth={6}
-          strokeDasharray={circ} strokeDashdefset={defset}
+          strokeDasharray={circ} strokeDashoffset={defset}
           strokeLinecap="round" transform="rotate(-90 32 32)" style={{transition:'stroke-dashdefset 0.6s ease'}}/>
         <text x={32} y={36} textAnchor="middle" fill="var(--text-primary)" fontSize={13} fontWeight={700} fontFamily="Orbitron,monospace">{value}</text>
       </svg>
@@ -704,13 +704,13 @@ function HistoryTab({ missions, losses }) {
 // ── TAB 3: Global Estatísticas ──────────────────────────────────────────────────
 function StatsTab({ missions, losses }) {
   const [period,setPeriod]=useState(30);
-  const cutdef=useMemo(()=>{const d=new Date();d.setDate(d.getDate()-period);return d.toISOString().slice(0,10);},[period]);
+  const cutdef=useMemo(()=>{const d=new Date();d.setData(d.getDate()-period);return d.toISOString().slice(0,10);},[period]);
   const inAlcance=useMemo(()=>missions.filter(m=>m.created_at?.slice(0,10)>=cutdef),[missions,cutdef]);
 
   const dailyData=useMemo(()=>{
     const days=[];
     for(let i=period-1;i>=0;i--){
-      const d=new Date();d.setDate(d.getDate()-i);
+      const d=new Date();d.setData(d.getDate()-i);
       const ds=d.toISOString().slice(0,10);
       const dm=missions.filter(m=>m.created_at?.slice(0,10)===ds);
       const earned=dm.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);

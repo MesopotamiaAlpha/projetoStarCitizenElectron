@@ -77,8 +77,8 @@ const CATEGORIES = {
   'Acessório de Arma': ['Mira/Scope','Supressor','Lanterna Tática','Carregador','Underbarrel','Empunhadura'],
   'Armadura FPS': ['Capacete','Torso','Braços','Pernas','Mochila','Set Completo','Undersuit'],
   'Roupa': ['Chapéu / Boné','Jaqueta','Camisa','Calça','Calçado','Luvas','Óculos','Macacão'],
-  'Componente de Nave': ['Arma de Nave','Escudo','Propulsor Quântico','Planta de Energia','Cooler','Thruster','Radar/Avionics','Módulo de Mineiroação','Módulo de Salvage','Módulo de Fabricação'],
-  'Utilitário': ['Medpen','Stimpak','Multi-Tool','Extrator de Mineiroação','Faca / Multifaca','Tractor Beam','Docking Collar','Scanner','Gadget'],
+  'Componente de Nave': ['Arma de Nave','Escudo','Propulsor Quântico','Planta de Energia','Cooler','Thruster','Radar/Avionics','Módulo de Mining','Módulo de Salvage','Módulo de Fabricação'],
+  'Utilitário': ['Medpen','Stimpak','Multi-Tool','Extrator de Mining','Faca / Multifaca','Tractor Beam','Docking Collar','Scanner','Gadget'],
   'Recurso / Minério': ['Quantainium','Bexalite','Taranite','Borase','Laranite','Agricium','Titanium','Copper','Iron','Gold','Corundum','Hephaestanite','Dolivine'],
   'Commodity': ['Processed Food','Medical Supplies','Stims','Agricultural Supplies','Hydrogen Fuel','Quantum Fuel','Waste','Scrap','Altruciatoxin','Neon','Widow','WiDoW','GreenGro','SLAM'],
   'Blueprint': ['Blueprint de Arma','Blueprint de Armadura','Blueprint de Componente','Blueprint de Munição','Blueprint de Utilitário'],
@@ -165,10 +165,10 @@ const emptyItem = () => ({
 });
 
 function ItemForm({ initial, onSave, onCancelar }) {
-  const [data, setDate] = useState(initial || emptyItem());
+  const [data, setData] = useState(initial || emptyItem());
   const [error, setError] = useState('');
 
-  const set = (k,v) => setDate(p=>({...p,[k]:v}));
+  const set = (k,v) => setData(p=>({...p,[k]:v}));
 
   const locationTipos = data.system && LOCATIONS[data.system]
     ? Object.keys(LOCATIONS[data.system]) : [];
@@ -594,7 +594,7 @@ export default function InventoryPage() {
               <div className="empty-state-title">INVENTÁRIO VAZIO</div>
               <div className="empty-state-text">
                 {itens.length === 0
-                  ? 'Clique em "Registrar Item" para começar a rastrear seus itens no verso.'
+                  ? 'Clique em "Registrar Item" para começar a rastrear seus itens no Universo.'
                   : 'Nenhum item encontrado com os filtros atuais.'}
               </div>
               {itens.length === 0 && (

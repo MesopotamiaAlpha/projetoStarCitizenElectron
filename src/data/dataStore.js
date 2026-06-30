@@ -33,7 +33,7 @@ export function saveDataset(key, data) {
   localStorage.setItem(PREFIX + key, JSON.stringify(data));
 }
 
-export function resetDateset(key) {
+export function resetDataset(key) {
   localStorage.removeItem(PREFIX + key);
 }
 
@@ -43,16 +43,16 @@ export function isOverridden(key) {
 
 // Hook for consuming pages
 export function useDataset(key, fallback) {
-  const [data, setDate] = useState(() => loadDataset(key, fallback));
+  const [data, setData] = useState(() => loadDataset(key, fallback));
 
   const save = useCallback((newData) => {
     saveDataset(key, newData);
-    setDate(newData);
+    setData(newData);
   }, [key]);
 
   const reset = useCallback(() => {
-    resetDateset(key);
-    setDate(fallback);
+    resetDataset(key);
+    setData(fallback);
   }, [key, fallback]);
 
   return { data, save, reset, isCustom: isOverridden(key) };

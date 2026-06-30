@@ -112,7 +112,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
               <MapPin size={12} style={{ color:'var(--accent-primary)',flexShrink:0 }} />
               <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Como obter</span>
             </div>
-            <p style={{ fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,margin:0 }}>{piece.how_to_get||'Info rmação não disponível.'}</p>
+            <p style={{ fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,margin:0 }}>{piece.how_to_get||'informação não disponível.'}</p>
             {piece.buy_location && (
               <div style={{ marginTop:6,fontSize:10,color:'var(--text-muted)',display:'flex',gap:4 }}>
                 <MapPin size={9} style={{ marginTop:1,flexShrink:0 }} />{piece.buy_location}

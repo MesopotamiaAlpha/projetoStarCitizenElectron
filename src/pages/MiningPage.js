@@ -16,7 +16,7 @@ export const DEFAULT_MINEABLE_ORES = [
   { name:'Tungsten', value:4600, rarity:'Incomum', locations:['Hurston','Arial','Magda','Ita'], color:'#636e72', hazardous:false, notes:'Luas de Hurston. Pesado — planeje a carga com cuidado.' },
   { name:'Copper', value:5530, rarity:'Comum', locations:['Yela','Daymar','Aberdeen','Cellin'], color:'#fdcb6e', hazardous:false, notes:'Amplamente encontrado. Ótimo para crafting e venda.' },
   { name:'Iron', value:912, rarity:'Comum', locations:['Hurston','Aberdeen','Arial','Ita','Magda'], color:'#b2bec3', hazardous:false, notes:'Muito comum. Use apenas como complemento de carga.' },
-  { name:'Aluminum', value:3850, rarity:'Comum', locations:['Cellin','Daymar','Yela'], color:'#a29bfe', hazardous:false, notes:'Luas de Crusader. Mineiroação rápida em campos rasos.' },
+  { name:'Aluminum', value:3850, rarity:'Comum', locations:['Cellin','Daymar','Yela'], color:'#a29bfe', hazardous:false, notes:'Luas de Crusader. Mining rápida em campos rasos.' },
   { name:'Corundum', value:1450, rarity:'Comum', locations:['microTech','Calliope','Clio','Euterpe'], color:'#fd79a8', hazardous:false, notes:'Luas de microTech. Bom complemento quando buscando Taranite.' },
   { name:'Quartz', value:2960, rarity:'Comum', locations:['Daymar','Yela','Aberdeen'], color:'#dfe6e9', hazardous:false, notes:'Crusader luas. Encontrado em grandes veios cristalinos.' },
   { name:'Borase', value:3200, rarity:'Incomum', locations:['Arial','Ita','Aberdeen'], color:'#00cec9', hazardous:false, notes:'Luas de Hurston. Veios médios, boa pureza.' },
@@ -40,7 +40,7 @@ export const DEFAULT_SHIP_LASERS = [
 export const DEFAULT_MINING_SHIPS = [
   { name:'Prospector', cargo:32, lasers:1, crew:1, notes:'A mineradora solo ideal. Manobra bem em asteroides.' },
   { name:'MOLE', cargo:96, lasers:3, crew:4, notes:'Mineiroadora de grupo. 3 lasers simultâneos = enorme produção.' },
-  { name:'Vulture', cargo:12, lasers:1, crew:1, notes:'Mineiroação de salvage. Ideal para coleta de componentes e scrap.' },
+  { name:'Vulture', cargo:12, lasers:1, crew:1, notes:'Mining de salvage. Ideal para coleta de componentes e scrap.' },
   { name:'Cutlass Blue', cargo:28, lasers:1, crew:1, notes:'Alternativa acessível ao Prospector. Carga menor mas mais barata.' },
   { name:'Expanse', cargo:20, lasers:1, crew:1, notes:'Mineiroadora média. Boa para iniciantes em mineração.' },
 ];
@@ -69,7 +69,7 @@ export const DEFAULT_MINING_LOCATIONS = {
   'Ita': { system:'Stanton',type:'Moon', best:['Laranite','Gold','Iron'], danger:'Baixo', notes:'Lua de Hurston. Menor atmosfera — mais fácil de voar.' },
 };
 
-export default function MineiroaçãoPage() {
+export default function MiningPage() {
   const { data: MINEABLE_ORES } = useDataset(DATASETS.MINING_ORES.key, DEFAULT_MINEABLE_ORES);
   const { data: SHIP_LASERS } = useDataset(DATASETS.MINING_LASERS.key, DEFAULT_SHIP_LASERS);
   const { data: MINING_SHIPS } = useDataset(DATASETS.MINING_SHIPS.key, DEFAULT_MINING_SHIPS);
@@ -91,9 +91,9 @@ export default function MineiroaçãoPage() {
   const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
 
   const TABS = [
-    { id:'locations', label:'Locais de Mineiroação' },
+    { id:'locations', label:'Locais de Mining' },
     { id:'ores', label:'Minérios & Valores' },
-    { id:'lasers', label:'Lasers de Mineiroação' },
+    { id:'lasers', label:'Lasers de Mining' },
     { id:'ships', label:'Naves & Módulos' },
   ];
 
@@ -245,7 +245,7 @@ export default function MineiroaçãoPage() {
         {activeTab==='ships' && (
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:20 }}>
             <div>
-              <div className="modal-section-title">Naves de Mineiroação</div>
+              <div className="modal-section-title">Naves de Mining</div>
               {MINING_SHIPS.map(ship=>(
                 <div key={ship.name} style={{ background:'var(--bg-card)',border:`1px solid ${selectedShip===ship.name?'var(--border-bright)':'var(--border-subtle)'}`,borderRadius:8,padding:'14px',marginBottom:10,cursor:'pointer',transition:'all 0.2s' }}
                   onClick={()=>setSelectedShip(selectedShip===ship.name?null:ship.name)}>
@@ -264,7 +264,7 @@ export default function MineiroaçãoPage() {
               ))}
             </div>
             <div>
-              <div className="modal-section-title">Módulos de Mineiroação</div>
+              <div className="modal-section-title">Módulos de Mining</div>
               {MODULES.map(mod=>(
                 <div key={mod.name} style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'12px',marginBottom:8 }}>
                   <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4 }}>

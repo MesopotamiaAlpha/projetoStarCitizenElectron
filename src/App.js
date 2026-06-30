@@ -7,8 +7,8 @@ import CustomArmorPage  from './pages/CustomArmorPage';
 import InventoryPage    from './pages/InventoryPage';
 import BlueprintPage       from './pages/BlueprintPage';
 import MaterialTrackerPage from './pages/MaterialTrackerPage';
-import MineiroaçãoPage         from './pages/MiningPage';
-import MineiroaçãoGrupoPage    from './pages/MiningGroupPage';
+import MiningPage         from './pages/MiningPage';
+import MiningGrupoPage    from './pages/MiningGroupPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import UexApiPage         from './pages/UexApiPage';
 import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users } from 'lucide-react';
@@ -125,8 +125,8 @@ const PAGES = [
   { id:'blueprints',    label:'Blueprints',          icon:Cpu        },
   { id:'materials',    label:'Tracking Materiais',  icon:Hammer     },
   { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
-  { id:'mining',     label:'Guia de Mineiroação',   icon:Pickaxe    },
-  { id:'mininggroup',  label:'Mineiroação em Grupo',  icon:Users      },
+  { id:'mining',     label:'Guia de Mineração',   icon:Pickaxe    },
+  { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
   { id:'missions',   label:'Missões',             icon:ListChecks },
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
 ];
@@ -226,8 +226,8 @@ export default function App() {
         {activePage==='blueprints' && <BlueprintPage />}
         {activePage==='materials'  && <MaterialTrackerPage />}
         {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
-        {activePage==='mining'     && <MineiroaçãoPage />}
-        {activePage==='mininggroup' && <MineiroaçãoGrupoPage />}
+        {activePage==='mining'     && <MiningPage />}
+        {activePage==='mininggroup' && <MiningGrupoPage />}
         {activePage==='missions'   && <MissionTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
       </main>

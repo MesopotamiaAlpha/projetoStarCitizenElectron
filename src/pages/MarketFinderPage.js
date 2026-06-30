@@ -191,7 +191,7 @@ export default function MarketFinderPage() {
       <div className="page-header">
         <div>
           <div className="page-title">MARKET FINDER</div>
-          <div className="page-subtitle">Encontre onde comprar qualquer item no verso — {LOCATIONS_DATA.length} locais catalogados</div>
+          <div className="page-subtitle">Encontre onde comprar qualquer item no Universo — {LOCATIONS_DATA.length} locais catalogados</div>
         </div>
         <div style={{ display:'flex',gap:6 }}>
           {['search','browse'].map(m=>(

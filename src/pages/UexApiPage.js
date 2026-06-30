@@ -45,7 +45,7 @@ const TABS = [
   { id: 'commodities', label: 'Commodities', icon: TrendingUp,  color: '#ffc436', desc: 'Preços de commodities em tempo real — minérios, combustíveis, mercadorias' },
   { id: 'itens',       label: 'Itens',       icon: Package,     color: '#00d4ff', desc: 'Armaduras, armas, componentes, gadgets e todos os itens do jogo' },
   { id: 'veículos',    label: 'Veículos',    icon: Zap,         color: '#ff8c00', desc: 'Todas as naves e veículos com especificações completas' },
-  { id: 'mining',      label: 'Mineiroação',   icon: Pickaxe,     color: '#00e5a0', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
+  { id: 'mining',      label: 'Mining',   icon: Pickaxe,     color: '#00e5a0', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
   { id: 'locations',   label: 'Locais',      icon: Globe,       color: '#b44cff', desc: 'Sistemas, planetas, luas, estações e terminais de comércio' },
   { id: 'terminais',   label: 'Terminais',   icon: Database,    color: '#74b9ff', desc: 'Terminais de trade com preços de compra/venda por localização' },
 ];
@@ -359,7 +359,7 @@ function DetailPanel({ item, onClose, tab }) {
 
 // ── COMMODITIES tab ───────────────────────────────────────────────────────────
 function CommoditiesTab() {
-  const [data, setDate]         = useState([]);
+  const [data, setData]         = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
   const [search, setSearch]     = useState('');
@@ -370,7 +370,7 @@ function CommoditiesTab() {
     setLoading(true); setError('');
     try {
       const result = await uexFetch('commodities');
-      setDate(result);
+      setData(result);
       // Record provenance for all commodities
       setBatchProvenance('commodity', result.map(c => c.name), SOURCES.UEX_API, {
         endpoint: 'commodities', gameVersion: '4.8.1',
@@ -438,7 +438,7 @@ function CommoditiesTab() {
 
 // ── ITEMS tab ─────────────────────────────────────────────────────────────────
 function ItensTab() {
-  const [data,     setDate]     = useState([]);
+  const [data,     setData]     = useState([]);
   const [cats,     setCats]     = useState([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
@@ -453,7 +453,7 @@ function ItensTab() {
         uexFetch('items'),
         uexFetch('categories'),
       ]);
-      setDate(itens);
+      setData(itens);
       setCats(categories);
       setBatchProvenance('item', itens.map(i => i.name), SOURCES.UEX_API, {
         endpoint: 'itens', gameVersion: '4.8.1',
@@ -517,7 +517,7 @@ function ItensTab() {
 
 // ── VEHICLES tab ──────────────────────────────────────────────────────────────
 function VeículosTab() {
-  const [data,    setDate]    = useState([]);
+  const [data,    setData]    = useState([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [search,  setSearch]  = useState('');
@@ -528,7 +528,7 @@ function VeículosTab() {
     setLoading(true); setError('');
     try {
       const result = await uexFetch('vehicles');
-      setDate(result);
+      setData(result);
       setBatchProvenance('vehicle', result.map(v => v.name), SOURCES.UEX_API, {
         endpoint: 'veículos', gameVersion: '4.8.1',
       });
@@ -594,7 +594,7 @@ function VeículosTab() {
 }
 
 // ── MINING tab ────────────────────────────────────────────────────────────────
-function MineiroaçãoTab() {
+function MiningTab() {
   const [rawPreços, setBrutosPreços] = useState([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -738,7 +738,7 @@ function LocalizaçãosTab() {
 
 // ── TERMINALS tab ─────────────────────────────────────────────────────────────
 function TerminaisTab() {
-  const [data,    setDate]    = useState([]);
+  const [data,    setData]    = useState([]);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [search,  setSearch]  = useState('');
@@ -748,7 +748,7 @@ function TerminaisTab() {
     setLoading(true); setError('');
     try {
       const result = await uexFetch('terminals');
-      setDate(result);
+      setData(result);
       setBatchProvenance('terminal', result.map(t => t.name), SOURCES.UEX_API, {
         endpoint: 'terminais', gameVersion: '4.8.1',
       });
@@ -877,7 +877,7 @@ export default function UexApiPage() {
         {activeTab==='commodities' && <CommoditiesTab/>}
         {activeTab==='itens'       && <ItensTab/>}
         {activeTab==='veículos'    && <VeículosTab/>}
-        {activeTab==='mining'      && <MineiroaçãoTab/>}
+        {activeTab==='mining'      && <MiningTab/>}
         {activeTab==='locations'   && <LocalizaçãosTab/>}
         {activeTab==='terminais'   && <TerminaisTab/>}
       </div>

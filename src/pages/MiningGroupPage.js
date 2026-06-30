@@ -168,7 +168,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
             </div>
           </div>
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10 }}>
-            <div><label style={LS}>Local de Mineiroação</label>
+            <div><label style={LS}>Local de Mining</label>
               <select style={SS_STYLE} value={s.location} onChange={e=>set('location',e.target.value)}>
                 {LOCATIONS_LIST.map(l=><option key={l}>{l}</option>)}
               </select>
@@ -667,7 +667,7 @@ function SessãoCard({ session:s, onEdit, onDelete }) {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function MineiroaçãoGrupoPage() {
+export default function MiningGrupoPage() {
   const [section,    setSesscao]    = useState(loadSessãos);
   const [showForm,    setShowForm]    = useState(false);
   const [editSessão, setEditSessão] = useState(null);

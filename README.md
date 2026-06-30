@@ -80,4 +80,4 @@ O banco SQLite fica em:
 ---
 
 ## Versão do Jogo
-Compatível com **Star Citizen 4.0+**
+Compatível com **Star Citizen 4.8**

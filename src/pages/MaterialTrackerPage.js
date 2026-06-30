@@ -10,10 +10,10 @@ import {
   updateQueuedQty, clearCompleted,
 } from '../data/materialQueue';
 
-// ── Mineiroação location recommendations per material ──────────────────────────────
+// ── Mining location recommendations per material ──────────────────────────────
 const MATERIAL_MINING_TIPS = {
   'Titanium':            { locations:['Daymar','Aberdeen','Yela','Cellin','Arial'],       tips:'Muito comum. Priorize luas rochosas de Crusader e Hurston.' },
-  'Copper':              { locations:['Yela Asteroid Belt','Daymar','Aberdeen','Cellin'], tips:'Bom no cinturão de Yela. Mineiroação em asteroides rende mais.' },
+  'Copper':              { locations:['Yela Asteroid Belt','Daymar','Aberdeen','Cellin'], tips:'Bom no cinturão de Yela. Mining em asteroides rende mais.' },
   'Orotite':             { locations:['Daymar','Cellin','Aberdeen','Yela'],              tips:'Moderadamente comum. Luas de Crusader são as mais acessíveis.' },
   'Caranite':            { locations:['Ita','Arial','Magda','Aberdeen'],                 tips:'Luas de Hurston têm maior concentração. Use laser de média potência.' },
   'Steel':               { locations:['Hurston','Ita','Arial'],                          tips:'Obtido em Hurston e luas rochosas próximas.' },
@@ -32,7 +32,7 @@ const MATERIAL_MINING_TIPS = {
   'Hephaestanite':       { locations:['Cellin','Daymar','Aberdeen'],                     tips:'Luas de Crusader. Frequentemente junto com outros minérios.' },
   'Dolivine':            { locations:['Daymar','Yela','Cellin'],                         tips:'Crusader luas. Boa opção para complementar carga.' },
   'Corundum':            { locations:['Calliope','Clio','Euterpe'],                      tips:'Junto com Taranite nas luas de microTech.' },
-  'Aluminum':            { locations:['Cellin','Daymar','Yela'],                         tips:'Muito comum em luas de Crusader. Mineiroação rápida em campos rasos.' },
+  'Aluminum':            { locations:['Cellin','Daymar','Yela'],                         tips:'Muito comum em luas de Crusader. Mining rápida em campos rasos.' },
   'Iron':                { locations:['Hurston','Aberdeen','Arial','Ita'],               tips:'Muito comum. Use só como complemento de carga.' },
   'Borase':              { locations:['Arial','Ita','Aberdeen'],                         tips:'Luas de Hurston. Veios médios com boa pureza.' },
   'Agricium':            { locations:['Cellin','Daymar'],                                tips:'Crusader luas. Frequentemente junto com Dolivine.' },
@@ -60,7 +60,7 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink:0 }}>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--border-subtle)" strokeWidth={stroke}/>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={circ} strokeDashdefset={defset}
+        strokeDasharray={circ} strokeDashoffset={defset}
         strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`}
         style={{ transition:'stroke-dashdefset 0.5s ease' }}/>
       <text x={size/2} y={size/2+4} textAnchor="middle" fill="var(--text-primary)" fontSize={11} fontWeight={700} fontFamily="Orbitron,monospace">
@@ -150,7 +150,7 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded }) {
       {expanded && (
         <div style={{ padding:'0 14px 14px 14px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.1)' }}>
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,paddingTop:12 }}>
-            {/* Mineiroação tips */}
+            {/* Mining tips */}
             {tips && (
               <div>
                 <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8,display:'flex',alignItems:'center',gap:5 }}>
@@ -173,7 +173,7 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded }) {
               </div>
               {item.usedBy.map((u,i) => (
                 <div key={i} style={{ display:'flex',justifyContent:'space-between',padding:'3px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11 }}>
-                  <span style={{ color:'var(--text-secondary)' }}>{u.bpNome}</span>
+                  <span style={{ color:'var(--text-secondary)' }}>{u.bpName}</span>
                   <span style={{ color:color,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>×{u.qty}</span>
                 </div>
               ))}
@@ -212,7 +212,7 @@ function QueuePanel({ queue, onAtualizar }) {
         <div key={bp.bpId} style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background:'var(--bg-card)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:7 }}>
           <ShoppingCart size={14} style={{ color:'var(--accent-gold)',flexShrink:0 }}/>
           <div style={{ flex:1,minWidth:0 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{bp.bpNome}</div>
+            <div style={{ fontSize:13,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{bp.bpName}</div>
             <div style={{ fontSize:10,color:'var(--text-muted)' }}>{bp.category} · {bp.ingredients?.length||0} materiais</div>
           </div>
           {/* Qty */}

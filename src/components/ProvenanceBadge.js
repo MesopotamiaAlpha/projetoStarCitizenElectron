@@ -232,9 +232,9 @@ export function ProvenanceSummaryWidget() {
           {summary.counts[e.key]} {e.label}
         </span>
       ))}
-      {summary.lastUexImportar && (
+      {summary.lastUexImport && (
         <span style={{ fontSize:10,color:'var(--text-muted)',marginLeft:4,display:'flex',alignItems:'center',gap:4 }}>
-          <Clock size={10}/> Última sync UEX: {formatImportedAt(summary.lastUexImportar)}
+          <Clock size={10}/> Última sync UEX: {formatImportedAt(summary.lastUexImport)}
         </span>
       )}
     </div>

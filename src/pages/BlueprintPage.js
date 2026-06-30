@@ -62,7 +62,7 @@ function buildMockBpAPI() {
     incrementCraftado: async (id) => {
       const s=load(); s.state[`b${id}c`]=(s.state[`b${id}c`]||0)+1; save(s); return {success:true};
     },
-    updateNotas: async (id,notes) => { const s=load(); s.state[`b${id}n`]=notes; save(s); return {success:true}; },
+    updateNotes: async (id,notes) => { const s=load(); s.state[`b${id}n`]=notes; save(s); return {success:true}; },
     createCustom: async ({bp,ingredients}) => {
       const s=load(); const id=s.nextId++;
       s.custom.push({...bp,id,ingredients:(ingredients||[]),is_default:0,patch_added:bp.patch_added||'4.7'});
@@ -89,10 +89,10 @@ function getBpAPI() {
   if (window.electronAPI) {
     return {
       getAll:           () => window.electronAPI.bpGetAll(),
-      toggleOwned:      (id) => window.electronAPI.bpToggleObtida(id),
+      toggleOwned:      (id) => window.electronAPI.bpToggleOwned(id),
       toggleWishlist:   (id) => window.electronAPI.bpToggleWishlist(id),
-      incrementCraftado: (id) => window.electronAPI.bpIncrementCraftado(id),
-      updateNotas:      (id,n) => window.electronAPI.bpUpdateNotas(id,n),
+      incrementCraftado: (id) => window.electronAPI.bpIncrementCrafted(id),
+      updateNotes:      (id,n) => window.electronAPI.bpUpdateNotes(id,n),
       createCustom:     (d) => window.electronAPI.bpCreateCustom(d),
       updateCustom:     (d) => window.electronAPI.bpUpdateCustom(d),
       deleteCustom:     (id) => window.electronAPI.bpDeleteCustom(id),
@@ -332,7 +332,7 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onIncrementCrafted, onSel
           {noteEdit?(
             <div style={{ display:'flex',gap:7,marginTop:8 }}>
               <input className="search-input" style={{ flex:1 }} value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Notas sobre este blueprint..."/>
-              <button onClick={async()=>{ await getBpAPI().updateNotas(bp.id,noteText); setNoteGuardado(true); setTimeout(()=>{setNoteGuardado(false);setNoteEdit(false);},1500); }} className="save-btn" style={{ fontSize:11,padding:'5px 10px' }}>{noteGuardado?'✓ Salvo!':'Salvar'}</button>
+              <button onClick={async()=>{ await getBpAPI().updateNotes(bp.id,noteText); setNoteGuardado(true); setTimeout(()=>{setNoteGuardado(false);setNoteEdit(false);},1500); }} className="save-btn" style={{ fontSize:11,padding:'5px 10px' }}>{noteGuardado?'✓ Salvo!':'Salvar'}</button>
             </div>
           ):(
             <button onClick={()=>setNoteEdit(true)} style={{ marginTop:8,background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'5px 10px',fontSize:11 }}>

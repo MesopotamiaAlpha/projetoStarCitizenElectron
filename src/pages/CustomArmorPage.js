@@ -121,7 +121,7 @@ function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
 export default function CustomArmorPage({ sets, onAtualizar }) {
   const [showForm,     setShowForm]     = useState(false);
   const [editingId,    setEditingId]    = useState(null);
-  const [setDate,      setsetDate]      = useState(emptySet());
+  const [setData,      setsetData]      = useState(emptySet());
   const [pieces,       setPieces]       = useState([emptyPiece('Helmet'),emptyPiece('Torso'),emptyPiece('Arms'),emptyPiece('Legs')]);
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
@@ -131,14 +131,14 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
   const api = window.electronAPI;
 
   function startNew() {
-    setEditingId(null); setsetDate(emptySet());
+    setEditingId(null); setsetData(emptySet());
     setPieces([emptyPiece('Helmet'),emptyPiece('Torso'),emptyPiece('Arms'),emptyPiece('Legs')]);
     setError(''); setShowForm(true);
   }
 
   function startEdit(set) {
     setEditingId(set.id);
-    setsetDate({
+    setsetData({
       base_name: set.base_name, variant_name: set.variant_name||'Base',
       manufacturer:set.manufacturer, type:set.type, category:set.category,
       description:set.description||'', lore:set.lore||'',
@@ -159,21 +159,21 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
   }
 
   async function handleSave() {
-    if (!setDate.base_name.trim()) { setError('Nome do set é obrigatório.'); return; }
-    if (!setDate.manufacturer.trim()) { setError('Fabricante é obrigatório.'); return; }
+    if (!setData.base_name.trim()) { setError('Nome do set é obrigatório.'); return; }
+    if (!setData.manufacturer.trim()) { setError('Fabricante é obrigatório.'); return; }
     if (pieces.length===0) { setError('Adicione ao menos uma peça.'); return; }
     setSaving(true); setError('');
     try {
       if (editingId) {
-        await api.updateCustomSet(editingId, setDate);
-        setProvenance('armor', setDate.base_name, SOURCES.CUSTOM);
+        await api.updateCustomSet(editingId, setData);
+        setProvenance('armor', setData.base_name, SOURCES.CUSTOM);
         for (const p of pieces) {
           if (p.id) await api.updateCustomPiece(p.id, p);
           else      await api.addPieceToSet(editingId, p);
         }
       } else {
-        await api.createCustomSet({ set:setDate, pieces });
-        setProvenance('armor', setDate.base_name, SOURCES.CUSTOM);
+        await api.createCustomSet({ set:setData, pieces });
+        setProvenance('armor', setData.base_name, SOURCES.CUSTOM);
       }
       await onAtualizar();
       setShowForm(false);
@@ -194,7 +194,7 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
     setPieces([...pieces, emptyPiece(next)]);
   };
 
-  const sf = (k,v) => setsetDate(p=>({...p,[k]:v}));
+  const sf = (k,v) => setsetData(p=>({...p,[k]:v}));
   const IS = { width:'100%',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:14,outline:'none' };
   const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
 
@@ -231,30 +231,30 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
 
             {/* Set fields */}
             <div style={{ marginBottom:20 }}>
-              <div className="modal-section-title">Info rmações do Set</div>
+              <div className="modal-section-title">Informações do Set</div>
               <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12 }}>
-                <div><label style={LS}>Nome Base *</label><input style={IS} value={setDate.base_name} onChange={e=>sf('base_name',e.target.value)} placeholder="ex: Citadel"/></div>
-                <div><label style={LS}>Variantee</label><input style={IS} value={setDate.variant_name} onChange={e=>sf('variant_name',e.target.value)} placeholder="ex: Base, Brimstone, Desert..."/></div>
-                <div><label style={LS}>Fabricante *</label><input style={IS} value={setDate.manufacturer} onChange={e=>sf('manufacturer',e.target.value)} placeholder="ex: Clark Defense Sistemas"/></div>
-                <div><label style={LS}>Categoria</label><input style={IS} value={setDate.category} onChange={e=>sf('category',e.target.value)} placeholder="ex: Combat, Recon, Environmental..."/></div>
+                <div><label style={LS}>Nome Base *</label><input style={IS} value={setData.base_name} onChange={e=>sf('base_name',e.target.value)} placeholder="ex: Citadel"/></div>
+                <div><label style={LS}>Variantee</label><input style={IS} value={setData.variant_name} onChange={e=>sf('variant_name',e.target.value)} placeholder="ex: Base, Brimstone, Desert..."/></div>
+                <div><label style={LS}>Fabricante *</label><input style={IS} value={setData.manufacturer} onChange={e=>sf('manufacturer',e.target.value)} placeholder="ex: Clark Defense Systems"/></div>
+                <div><label style={LS}>Categoria</label><input style={IS} value={setData.category} onChange={e=>sf('category',e.target.value)} placeholder="ex: Combat, Recon, Environmental..."/></div>
                 <div>
                   <label style={LS}>Tipo</label>
-                  <select className="filter-select" style={{ width:'100%' }} value={setDate.type} onChange={e=>sf('type',e.target.value)}>
+                  <select className="filter-select" style={{ width:'100%' }} value={setData.type} onChange={e=>sf('type',e.target.value)}>
                     {TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={LS}>Raridade</label>
-                  <select className="filter-select" style={{ width:'100%' }} value={setDate.rarity} onChange={e=>sf('rarity',e.target.value)}>
+                  <select className="filter-select" style={{ width:'100%' }} value={setData.rarity} onChange={e=>sf('rarity',e.target.value)}>
                     {RARITIES.map(r=><option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                <div><label style={LS}>Versão do Jogo</label><input style={IS} value={setDate.added_version} onChange={e=>sf('added_version',e.target.value)} placeholder="ex: 4.0"/></div>
-                <div><label style={LS}>Tags (vírgula)</label><input style={IS} value={setDate.tags.join(', ')} onChange={e=>sf('tags',e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder="ex: Heavy, Loot, EVA"/></div>
+                <div><label style={LS}>Versão do Jogo</label><input style={IS} value={setData.added_version} onChange={e=>sf('added_version',e.target.value)} placeholder="ex: 4.0"/></div>
+                <div><label style={LS}>Tags (vírgula)</label><input style={IS} value={setData.tags.join(', ')} onChange={e=>sf('tags',e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder="ex: Heavy, Loot, EVA"/></div>
               </div>
               <div style={{ marginBottom:10 }}>
                 <label style={LS}>Descrição</label>
-                <textarea className="notes-textarea" value={setDate.description} onChange={e=>sf('description',e.target.value)} placeholder="Descrição do set..." style={{ marginTop:0,minHeight:70,fontSize:13 }}/>
+                <textarea className="notes-textarea" value={setData.description} onChange={e=>sf('description',e.target.value)} placeholder="Descrição do set..." style={{ marginTop:0,minHeight:70,fontSize:13 }}/>
               </div>
             </div>
 
