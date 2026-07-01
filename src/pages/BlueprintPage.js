@@ -59,7 +59,7 @@ function buildMockBpAPI() {
     toggleWishlist: async (id) => {
       const s=load(); s.state[`b${id}w`]=(s.state[`b${id}w`]||0)?0:1; save(s); return {wishlist:s.state[`b${id}w`]};
     },
-    incrementCraftado: async (id) => {
+    bpIncrementCrafted: async (id) => {
       const s=load(); s.state[`b${id}c`]=(s.state[`b${id}c`]||0)+1; save(s); return {success:true};
     },
     updateNotes: async (id,notes) => { const s=load(); s.state[`b${id}n`]=notes; save(s); return {success:true}; },
@@ -91,7 +91,7 @@ function getBpAPI() {
       getAll:           () => window.electronAPI.bpGetAll(),
       toggleOwned:      (id) => window.electronAPI.bpToggleOwned(id),
       toggleWishlist:   (id) => window.electronAPI.bpToggleWishlist(id),
-      incrementCraftado: (id) => window.electronAPI.bpIncrementCrafted(id),
+      bpIncrementCrafted: (id) => window.electronAPI.bpIncrementCrafted(id),
       updateNotes:      (id,n) => window.electronAPI.bpUpdateNotes(id,n),
       createCustom:     (d) => window.electronAPI.bpCreateCustom(d),
       updateCustom:     (d) => window.electronAPI.bpUpdateCustom(d),
@@ -377,7 +377,7 @@ export default function BlueprintPage() {
 
   async function handleToggleOwned(id)      { await api.toggleOwned(id);     await loadData(); }
   async function handleToggleWishlist(id)   { await api.toggleWishlist(id);   await loadData(); }
-  async function handleIncrementCraftado(id) { await api.incrementCraftado(id); await loadData(); }
+  async function handlebpIncrementCrafted(id) { await api.bpIncrementCrafted(id); await loadData(); }
 
   async function handleCreate(data) {
     await api.createCustom(data);
@@ -534,7 +534,7 @@ export default function BlueprintPage() {
                 <BpCard key={bp.id} bp={bp}
                   onToggleOwned={handleToggleOwned}
                   onToggleWishlist={handleToggleWishlist}
-                  onIncrementCrafted={handleIncrementCraftado}
+                  onIncrementCrafted={handlebpIncrementCrafted}
                   onSelect={()=>setSelectedBp(selectedBp===bp.id?null:bp.id)}
                   isSelected={selectedBp===bp.id}
                   onEdit={b=>{setEditingBp(b);setShowForm(false);}}

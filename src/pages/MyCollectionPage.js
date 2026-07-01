@@ -37,7 +37,7 @@ function PieceRow({ piece, setNome, setTipo, variantNome, onToggle, onWishlist }
   );
 }
 
-export default function MyCollectionPage({ sets, stats, onTogglePiece, onTogglePieceWishlist, onupdatePieceNotes }) {
+export default function MyCollectionPage({ sets, stats, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes }) {
   const [activeTab,   setActiveTab]   = useState('sets');
   const [search,      setSearch]      = useState('');
   const [selectedSet, setSelectedSet] = useState(null);
@@ -276,7 +276,7 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
       {selectedSet && (
         <ArmorSetModal
           set={selectedSet} sets={sets} onClose={()=>setSelectedSet(null)}
-          onTogglePiece={onTogglePiece} onTogglePieceWishlist={onTogglePieceWishlist} onupdatePieceNotes={onupdatePieceNotes}
+          onTogglePiece={onTogglePiece} onTogglePieceWishlist={onTogglePieceWishlist} onUpdatePieceNotes={onUpdatePieceNotes}
         />
       )}
     </div>

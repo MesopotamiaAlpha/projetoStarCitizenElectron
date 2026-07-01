@@ -20,10 +20,10 @@ const MISSION_TYPES = ['Bounty Hunt','Delivery','Carga Run','Mining','Salvage','
 const FACTIONS      = ['Foxwell Enforcement','Headhunters','Covalex','Shubin Interstellar','Ling Family','InterSec','Rayari','Mile Eckhart','Nine Tails','UEE Navy','Advocacy','CDF','Hurston Security','Levski Security','Free','Outro'];
 const SYSTEMS       = ['Stanton','Pyro','Nyx','Terra'];
 const DIFFICULTIES  = ['Easy','Médio','Hard','Very Hard','Elite'];
-const status      = ['Active','Completed','Falhou','Abandonada','Pendente','Bugada'];
+const STATUSES     = ['Active','Completed','Failed','Abandoned','Pending','Bugged'];
 const MONTHS_PT     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-const STATUS_COLORS = { Active:'var(--accent-primary)',Concluída:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055' };
+const STATUS_COLORS = { Active:'var(--accent-primary)',Completed:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055' };
 const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)',Hard:'var(--accent-gold)','Very Hard':'#ff8c00',Elite:'var(--accent-red)' };
 const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mining':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
 
@@ -124,7 +124,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
         <div><label style={LS}>Tipo</label><select style={SS} value={data.type} onChange={e=>set('type',e.target.value)}>{MISSION_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
         <div><label style={LS}>Status</label>
           <select style={{...SS,color:STATUS_COLORS[data.status]||'var(--text-primary)'}} value={data.status} onChange={e=>set('status',e.target.value)}>
-            {status.map(s=><option key={s} style={{color:'var(--text-primary)'}}>{s}</option>)}
+            {STATUSES.map(s=><option key={s} style={{color:'var(--text-primary)'}}>{s}</option>)}
           </select>
         </div>
       </div>
@@ -278,7 +278,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate 
             )}
             <select style={{padding:'2px 18px 2px 5px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:STATUS_COLORS[mission.status]||'var(--text-muted)',fontFamily:'Rajdhani,sans-serif',fontSize:10,outline:'none',cursor:'pointer',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 3px center'}}
               value={mission.status} onChange={e=>{e.stopPropagation();onStatusChange(mission.id,e.target.value);}}>
-              {status.map(s=><option key={s}>{s}</option>)}
+              {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
             <button onClick={e=>{e.stopPropagation();onEdit(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={10}/></button>
             {delConf?(
@@ -518,7 +518,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
         )}
         <select style={SS} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
           <option value="all">Todos os Status</option>
-          {status.map(s=><option key={s}>{s}</option>)}
+          {STATUSES.map(s=><option key={s}>{s}</option>)}
         </select>
         <span style={{marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)'}}>{filtered.length} missão(ões)</span>
       </div>

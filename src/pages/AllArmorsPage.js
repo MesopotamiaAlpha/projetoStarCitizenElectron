@@ -12,7 +12,7 @@ const SORT_OPTIONS = [
 ];
 const RARITY_ORDER = { Comum:1, Incomum:2, Raro:3, Legendary:4 };
 
-export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onupdatePieceNotes }) {
+export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes }) {
   const [search,       setSearch]       = useState('');
   const [typeFilter,   setTipoFilter]   = useState('all');
   const [rarityFilter, setRaridadeFilter] = useState('all');
@@ -182,7 +182,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
           onClose={() => setSelectedSet(null)}
           onTogglePiece={onTogglePiece}
           onTogglePieceWishlist={onTogglePieceWishlist}
-          onupdatePieceNotes={onupdatePieceNotes}
+          onUpdatePieceNotes={onUpdatePieceNotes}
         />
       )}
     </div>

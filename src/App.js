@@ -220,8 +220,8 @@ export default function App() {
 
       <main className="main-content">
         {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
-        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotes={handleupdatePieceNotes} />}
         {activePage==='inventory'  && <InventoryPage />}
         {activePage==='blueprints' && <BlueprintPage />}
         {activePage==='materials'  && <MaterialTrackerPage />}

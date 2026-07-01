@@ -159,7 +159,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
   );
 }
 
-export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onupdatePieceNotes }) {
+export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes }) {
   const [openPiece, setAbrirPiece] = useState(null);
 
   const liveSet = sets.find(s=>s.id===set.id)||set;
@@ -279,7 +279,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                   piece={pieces.find(lp=>lp.id===p.id)||p}
                   onToggleOwned={onTogglePiece}
                   onToggleWishlist={onTogglePieceWishlist}
-                  onUpdateNotes={onupdatePieceNotes}
+                  onUpdateNotes={onUpdatePieceNotes}
                   isExpanded={openPiece===p.id}
                   onToggleExpand={()=>setAbrirPiece(openPiece===p.id?null:p.id)}
                 />
