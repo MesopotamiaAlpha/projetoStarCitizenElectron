@@ -10,6 +10,7 @@ import MaterialTrackerPage from './pages/MaterialTrackerPage';
 import MiningPage         from './pages/MiningPage';
 import MiningGrupoPage    from './pages/MiningGroupPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
+import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
 import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
@@ -128,6 +129,7 @@ const PAGES = [
   { id:'mining',     label:'Guia de Mineração',   icon:Pickaxe    },
   { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
   { id:'missions',   label:'Missões',             icon:ListChecks },
+  { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
 ];
 
@@ -220,8 +222,8 @@ export default function App() {
 
       <main className="main-content">
         {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
-        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onUpdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
         {activePage==='inventory'  && <InventoryPage />}
         {activePage==='blueprints' && <BlueprintPage />}
         {activePage==='materials'  && <MaterialTrackerPage />}
@@ -229,6 +231,7 @@ export default function App() {
         {activePage==='mining'     && <MiningPage />}
         {activePage==='mininggroup' && <MiningGrupoPage />}
         {activePage==='missions'   && <MissionTrackerPage />}
+        {activePage==='orevault'   && <OreVaultPage />}
         {activePage==='uexapi'     && <UexApiPage />}
       </main>
     </div>

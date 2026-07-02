@@ -15,7 +15,23 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CATEGORIES = ['FPS Weapon','Ship Weapon','FPS Armor','Ship Component','Ammo','Consumable','Flight Suit','Utilitário','Outro'];
 const FACTIONS   = ['Starter','Foxwell Enforcement','Headhunters','Covalex','Ling Family','Shubin Interstellar','InterSec','Rayari','Mile Eckhart','Pyro Factions','Pyro Gangs','General Mission Drop','Outro'];
-const UNITS      = ['un','kg','SCU'];
+const UNITS      = ['un','kg','cSCU','SCU'];
+
+// ── Conversão SCU ─────────────────────────────────────────────────────────────
+// 1 SCU = 100 cSCU. Exibe conversão quando unidade é SCU ou cSCU.
+function fmtSCU(qty, unit) {
+  if (unit === 'SCU') {
+    const scu  = qty;
+    const cscu = qty * 100;
+    return { primary: `${scu} SCU`, secondary: `= ${cscu.toLocaleString('pt-BR')} cSCU` };
+  }
+  if (unit === 'cSCU') {
+    const cscu = qty;
+    const scu  = (qty / 100).toFixed(2);
+    return { primary: `${cscu.toLocaleString('pt-BR')} cSCU`, secondary: `= ${scu} SCU` };
+  }
+  return { primary: `${qty} ${unit}`, secondary: null };
+}
 
 const CAT_COLORS = {
   'FPS Weapon':'#ff4466','Ship Weapon':'#ff7744','FPS Armor':'#00d4ff',
@@ -59,7 +75,7 @@ function buildMockBpAPI() {
     toggleWishlist: async (id) => {
       const s=load(); s.state[`b${id}w`]=(s.state[`b${id}w`]||0)?0:1; save(s); return {wishlist:s.state[`b${id}w`]};
     },
-    bpIncrementCrafted: async (id) => {
+    incrementCraftado: async (id) => {
       const s=load(); s.state[`b${id}c`]=(s.state[`b${id}c`]||0)+1; save(s); return {success:true};
     },
     updateNotes: async (id,notes) => { const s=load(); s.state[`b${id}n`]=notes; save(s); return {success:true}; },
@@ -91,7 +107,7 @@ function getBpAPI() {
       getAll:           () => window.electronAPI.bpGetAll(),
       toggleOwned:      (id) => window.electronAPI.bpToggleOwned(id),
       toggleWishlist:   (id) => window.electronAPI.bpToggleWishlist(id),
-      bpIncrementCrafted: (id) => window.electronAPI.bpIncrementCrafted(id),
+      incrementCraftado: (id) => window.electronAPI.bpIncrementCrafted(id),
       updateNotes:      (id,n) => window.electronAPI.bpUpdateNotes(id,n),
       createCustom:     (d) => window.electronAPI.bpCreateCustom(d),
       updateCustom:     (d) => window.electronAPI.bpUpdateCustom(d),
@@ -105,14 +121,21 @@ function getBpAPI() {
 // ── Ingredient pill ───────────────────────────────────────────────────────────
 function IngPill({ ing }) {
   const color = MATERIAL_COLORS[ing.material_name] || '#7a90b0';
+  const fmt   = fmtSCU(ing.quantity, ing.unit || 'un');
+  const isSCU = ing.unit === 'SCU' || ing.unit === 'cSCU';
   return (
     <div style={{ display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,
       background:`${color}18`,border:`1px solid ${color}44`,fontSize:12,fontWeight:600,
-      color:'var(--text-primary)',flexShrink:0 }}>
-      <div style={{ width:8,height:8,borderRadius:'50%',background:color,flexShrink:0 }}/>
-      <span style={{ color }}>{ing.material_name}</span>
-      <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-secondary)' }}>×{ing.quantity}</span>
-      {ing.quality_min>0 && <span style={{ fontSize:10,color:'var(--text-muted)',borderLeft:'1px solid var(--border-subtle)',paddingLeft:5 }}>Q≥{ing.quality_min}</span>}
+      color:'var(--text-primary)',flexShrink:0,flexDirection:isSCU?'column':'row',alignItems:isSCU?'flex-start':'center' }}>
+      <div style={{ display:'flex',alignItems:'center',gap:5 }}>
+        <div style={{ width:8,height:8,borderRadius:'50%',background:color,flexShrink:0 }}/>
+        <span style={{ color }}>{ing.material_name}</span>
+        <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-secondary)' }}>{fmt.primary}</span>
+        {ing.quality_min>0 && <span style={{ fontSize:10,color:'var(--text-muted)',borderLeft:'1px solid var(--border-subtle)',paddingLeft:5 }}>Q≥{ing.quality_min}</span>}
+      </div>
+      {fmt.secondary && (
+        <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--text-muted)',paddingLeft:13 }}>{fmt.secondary}</span>
+      )}
     </div>
   );
 }
@@ -377,7 +400,7 @@ export default function BlueprintPage() {
 
   async function handleToggleOwned(id)      { await api.toggleOwned(id);     await loadData(); }
   async function handleToggleWishlist(id)   { await api.toggleWishlist(id);   await loadData(); }
-  async function handlebpIncrementCrafted(id) { await api.bpIncrementCrafted(id); await loadData(); }
+  async function handleIncrementCraftado(id) { await api.incrementCraftado(id); await loadData(); }
 
   async function handleCreate(data) {
     await api.createCustom(data);
@@ -534,7 +557,7 @@ export default function BlueprintPage() {
                 <BpCard key={bp.id} bp={bp}
                   onToggleOwned={handleToggleOwned}
                   onToggleWishlist={handleToggleWishlist}
-                  onIncrementCrafted={handlebpIncrementCrafted}
+                  onIncrementCrafted={handleIncrementCraftado}
                   onSelect={()=>setSelectedBp(selectedBp===bp.id?null:bp.id)}
                   isSelected={selectedBp===bp.id}
                   onEdit={b=>{setEditingBp(b);setShowForm(false);}}

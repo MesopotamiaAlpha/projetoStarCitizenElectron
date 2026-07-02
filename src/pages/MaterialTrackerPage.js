@@ -2,13 +2,214 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   FlaskConical, Pickaxe, CheckCircle2, Trash2, Plus,
   Minus, RefreshCw, Package, MapPin, ChevronDown,
-  ChevronUp, ShoppingCart, AlertTriangle, Star, X
+  ChevronUp, ShoppingCart, AlertTriangle, Star, X, Archive, Gift
 } from 'lucide-react';
 import {
   loadQueue, saveQueue, calcShoppingList,
   collectMaterial, resetMaterialCollected, dequeueBlueprint,
   updateQueuedQty, clearCompleted,
 } from '../data/materialQueue';
+import { loadVault, deductOreEntry, findVaultMatches } from '../data/oreVault';
+
+
+// ── Vault Match Banner ────────────────────────────────────────────────────────
+// Mostrado no topo quando há minérios no baú que batem com a lista de materiais
+function VaultMatchBanner({ shoppingList, onNavigateVault }) {
+  const matches = useMemo(() => {
+    return shoppingList
+      .filter(item => item.remaining > 0)
+      .map(item => {
+        const vaultEntries = findVaultMatches(item.material_name);
+        const vaultTotal   = vaultEntries.reduce((a,e) => a+(e.quantity||0), 0);
+        return vaultTotal > 0 ? { ...item, vaultTotal, vaultEntries } : null;
+      })
+      .filter(Boolean);
+  }, [shoppingList]);
+
+  if (matches.length === 0) return null;
+
+  return (
+    <div style={{
+      margin:'0 0 12px 0',
+      background:'rgba(255,200,0,0.06)',
+      border:'1px solid rgba(255,200,0,0.3)',
+      borderRadius:9,
+      padding:'11px 14px',
+      display:'flex',
+      alignItems:'center',
+      gap:12,
+      flexWrap:'wrap',
+    }}>
+      <Archive size={16} style={{color:'var(--accent-gold)',flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:700,color:'var(--accent-gold)',marginBottom:3,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+          🎁 Baú de Minério — {matches.length} material{matches.length!==1?'is':''} disponíveis!
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+          {matches.map(m => (
+            <span key={m.material_name} style={{
+              fontSize:11,padding:'2px 8px',borderRadius:12,
+              background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.25)',
+              color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',
+            }}>
+              {m.material_name}: <span style={{color:'var(--accent-gold)',fontWeight:700}}>{m.vaultTotal} {m.unit||'un'}</span>
+              {m.remaining > 0 && <span style={{color:'var(--text-muted)'}}> / {fmtSCU(m.remaining, m.unit).primary} necessário</span>}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div style={{fontSize:11,color:'var(--text-muted)',flexShrink:0}}>
+        Expanda um material abaixo para usar do baú.
+      </div>
+    </div>
+  );
+}
+
+// ── Vault Use Panel ───────────────────────────────────────────────────────────
+// Painel dentro do MaterialRow para usar minério do baú
+function VaultUsePanel({ materialName, needed, onUseFromVault }) {
+  const [vault, setVault] = useState(() => loadVault());
+  const [pending, setPending] = useState({}); // entryId -> quantidade a usar
+
+  function refresh() { setVault(loadVault()); }
+
+  const matches = useMemo(() => findVaultMatches(materialName), [vault, materialName]);
+
+  if (matches.length === 0) return null;
+
+  function toggleEntry(id, maxQty) {
+    setPending(prev => {
+      const next = {...prev};
+      if (next[id] !== undefined) { delete next[id]; }
+      else { next[id] = Math.min(maxQty, needed); }
+      return next;
+    });
+  }
+  function setQty(id, val) {
+    const n = Math.max(0, parseFloat(val)||0);
+    setPending(prev => ({...prev, [id]: n}));
+  }
+
+  const totalPending = Object.entries(pending).reduce((a,[id,q]) => a + q, 0);
+
+  function handleConfirm() {
+    const uses = Object.entries(pending)
+      .filter(([,q]) => q > 0)
+      .map(([id, qty]) => ({ id: Number(id), qty }));
+    if (uses.length === 0) return;
+    uses.forEach(({id, qty}) => deductOreEntry(id, qty));
+    onUseFromVault(totalPending);
+    refresh();
+    setPending({});
+  }
+
+  return (
+    <div style={{
+      marginTop:10,
+      background:'rgba(255,200,0,0.04)',
+      border:'1px solid rgba(255,200,0,0.25)',
+      borderRadius:8,
+      padding:'10px 12px',
+    }}>
+      <div style={{fontSize:10,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+        <Archive size={10}/> Disponível no Baú de Minério
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:8}}>
+        {matches.map(entry => {
+          const isSelected = pending[entry.id] !== undefined;
+          return (
+            <div key={entry.id} style={{
+              display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
+              background: isSelected ? 'rgba(255,200,0,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${isSelected ? 'rgba(255,200,0,0.4)' : 'var(--border-subtle)'}`,
+              borderRadius:6,transition:'all 0.15s',
+            }}>
+              {/* Checkbox */}
+              <button onClick={() => toggleEntry(entry.id, entry.quantity)} style={{
+                width:16,height:16,borderRadius:3,flexShrink:0,cursor:'pointer',
+                border:`2px solid ${isSelected?'var(--accent-gold)':'var(--border-normal)'}`,
+                background:isSelected?'rgba(255,200,0,0.2)':'transparent',
+                display:'flex',alignItems:'center',justifyContent:'center',
+              }}>
+                {isSelected && <div style={{width:7,height:7,borderRadius:1,background:'var(--accent-gold)'}}/>}
+              </button>
+
+              {/* Info da entrada */}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--text-primary)'}}>{entry.ore_name}</span>
+                  {entry.refined && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(0,229,160,0.1)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.2)',fontWeight:700}}>REFINADO</span>}
+                  {entry.quality && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(255,200,0,0.1)',color:'var(--accent-gold)',border:'1px solid rgba(255,200,0,0.2)',fontWeight:700}}>★ {entry.quality}</span>}
+                  {entry.location && <span style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:2}}><MapPin size={8}/>{entry.location}</span>}
+                </div>
+              </div>
+
+              {/* Quantidade disponível e input */}
+              <div style={{display:'flex',alignItems:'center',gap:7,flexShrink:0}}>
+                <span style={{fontSize:11,color:'var(--text-muted)'}}>Disponível:</span>
+                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-gold)',fontWeight:700}}>{entry.quantity} {entry.unit}</span>
+                {isSelected && (
+                  <>
+                    <span style={{fontSize:11,color:'var(--text-muted)'}}>Usar:</span>
+                    <input
+                      type="number" min="0" max={entry.quantity} step="1"
+                      value={pending[entry.id]}
+                      onChange={e => setQty(entry.id, e.target.value)}
+                      style={{width:70,padding:'4px 7px',background:'var(--bg-base)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:4,color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none',textAlign:'center'}}
+                    />
+                    <span style={{fontSize:10,color:'var(--text-muted)'}}>{entry.unit}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Botões de confirmação */}
+      {totalPending > 0 && (
+        <div style={{display:'flex',alignItems:'center',gap:10,justifyContent:'flex-end'}}>
+          <span style={{fontSize:12,color:'var(--text-secondary)'}}>
+            Usar <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-gold)',fontWeight:700}}>{totalPending}</span> do baú
+            {needed > 0 && <span style={{color:'var(--text-muted)'}}> (precisa de {needed})</span>}
+          </span>
+          <button onClick={() => setPending({})} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+            Cancelar
+          </button>
+          <button onClick={handleConfirm} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+            <CheckCircle2 size={11}/> Confirmar Uso
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Conversão SCU/cSCU ───────────────────────────────────────────────────────
+// 1 SCU = 100 cSCU
+function fmtSCU(qty, unit) {
+  if (unit === 'SCU') {
+    const scu  = qty;
+    const cscu = qty * 100;
+    return { primary: `${Number(scu).toLocaleString('pt-BR')} SCU`, secondary: `${Number(cscu).toLocaleString('pt-BR')} cSCU` };
+  }
+  if (unit === 'cSCU') {
+    const cscu = qty;
+    const scu  = (qty / 100).toFixed(qty % 100 === 0 ? 0 : 2);
+    return { primary: `${Number(cscu).toLocaleString('pt-BR')} cSCU`, secondary: `${scu} SCU` };
+  }
+  return { primary: `${Number(qty).toLocaleString('pt-BR')} ${unit||'un'}`, secondary: null };
+}
+
+function QtyDisplay({ qty, unit, color, size=12 }) {
+  const fmt = fmtSCU(qty, unit);
+  return (
+    <span style={{ display:'inline-flex', flexDirection:'column', alignItems:'flex-start' }}>
+      <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:size, fontWeight:700, color }}>{fmt.primary}</span>
+      {fmt.secondary && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:size-2, color:'var(--text-muted)' }}>{fmt.secondary}</span>}
+    </span>
+  );
+}
 
 // ── Mining location recommendations per material ──────────────────────────────
 const MATERIAL_MINING_TIPS = {
@@ -71,32 +272,39 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
 }
 
 // ── Material collect input ─────────────────────────────────────────────────────
-function CollectInput({ material, onCollect }) {
+function CollectInput({ material, unit, onCollect }) {
   const [amount, setQuantidade] = useState('');
+  const isSCU = unit === 'SCU' || unit === 'cSCU';
   function submit() {
-    const n = Number(amount);
+    const n = isSCU ? parseFloat(amount) : Number(amount);
     if (!n || n <= 0) return;
     onCollect(material, n);
     setQuantidade('');
   }
+  const fmt = amount && !isNaN(parseFloat(amount)) ? fmtSCU(parseFloat(amount), unit) : null;
   return (
-    <div style={{ display:'flex',gap:6,alignItems:'center' }}>
-      <input
-        type="number" min="1" value={amount}
-        onChange={e => setQuantidade(e.target.value)}
-        onKeyDown={e => e.key==='Enter' && submit()}
-        placeholder="Qtd coletada..."
-        style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
-      />
-      <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
-        <CheckCircle2 size={12}/> Coletei
-      </button>
+    <div style={{ display:'flex',flexDirection:'column',gap:3,alignItems:'flex-end' }}>
+      <div style={{ display:'flex',gap:6,alignItems:'center' }}>
+        <input
+          type="number" min="0" step={isSCU?'0.01':'1'} value={amount}
+          onChange={e => setQuantidade(e.target.value)}
+          onKeyDown={e => e.key==='Enter' && submit()}
+          placeholder={`Qtd${unit?' ('+unit+')':''}...`}
+          style={{ width:120,padding:'5px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
+        />
+        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+          <CheckCircle2 size={12}/> Coletei
+        </button>
+      </div>
+      {fmt?.secondary && (
+        <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--accent-gold)' }}>{fmt.primary} = {fmt.secondary}</span>
+      )}
     </div>
   );
 }
 
 // ── Material row ──────────────────────────────────────────────────────────────
-function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded }) {
+function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded, onUseFromVault }) {
   const color    = getMaterialColor(item.material_name);
   const tips     = MATERIAL_MINING_TIPS[item.material_name];
   const pct      = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : 0;
@@ -126,16 +334,16 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded }) {
           <div style={{ height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden',marginBottom:5 }}>
             <div style={{ height:'100%',width:`${Math.min(pct,100)}%`,background:isDone?'var(--accent-green)':color,borderRadius:2,transition:'width 0.5s ease',boxShadow:`0 0 6px ${color}55` }}/>
           </div>
-          <div style={{ display:'flex',gap:16,fontSize:11,color:'var(--text-muted)',flexWrap:'wrap' }}>
-            <span>Necessário: <span style={{ color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{item.needed_total}</span></span>
-            <span>Coletado: <span style={{ color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{item.collected}</span></span>
-            <span>Restante: <span style={{ color:isDone?'var(--accent-green)':'var(--accent-red)',fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{item.remaining}</span></span>
+          <div style={{ display:'flex',gap:16,fontSize:11,color:'var(--text-muted)',flexWrap:'wrap',alignItems:'flex-start' }}>
+            <span style={{display:'flex',alignItems:'flex-start',gap:4}}>Necessário: <QtyDisplay qty={item.needed_total} unit={item.unit} color='var(--text-primary)' size={11}/></span>
+            <span style={{display:'flex',alignItems:'flex-start',gap:4}}>Coletado: <QtyDisplay qty={item.collected} unit={item.unit} color='var(--accent-green)' size={11}/></span>
+            <span style={{display:'flex',alignItems:'flex-start',gap:4}}>Restante: <QtyDisplay qty={item.remaining} unit={item.unit} color={isDone?'var(--accent-green)':'var(--accent-red)'} size={11}/></span>
           </div>
         </div>
         {/* Collect input */}
         {!isDone && (
           <div onClick={e=>e.stopPropagation()}>
-            <CollectInput material={item.material_name} onCollect={onCollect}/>
+            <CollectInput material={item.material_name} unit={item.unit} onCollect={onCollect}/>
           </div>
         )}
         {isDone && (
@@ -179,6 +387,14 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded }) {
               ))}
             </div>
           </div>
+          {/* Vault use panel */}
+          {!isDone && (
+            <VaultUsePanel
+              materialName={item.material_name}
+              needed={item.remaining}
+              onUseFromVault={(qty) => { onUseFromVault(item.material_name, qty); }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -331,6 +547,9 @@ export default function MaterialTrackerPage() {
 
         {/* ── RIGHT: Material shopping list ── */}
         <div style={{ overflowY:'auto',padding:'14px 18px' }}>
+          {/* Vault match banner */}
+          <VaultMatchBanner shoppingList={shoppingList}/>
+
           {/* Controls */}
           <div style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
             <span style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:7 }}>
@@ -377,6 +596,7 @@ export default function MaterialTrackerPage() {
                   onReset={handleReset}
                   expanded={expandedMat===item.material_name}
                   onToggleExpandir={()=>setExpandiredMat(expandedMat===item.material_name?null:item.material_name)}
+                  onUseFromVault={(matName, qty) => { collectMaterial(matName, qty); refresh(); }}
                 />
               ))}
             </div>
