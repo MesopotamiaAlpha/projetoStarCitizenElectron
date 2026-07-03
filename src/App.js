@@ -12,7 +12,8 @@ import MiningGrupoPage    from './pages/MiningGroupPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
-import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users } from 'lucide-react';
+import UexSalesPage       from './pages/UexSalesPage';
+import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -130,6 +131,7 @@ const PAGES = [
   { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
   { id:'missions',   label:'Missões',             icon:ListChecks },
   { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
+  { id:'uexsales',   label:'Acompanhamento UEX',  icon:ShoppingBag},
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
 ];
 
@@ -232,6 +234,7 @@ export default function App() {
         {activePage==='mininggroup' && <MiningGrupoPage />}
         {activePage==='missions'   && <MissionTrackerPage />}
         {activePage==='orevault'   && <OreVaultPage />}
+        {activePage==='uexsales'   && <UexSalesPage />}
         {activePage==='uexapi'     && <UexApiPage />}
       </main>
     </div>

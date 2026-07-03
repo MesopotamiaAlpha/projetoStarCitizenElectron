@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import {
   loadQueue, saveQueue, calcShoppingList,
-  collectMaterial, resetMaterialCollected, dequeueBlueprint,
-  updateQueuedQty, clearCompleted,
+  collectMaterial, uncollectMaterial, resetMaterialCollected, dequeueBlueprint,
+  updateQueuedQty, clearCompleted, addManualMaterial, removeManualMaterial,
 } from '../data/materialQueue';
 import { loadVault, deductOreEntry, findVaultMatches } from '../data/oreVault';
 
@@ -272,28 +272,39 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
 }
 
 // ── Material collect input ─────────────────────────────────────────────────────
-function CollectInput({ material, unit, onCollect }) {
+function CollectInput({ material, unit, onCollect, onUncollect }) {
   const [amount, setQuantidade] = useState('');
+  const [mode, setMode]         = useState('add'); // 'add' | 'remove'
   const isSCU = unit === 'SCU' || unit === 'cSCU';
   function submit() {
     const n = isSCU ? parseFloat(amount) : Number(amount);
     if (!n || n <= 0) return;
-    onCollect(material, n);
+    if (mode === 'add') onCollect(material, n);
+    else onUncollect(material, n);
     setQuantidade('');
   }
   const fmt = amount && !isNaN(parseFloat(amount)) ? fmtSCU(parseFloat(amount), unit) : null;
   return (
-    <div style={{ display:'flex',flexDirection:'column',gap:3,alignItems:'flex-end' }}>
+    <div style={{ display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end' }}>
+      {/* Toggle add/remove */}
+      <div style={{ display:'flex',borderRadius:5,overflow:'hidden',border:'1px solid var(--border-subtle)' }}>
+        <button onClick={()=>setMode('add')} style={{ padding:'3px 8px',background:mode==='add'?'rgba(0,229,160,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:mode==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+          + Coletei
+        </button>
+        <button onClick={()=>setMode('remove')} style={{ padding:'3px 8px',background:mode==='remove'?'rgba(255,68,102,0.12)':'transparent',border:'none',color:mode==='remove'?'var(--accent-red)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+          − Remover
+        </button>
+      </div>
       <div style={{ display:'flex',gap:6,alignItems:'center' }}>
         <input
           type="number" min="0" step={isSCU?'0.01':'1'} value={amount}
           onChange={e => setQuantidade(e.target.value)}
           onKeyDown={e => e.key==='Enter' && submit()}
-          placeholder={`Qtd${unit?' ('+unit+')':''}...`}
-          style={{ width:120,padding:'5px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
+          placeholder={`Qtd (${unit||'un'})...`}
+          style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:`1px solid ${mode==='remove'?'rgba(255,68,102,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
         />
-        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
-          <CheckCircle2 size={12}/> Coletei
+        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:4,padding:'5px 10px',background:mode==='add'?'rgba(0,229,160,0.1)':'rgba(255,68,102,0.1)',border:`1px solid ${mode==='add'?'rgba(0,229,160,0.3)':'rgba(255,68,102,0.3)'}`,borderRadius:5,color:mode==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+          {mode==='add'?<><CheckCircle2 size={11}/> OK</>:<><Minus size={11}/> OK</>}
         </button>
       </div>
       {fmt?.secondary && (
@@ -304,7 +315,7 @@ function CollectInput({ material, unit, onCollect }) {
 }
 
 // ── Material row ──────────────────────────────────────────────────────────────
-function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded, onUseFromVault }) {
+function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, expanded, onUseFromVault, isManual, onRemoveManual }) {
   const color    = getMaterialColor(item.material_name);
   const tips     = MATERIAL_MINING_TIPS[item.material_name];
   const pct      = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : 0;
@@ -327,8 +338,9 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded, onU
               {item.material_name}
             </span>
             {isDone && <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-green)',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',padding:'1px 6px',borderRadius:3 }}>✓ COMPLETO</span>}
-            {isMinable && !isDone && <span style={{ fontSize:10,color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:3 }}><Pickaxe size={10}/>Mineiroável</span>}
+            {isMinable && !isDone && <span style={{ fontSize:10,color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:3 }}><Pickaxe size={10}/>Minerável</span>}
             {item.quality_min > 0 && <span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>Q≥{item.quality_min}</span>}
+            {isManual && <span style={{ fontSize:9,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.2)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>MANUAL</span>}
           </div>
           {/* Progresso bar */}
           <div style={{ height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden',marginBottom:5 }}>
@@ -343,12 +355,17 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded, onU
         {/* Collect input */}
         {!isDone && (
           <div onClick={e=>e.stopPropagation()}>
-            <CollectInput material={item.material_name} unit={item.unit} onCollect={onCollect}/>
+            <CollectInput material={item.material_name} unit={item.unit} onCollect={onCollect} onUncollect={onUncollect}/>
           </div>
         )}
         {isDone && (
           <button onClick={e=>{e.stopPropagation();onReset(item.material_name);}} title="Resetar coleta" style={{ padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer',fontSize:11 }}>
             <RefreshCw size={11}/>
+          </button>
+        )}
+        {isManual && onRemoveManual && (
+          <button onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
+            <Trash2 size={11}/>
           </button>
         )}
         {expanded ? <ChevronUp size={14} style={{ color:'var(--text-muted)',flexShrink:0 }}/> : <ChevronDown size={14} style={{ color:'var(--text-muted)',flexShrink:0 }}/>}
@@ -401,8 +418,119 @@ function MaterialRow({ item, onCollect, onReset, onToggleExpandir, expanded, onU
   );
 }
 
+// ── Formulário de adição manual de material ──────────────────────────────────
+const KNOWN_MATERIALS = [
+  'Titanium','Copper','Orotite','Caranite','Steel','Laranite','Taranite',
+  'Bexalite','Quantainium','Hephaestanite','Dolivine','Corundum','Aluminum',
+  'Iron','Borase','Agricium','Gold','Diamond','Tungsten','Inert Material',
+  'Reactive Material','Polymer','Industrial Polymer','Medical Grade Polymer',
+];
+const MANUAL_UNITS = ['un','SCU','cSCU','kg'];
+
+function AddManualMaterialForm({ onAdd }) {
+  const [open,    setOpen]    = useState(false);
+  const [name,    setName]    = useState('');
+  const [qty,     setQty]     = useState('');
+  const [unit,    setUnit]    = useState('un');
+  const [qmin,    setQmin]    = useState('');
+  const [error,   setError]   = useState('');
+
+  const isSCU = unit === 'SCU' || unit === 'cSCU';
+
+  function handleAdd() {
+    if (!name.trim()) { setError('Nome obrigatório.'); return; }
+    const n = isSCU ? parseFloat(qty) : parseInt(qty, 10);
+    if (!n || n <= 0) { setError('Quantidade deve ser maior que zero.'); return; }
+    onAdd(name.trim(), n, unit, parseInt(qmin)||0);
+    setName(''); setQty(''); setQmin(''); setError(''); setOpen(false);
+  }
+
+  const IS = { padding:'6px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' };
+  const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center', paddingRight:22 };
+
+  return (
+    <div style={{ marginBottom:12 }}>
+      {!open ? (
+        <button onClick={()=>setOpen(true)} style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(0,212,255,0.06)',border:'1px dashed rgba(0,212,255,0.25)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+          <Plus size={11}/> Adicionar Minério Manual
+        </button>
+      ) : (
+        <div style={{ padding:'10px 12px',background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.2)',borderRadius:8 }}>
+          <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>+ Adicionar Minério à Lista</div>
+          <div style={{ display:'grid',gridTemplateColumns:'2fr 90px 80px 80px auto',gap:6,alignItems:'center' }}>
+            <input style={{...IS,width:'100%'}} list="mat-names" placeholder="Nome do minério..." value={name} onChange={e=>setName(e.target.value)}/>
+            <datalist id="mat-names">{KNOWN_MATERIALS.map(m=><option key={m} value={m}/>)}</datalist>
+            <input style={{...IS,textAlign:'center',fontFamily:'Share Tech Mono,monospace'}} type="number" min="0" step={isSCU?'0.01':'1'} placeholder="Qtd" value={qty} onChange={e=>setQty(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdd()}/>
+            <select style={SS} value={unit} onChange={e=>setUnit(e.target.value)}>
+              {MANUAL_UNITS.map(u=><option key={u}>{u}</option>)}
+            </select>
+            <input style={{...IS,textAlign:'center',width:60}} type="number" min="0" placeholder="Q min" value={qmin} onChange={e=>setQmin(e.target.value)}/>
+            <div style={{ display:'flex',gap:5 }}>
+              <button onClick={handleAdd} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+                <Plus size={10}/> Adicionar
+              </button>
+              <button onClick={()=>{setOpen(false);setError('');}} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer' }}><X size={11}/></button>
+            </div>
+          </div>
+          {error && <div style={{ fontSize:10,color:'var(--accent-red)',marginTop:5 }}>{error}</div>}
+          <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:6 }}>Q min = qualidade mínima (opcional). O item aparecerá na lista de materiais separado dos blueprints.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Blueprint queue card com indicador de progresso ──────────────────────────
+function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove }) {
+  // Verificar se todos os ingredientes deste BP estão coletados
+  const bpMaterials = bp.ingredients || [];
+  const totalMats   = bpMaterials.length;
+  const doneMats    = bpMaterials.filter(ing => {
+    const sl = shoppingList.find(s => s.material_name.toLowerCase() === ing.material_name.toLowerCase());
+    return sl && sl.remaining === 0;
+  }).length;
+  const isComplete  = totalMats > 0 && doneMats === totalMats;
+  const pct         = totalMats > 0 ? Math.round(doneMats / totalMats * 100) : 0;
+
+  return (
+    <div style={{
+      display:'flex',alignItems:'center',gap:10,padding:'9px 12px',
+      background: isComplete ? 'rgba(0,229,160,0.07)' : 'var(--bg-card)',
+      border: `1px solid ${isComplete ? 'rgba(0,229,160,0.4)' : 'rgba(255,196,54,0.2)'}`,
+      borderRadius:7, transition:'all 0.2s',
+    }}>
+      {/* Ícone / status */}
+      {isComplete
+        ? <CheckCircle2 size={16} style={{ color:'var(--accent-green)',flexShrink:0 }}/>
+        : <ShoppingCart size={14} style={{ color:'var(--accent-gold)',flexShrink:0 }}/>
+      }
+      <div style={{ flex:1,minWidth:0 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:2 }}>
+          <div style={{ fontSize:13,fontWeight:700,color:isComplete?'var(--accent-green)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1 }}>{bp.bpName}</div>
+          {isComplete && <span style={{ fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(0,229,160,0.15)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.4)',fontWeight:700,flexShrink:0 }}>✓ PRONTO</span>}
+        </div>
+        {/* Mini progress bar */}
+        <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+          <div style={{ flex:1,height:3,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden' }}>
+            <div style={{ height:'100%',width:`${pct}%`,background:isComplete?'var(--accent-green)':'var(--accent-gold)',borderRadius:2,transition:'width 0.4s' }}/>
+          </div>
+          <span style={{ fontSize:9,color:isComplete?'var(--accent-green)':'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',flexShrink:0 }}>{doneMats}/{totalMats}</span>
+        </div>
+        <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{bp.category}</div>
+      </div>
+      {/* Qty */}
+      <div style={{ display:'flex',alignItems:'center',gap:4,flexShrink:0 }}>
+        <button onClick={()=>onQtyChange(bp.bpId,bp.quantity-1)} disabled={bp.quantity<=1} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:bp.quantity>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',opacity:bp.quantity<=1?0.4:1 }}><Minus size={9}/></button>
+        <span style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-gold)',minWidth:20,textAlign:'center' }}>{bp.quantity}</span>
+        <button onClick={()=>onQtyChange(bp.bpId,bp.quantity+1)} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Plus size={9}/></button>
+      </div>
+      <button onClick={()=>onRemove(bp.bpId)} style={{ width:24,height:24,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><X size={11}/></button>
+    </div>
+  );
+}
+
 // ── Queue panel ───────────────────────────────────────────────────────────────
-function QueuePanel({ queue, onAtualizar }) {
+function QueuePanel({ queue, onAtualizar, shoppingList }) {
   function handleQtyChange(bpId, qty) {
     updateQueuedQty(bpId, qty);
     onAtualizar();
@@ -425,20 +553,8 @@ function QueuePanel({ queue, onAtualizar }) {
   return (
     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
       {queue.queuedBlueprints.map(bp => (
-        <div key={bp.bpId} style={{ display:'flex',alignItems:'center',gap:10,padding:'9px 12px',background:'var(--bg-card)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:7 }}>
-          <ShoppingCart size={14} style={{ color:'var(--accent-gold)',flexShrink:0 }}/>
-          <div style={{ flex:1,minWidth:0 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{bp.bpName}</div>
-            <div style={{ fontSize:10,color:'var(--text-muted)' }}>{bp.category} · {bp.ingredients?.length||0} materiais</div>
-          </div>
-          {/* Qty */}
-          <div style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
-            <button onClick={()=>handleQtyChange(bp.bpId,bp.quantity-1)} disabled={bp.quantity<=1} style={{ width:22,height:22,borderRadius:4,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:bp.quantity>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',opacity:bp.quantity<=1?0.4:1 }}><Minus size={10}/></button>
-            <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-gold)',minWidth:24,textAlign:'center' }}>{bp.quantity}</span>
-            <button onClick={()=>handleQtyChange(bp.bpId,bp.quantity+1)} style={{ width:22,height:22,borderRadius:4,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Plus size={10}/></button>
-          </div>
-          <button onClick={()=>handleRemove(bp.bpId)} style={{ width:26,height:26,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><X size={12}/></button>
-        </div>
+        <BpQueueCard key={bp.bpId} bp={bp} shoppingList={shoppingList} onQtyChange={handleQtyChange} onRemove={handleRemove}/>
+
       ))}
     </div>
   );
@@ -478,7 +594,14 @@ export default function MaterialTrackerPage() {
   const overallPct= totalMats > 0 ? Math.round((doneMats/totalMats)*100) : 0;
 
   function handleCollect(materialNome, amount) {
-    collectMaterial(materialNome, amount);
+    // Buscar a unit do material na shoppingList para normalização correta
+    const sl = shoppingList.find(s => s.material_name.toLowerCase() === materialNome.toLowerCase());
+    collectMaterial(materialNome, amount, sl?.unit || 'un');
+    refresh();
+  }
+  function handleUncollect(materialNome, amount) {
+    const sl = shoppingList.find(s => s.material_name.toLowerCase() === materialNome.toLowerCase());
+    uncollectMaterial(materialNome, amount, sl?.unit || 'un');
     refresh();
   }
   function handleReset(materialNome) {
@@ -511,7 +634,7 @@ export default function MaterialTrackerPage() {
           <div style={{ fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:7 }}>
             <ShoppingCart size={12}/> Fila de Craft ({queue.queuedBlueprints.length})
           </div>
-          <QueuePanel queue={queue} onAtualizar={refresh}/>
+          <QueuePanel queue={queue} onAtualizar={refresh} shoppingList={shoppingList}/>
 
           {/* Overall progress */}
           {totalMats > 0 && (
@@ -549,6 +672,9 @@ export default function MaterialTrackerPage() {
         <div style={{ overflowY:'auto',padding:'14px 18px' }}>
           {/* Vault match banner */}
           <VaultMatchBanner shoppingList={shoppingList}/>
+
+          {/* Formulário adição manual */}
+          <AddManualMaterialForm onAdd={(name,qty,unit,qmin)=>{addManualMaterial(name,qty,unit,qmin);refresh();}}/>
 
           {/* Controls */}
           <div style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
@@ -593,10 +719,13 @@ export default function MaterialTrackerPage() {
                   key={item.material_name}
                   item={item}
                   onCollect={handleCollect}
+                  onUncollect={handleUncollect}
                   onReset={handleReset}
                   expanded={expandedMat===item.material_name}
                   onToggleExpandir={()=>setExpandiredMat(expandedMat===item.material_name?null:item.material_name)}
-                  onUseFromVault={(matName, qty) => { collectMaterial(matName, qty); refresh(); }}
+                  onUseFromVault={(matName, qty) => { collectMaterial(matName, qty, item.unit); refresh(); }}
+                  isManual={item.is_manual}
+                  onRemoveManual={item.is_manual ? (name)=>{removeManualMaterial(name);refresh();} : undefined}
                 />
               ))}
             </div>

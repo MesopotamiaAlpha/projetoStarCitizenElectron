@@ -1140,37 +1140,71 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
 }
 
 // ── Modal de reaproveitar missão ──────────────────────────────────────────────
-function ReuseModal({ missions, onSelect, onClose }) {
+function ReuseModal({ missions, onSelect, onDelete, onClose }) {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
-
-  const filtered = useMemo(() => {
-    return missions
-      .filter(m => {
-        const matchSearch = !search.trim() || m.title.toLowerCase().includes(search.toLowerCase()) || m.faction?.toLowerCase().includes(search.toLowerCase()) || m.type?.toLowerCase().includes(search.toLowerCase());
-        const matchType   = filterType==='all' || m.type===filterType;
-        return matchSearch && matchType;
-      })
-      .slice(0, 30);
-  }, [missions, search, filterType]);
+  const [expandedKey, setExpandedKey] = useState(null);
+  const [delConf, setDelConf] = useState(null); // id da missão aguardando confirmação de delete
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
   const SS = {...IS,appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center',paddingRight:26};
 
+  // Agrupar missões por título+tipo+facção — a "chave" do template
+  // Dentro de cada grupo, listar variantes com recompensas/locais distintos
+  const groups = useMemo(() => {
+    const map = {};
+    missions.forEach(m => {
+      const key = `${m.title?.trim().toLowerCase()}||${m.type}||${m.faction}`;
+      if (!map[key]) {
+        map[key] = {
+          key,
+          title: m.title,
+          type: m.type,
+          faction: m.faction,
+          system: m.system,
+          difficulty: m.difficulty,
+          count: 0,
+          variants: [],    // missões com dados distintos (recompensa ou local diferente)
+          best: m,         // representante com maior recompensa
+        };
+      }
+      map[key].count++;
+      // Registrar como variante se recompensa ou local for diferente das existentes
+      const alreadyHas = map[key].variants.some(v =>
+        v.reward === m.reward && v.location === m.location
+      );
+      if (!alreadyHas) map[key].variants.push(m);
+      // Manter o representante com maior recompensa
+      if ((m.reward || 0) > (map[key].best.reward || 0)) map[key].best = m;
+    });
+    return Object.values(map).sort((a,b) => b.count - a.count);
+  }, [missions]);
+
+  const filtered = useMemo(() => {
+    return groups.filter(g => {
+      const matchSearch = !search.trim() ||
+        g.title?.toLowerCase().includes(search.toLowerCase()) ||
+        g.faction?.toLowerCase().includes(search.toLowerCase()) ||
+        g.type?.toLowerCase().includes(search.toLowerCase());
+      const matchType = filterType === 'all' || g.type === filterType;
+      return matchSearch && matchType;
+    });
+  }, [groups, search, filterType]);
+
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
-      <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:12,padding:20,width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:12,padding:20,width:'100%',maxWidth:580,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
 
         {/* Header */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <RefreshCw size={15} style={{color:'var(--accent-primary)'}}/>
             <span style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>REAPROVEITAR MISSÃO</span>
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)'}}><X size={15}/></button>
         </div>
-        <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:14}}>
-          Selecione uma missão anterior para usar como base. Você poderá editar tudo antes de salvar.
+        <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>
+          Missões agrupadas por título · tipo · facção. Clique para usar o template ou expanda para ver variantes com recompensas diferentes.
         </div>
 
         {/* Filtros */}
@@ -1184,36 +1218,140 @@ function ReuseModal({ missions, onSelect, onClose }) {
             {MISSION_TYPES.map(t=><option key={t}>{t}</option>)}
           </select>
         </div>
+        <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,fontFamily:'Share Tech Mono,monospace'}}>
+          {filtered.length} template{filtered.length!==1?'s':''} únicos de {missions.length} missões
+        </div>
 
-        {/* Lista */}
+        {/* Lista agrupada */}
         <div style={{overflowY:'auto',flex:1}}>
           {filtered.length === 0 ? (
             <div style={{textAlign:'center',padding:'30px 0',color:'var(--text-muted)',fontSize:12}}>Nenhuma missão encontrada</div>
           ) : (
-            filtered.map(m => {
-              const Icon = TYPE_ICONS[m.type] || Crosshair;
+            filtered.map(g => {
+              const Icon = TYPE_ICONS[g.type] || Crosshair;
+              const isExpanded = expandedKey === g.key;
+              const hasVariants = g.variants.length > 1;
+
               return (
-                <button key={m.id} onClick={()=>onSelect(m)} style={{
-                  width:'100%',textAlign:'left',padding:'10px 12px',marginBottom:5,
-                  background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,
-                  cursor:'pointer',transition:'all 0.15s',display:'block',
-                }}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(0,212,255,0.4)';e.currentTarget.style.background='rgba(0,212,255,0.06)';}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.background='var(--bg-panel)';}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                    <Icon size={13} style={{color:DIFF_COLORS[m.difficulty]||'var(--text-muted)',flexShrink:0}}/>
-                    <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.title}</span>
-                    {m.reward>0&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0}}>{ptMoney(m.reward)} aUEC</span>}
+                <div key={g.key} style={{marginBottom:5}}>
+                  {/* Card principal do grupo */}
+                  <div style={{
+                    background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,
+                    overflow:'hidden',transition:'border-color 0.15s',
+                  }}>
+                    <div style={{display:'flex',alignItems:'center',gap:0}}>
+                      {/* Botão principal — usa o representante (maior recompensa) */}
+                      <button onClick={()=>onSelect(g.best)} style={{
+                        flex:1,textAlign:'left',padding:'10px 12px',background:'none',border:'none',
+                        cursor:'pointer',display:'block',
+                      }}
+                      onMouseEnter={e=>e.currentTarget.closest('div[style]').style.borderColor='rgba(0,212,255,0.4)'}
+                      onMouseLeave={e=>e.currentTarget.closest('div[style]').style.borderColor='var(--border-subtle)'}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                          <Icon size={13} style={{color:DIFF_COLORS[g.difficulty]||'var(--text-muted)',flexShrink:0}}/>
+                          <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</span>
+                          {/* Contador de vezes feita */}
+                          <span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.2)',color:'var(--accent-primary)',fontWeight:700,flexShrink:0}}>
+                            ×{g.count}
+                          </span>
+                          {g.best.reward>0&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0}}>{ptMoney(g.best.reward)} aUEC</span>}
+                        </div>
+                        <div style={{display:'flex',gap:8,fontSize:10,color:'var(--text-muted)',paddingLeft:21,flexWrap:'wrap'}}>
+                          <span>{g.type}</span>
+                          {g.faction&&<span>· {g.faction}</span>}
+                          {g.system&&<span>· {g.system}</span>}
+                          {g.best.location&&<span>· {g.best.location}</span>}
+                          <span style={{color:DIFF_COLORS[g.difficulty]||'var(--text-muted)'}}>· {g.difficulty}</span>
+                        </div>
+                      </button>
+
+                      {/* Botão expandir variantes (só se tiver mais de uma) */}
+                      {hasVariants && (
+                        <button
+                          onClick={()=>setExpandedKey(isExpanded ? null : g.key)}
+                          title={`${g.variants.length} variantes com recompensas/locais diferentes`}
+                          style={{padding:'10px 12px',background:'none',border:'none',borderLeft:'1px solid var(--border-subtle)',cursor:'pointer',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,flexShrink:0,fontSize:10,fontFamily:'Rajdhani,sans-serif',fontWeight:700}}>
+                          <span style={{fontSize:9,color:'var(--accent-gold)'}}>{g.variants.length} var.</span>
+                          {isExpanded ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                        </button>
+                      )}
+                      {/* Botão deletar grupo inteiro */}
+                      <div style={{borderLeft:'1px solid var(--border-subtle)',padding:'0 8px',display:'flex',alignItems:'center'}}>
+                        {delConf === g.key ? (
+                          <div style={{display:'flex',flexDirection:'column',gap:3,padding:'4px 0'}}>
+                            <div style={{fontSize:9,color:'var(--accent-red)',fontWeight:700,whiteSpace:'nowrap'}}>Apagar {g.count} registro{g.count!==1?'s':''}?</div>
+                            <div style={{display:'flex',gap:3}}>
+                              <button onClick={e=>{e.stopPropagation();
+                                // Coletar todos os ids deste grupo e deletar
+                                const idsNoGrupo = missions
+                                  .filter(m => `${m.title?.trim().toLowerCase()}||${m.type}||${m.faction}` === g.key)
+                                  .map(m => m.id);
+                                idsNoGrupo.forEach(id => onDelete(id));
+                                setDelConf(null);
+                              }} style={{padding:'2px 6px',background:'rgba(255,68,102,0.2)',border:'1px solid rgba(255,68,102,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif'}}>
+                                Sim
+                              </button>
+                              <button onClick={e=>{e.stopPropagation();setDelConf(null);}} style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>
+                                Não
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={e=>{e.stopPropagation();setDelConf(g.key);}} title="Apagar todas as missões deste grupo"
+                            style={{width:26,height:26,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            <Trash2 size={10}/>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Variantes expandidas */}
+                    {isExpanded && hasVariants && (
+                      <div style={{borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.12)',padding:'6px 8px',display:'flex',flexDirection:'column',gap:4}}>
+                        <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',paddingLeft:4,marginBottom:2}}>
+                          Variantes com dados diferentes — clique para usar:
+                        </div>
+                        {g.variants.map((v,i) => (
+                          <div key={v.id} style={{display:'flex',alignItems:'center',gap:5}}>
+                            <button onClick={()=>onSelect(v)} style={{
+                              flex:1,textAlign:'left',padding:'7px 10px',background:'var(--bg-base)',
+                              border:'1px solid var(--border-subtle)',borderRadius:6,cursor:'pointer',
+                              display:'flex',alignItems:'center',gap:8,
+                            }}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(0,229,160,0.4)';e.currentTarget.style.background='rgba(0,229,160,0.06)';}}
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.background='var(--bg-base)';}}>
+                              <span style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',flexShrink:0}}>#{i+1}</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                {v.location && <span style={{fontSize:11,color:'var(--text-secondary)'}}>📍 {v.location}</span>}
+                                {v.notes && <span style={{fontSize:10,color:'var(--text-muted)',marginLeft:8,fontStyle:'italic'}}>{v.notes.slice(0,40)}{v.notes.length>40?'...':''}</span>}
+                              </div>
+                              {v.reward>0 && (
+                                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0,fontWeight:700}}>
+                                  {ptMoney(v.reward)} aUEC
+                                </span>
+                              )}
+                              <span style={{fontSize:9,color:'var(--text-muted)',flexShrink:0}}>{ptShortData(v.created_at?.slice(0,10)||'')}</span>
+                            </button>
+                            {/* Deletar esta variante específica */}
+                            {delConf === v.id ? (
+                              <div style={{display:'flex',gap:3,flexShrink:0}}>
+                                <button onClick={e=>{e.stopPropagation();onDelete(v.id);setDelConf(null);}}
+                                  style={{padding:'2px 6px',background:'rgba(255,68,102,0.2)',border:'1px solid rgba(255,68,102,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
+                                <button onClick={e=>{e.stopPropagation();setDelConf(null);}}
+                                  style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>Não</button>
+                              </div>
+                            ) : (
+                              <button onClick={e=>{e.stopPropagation();setDelConf(v.id);}} title="Apagar esta variante"
+                                style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                <Trash2 size={9}/>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div style={{display:'flex',gap:8,fontSize:10,color:'var(--text-muted)',paddingLeft:21,flexWrap:'wrap'}}>
-                    <span>{m.type}</span>
-                    {m.faction&&<span>· {m.faction}</span>}
-                    {m.system&&<span>· {m.system}</span>}
-                    {m.location&&<span>· {m.location}</span>}
-                    <span style={{color:DIFF_COLORS[m.difficulty]||'var(--text-muted)'}}>· {m.difficulty}</span>
-                    <span style={{color:'var(--text-muted)',marginLeft:'auto'}}>{ptShortData(m.created_at?.slice(0,10)||'')}</span>
-                  </div>
-                </button>
+                </div>
               );
             })
           )}
@@ -1286,7 +1424,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   return (
     <div>
       {showReuse && (
-        <ReuseModal missions={missions} onSelect={handleReuse} onClose={()=>setShowReuse(false)}/>
+        <ReuseModal missions={missions} onSelect={handleReuse} onDelete={onDelete} onClose={()=>setShowReuse(false)}/>
       )}
       {(showForm||editM)&&(
         <MissionForm initial={editM} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditM(null);}} objLibrary={objLibrary}/>

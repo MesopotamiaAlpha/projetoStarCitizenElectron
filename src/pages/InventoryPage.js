@@ -2,10 +2,131 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
-  BarChart3, Filter, RefreshCw
+  BarChart3, Filter, RefreshCw, Coins, Minus, Star
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { setProvenance, SOURCES } from '../data/provenance';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Script Items — conversão especial
+// ─────────────────────────────────────────────────────────────────────────────
+const SCRIPT_ITEMS = ['Mg Script', 'Concuil Script'];
+const SCRIPT_RATIO = 50; // 50 scripts = 1 Wikelo Favor
+const WIKELO_COLOR = '#a29bfe';
+
+function isScriptItem(name) {
+  if (!name) return false;
+  return SCRIPT_ITEMS.some(s => name.trim().toLowerCase() === s.toLowerCase());
+}
+
+// Painel de ajuste de quantidade para Script Items
+function ScriptPanel({ item, onUpdate }) {
+  const [adding, setAdding]     = useState('');
+  const [removing, setRemoving] = useState('');
+
+  const qty     = item.quantity || 0;
+  const favors  = Math.floor(qty / SCRIPT_RATIO);
+  const resto   = qty % SCRIPT_RATIO;
+  const faltam  = resto > 0 ? SCRIPT_RATIO - resto : 0;
+
+  function handleAdd() {
+    const n = parseInt(adding, 10);
+    if (!n || n <= 0) return;
+    onUpdate(item.id, qty + n);
+    setAdding('');
+  }
+  function handleRemove() {
+    const n = parseInt(removing, 10);
+    if (!n || n <= 0) return;
+    const next = Math.max(0, qty - n);
+    onUpdate(item.id, next);
+    setRemoving('');
+  }
+
+  const IS = { width:70, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12, outline:'none', textAlign:'center' };
+
+  return (
+    <div style={{ gridColumn:'1/-1', marginTop:4, padding:'12px 14px', background:`rgba(162,155,254,0.06)`, border:`1px solid rgba(162,155,254,0.25)`, borderRadius:8 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:12 }}>
+        <Star size={13} style={{ color:WIKELO_COLOR }}/>
+        <span style={{ fontFamily:'Orbitron,monospace', fontSize:11, fontWeight:700, color:WIKELO_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+          Conversor Wikelo Favor
+        </span>
+        <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:4 }}>· {SCRIPT_RATIO} {item.name} = 1 Wikelo Favor</span>
+      </div>
+
+      {/* Contadores */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:12 }}>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Scripts totais</div>
+        </div>
+        <div style={{ textAlign:'center', padding:'8px', background:`rgba(162,155,254,0.08)`, border:`1px solid rgba(162,155,254,0.3)`, borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:WIKELO_COLOR, lineHeight:1 }}>{favors}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Wikelo Favors</div>
+        </div>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color: resto > 0 ? 'var(--accent-gold)' : 'var(--accent-green)', lineHeight:1 }}>{resto}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Resto (sobra)</div>
+        </div>
+      </div>
+
+      {/* Barra de progresso para o próximo favor */}
+      {resto > 0 && (
+        <div style={{ marginBottom:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'var(--text-muted)', marginBottom:4 }}>
+            <span>Progresso para o próximo Wikelo Favor</span>
+            <span style={{ color:'var(--accent-gold)', fontFamily:'Share Tech Mono,monospace' }}>{resto}/{SCRIPT_RATIO} · faltam {faltam}</span>
+          </div>
+          <div style={{ height:6, background:'rgba(255,255,255,0.06)', borderRadius:3, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${(resto/SCRIPT_RATIO)*100}%`, background:WIKELO_COLOR, borderRadius:3, transition:'width 0.4s ease', boxShadow:`0 0 8px ${WIKELO_COLOR}88` }}/>
+          </div>
+        </div>
+      )}
+      {resto === 0 && qty > 0 && (
+        <div style={{ marginBottom:12, padding:'5px 10px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:5, fontSize:11, color:'var(--accent-green)', textAlign:'center' }}>
+          ✓ Quantidade exata — sem scripts sobrando!
+        </div>
+      )}
+
+      {/* Controles de soma/subtração */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+        {/* Adicionar */}
+        <div style={{ padding:'10px', background:'rgba(0,229,160,0.04)', border:'1px solid rgba(0,229,160,0.15)', borderRadius:7 }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-green)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>+ Adicionar Scripts</div>
+          <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
+            <input style={IS} type="number" min="1" placeholder="Qtd" value={adding} onChange={e=>setAdding(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdd()}/>
+            <button onClick={handleAdd} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:5, color:'var(--accent-green)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+              <Plus size={11}/> Somar
+            </button>
+          </div>
+          {/* Atalhos rápidos */}
+          <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+            {[10, 25, 50, 100].map(n => (
+              <button key={n} onClick={()=>onUpdate(item.id, qty+n)} style={{ padding:'2px 7px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.15)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace' }}>+{n}</button>
+            ))}
+          </div>
+        </div>
+        {/* Remover */}
+        <div style={{ padding:'10px', background:'rgba(255,68,102,0.04)', border:'1px solid rgba(255,68,102,0.15)', borderRadius:7 }}>
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-red)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>− Remover Scripts</div>
+          <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
+            <input style={IS} type="number" min="1" placeholder="Qtd" value={removing} onChange={e=>setRemoving(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleRemove()}/>
+            <button onClick={handleRemove} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(255,68,102,0.1)', border:'1px solid rgba(255,68,102,0.3)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+              <Minus size={11}/> Subtrair
+            </button>
+          </div>
+          <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+            {[10, 25, 50, 100].map(n => (
+              <button key={n} onClick={()=>onUpdate(item.id, Math.max(0,qty-n))} disabled={qty<n} style={{ padding:'2px 7px', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.15)', borderRadius:4, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace', opacity:qty<n?0.4:1 }}>-{n}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reference data
@@ -344,32 +465,177 @@ function ItemForm({ initial, onSave, onCancelar }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ItemCard — card visual com modal de detalhes
+// ─────────────────────────────────────────────────────────────────────────────
+function ItemCard({ item, onEdit, onDelete, onScriptUpdate }) {
+  const [showDetail, setShowDetail] = useState(false);
+  const [delConf,    setDelConf]    = useState(false);
+  const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
+  const sysColor = SYSTEM_COLORS[item.system]     || 'var(--accent-primary)';
+  const isScript = isScriptItem(item.name);
+  const favors   = isScript ? Math.floor((item.quantity||0) / SCRIPT_RATIO) : 0;
+  const resto    = isScript ? (item.quantity||0) % SCRIPT_RATIO : 0;
+  const totalVal = (item.value_auec||0) * (item.quantity||1);
+
+  return (
+    <>
+      {/* Card */}
+      <div onClick={()=>setShowDetail(true)} style={{
+        background:'var(--bg-card)',
+        border:`1px solid ${item.is_contraband?'rgba(231,76,60,0.35)':isScript?'rgba(162,155,254,0.3)':'var(--border-subtle)'}`,
+        borderTop:`3px solid ${item.is_contraband?'#e74c3c':isScript?WIKELO_COLOR:catColor}`,
+        borderRadius:8, padding:'12px 13px', cursor:'pointer',
+        transition:'all 0.18s', display:'flex', flexDirection:'column', gap:8,
+        minHeight:110,
+      }}
+      onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 6px 20px rgba(0,0,0,0.3), 0 0 0 1px ${isScript?WIKELO_COLOR:catColor}44`;}}
+      onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
+
+        {/* Linha 1: nome + badges */}
+        <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+          <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
+          {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
+          {isScript && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700,flexShrink:0}}>★ WIKELO</span>}
+        </div>
+
+        {/* Linha 2: categoria + sistema */}
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:catColor,flexShrink:0}}/>
+          <span style={{fontSize:10,color:catColor,fontWeight:600}}>{item.category}</span>
+          {item.subcategory && <span style={{fontSize:10,color:'var(--text-muted)'}}>· {item.subcategory}</span>}
+        </div>
+
+        {/* Linha 3: localização */}
+        <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'var(--text-muted)'}}>
+          <MapPin size={9} style={{color:sysColor,flexShrink:0}}/>
+          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.location_name}</span>
+          {item.container && <span style={{color:'var(--text-muted)',flexShrink:0}}>[{item.container}]</span>}
+        </div>
+
+        {/* Linha 4: qty + valor */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto'}}>
+          <div>
+            {isScript ? (
+              <div>
+                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:WIKELO_COLOR,fontWeight:700}}>{item.quantity} un</span>
+                <div style={{fontSize:10,color:WIKELO_COLOR,opacity:0.8}}>{favors} favor{favors!==1?'s':''}{resto>0?` +${resto}`:''}</div>
+              </div>
+            ) : (
+              <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:item.quantity>1?'var(--accent-primary)':'var(--text-secondary)',fontWeight:600}}>{item.quantity} {item.unit}</span>
+            )}
+          </div>
+          {totalVal > 0 && <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)'}}>{totalVal.toLocaleString('pt-BR')} aUEC</span>}
+        </div>
+      </div>
+
+      {/* Modal de detalhes */}
+      {showDetail && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}} onClick={()=>setShowDetail(false)}>
+          <div style={{background:'var(--bg-card)',border:`1px solid ${isScript?'rgba(162,155,254,0.4)':catColor+'44'}`,borderRadius:12,padding:22,width:'100%',maxWidth:580,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
+
+            {/* Header modal */}
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}>
+                  <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:17,fontWeight:700,color:'var(--text-primary)'}}>{item.name}</span>
+                  {item.is_contraband && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700}}>⚠ CONTRABAND</span>}
+                  {isScript && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700}}>★ WIKELO FAVOR</span>}
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                  <div style={{width:8,height:8,borderRadius:'50%',background:catColor}}/>
+                  <span style={{fontSize:11,color:catColor,fontWeight:600}}>{item.category}{item.subcategory?` · ${item.subcategory}`:''}</span>
+                  <span style={{fontSize:11,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:3}}>
+                    <MapPin size={10} style={{color:sysColor}}/><span style={{color:sysColor,fontWeight:600}}>{item.system}</span> — {item.location_name}
+                    {item.container && <span style={{color:'var(--text-muted)'}}> [{item.container}]</span>}
+                  </span>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0}}>
+                <button onClick={()=>{onEdit(item);setShowDetail(false);}} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={13}/></button>
+                <button onClick={()=>setShowDetail(false)} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={13}/></button>
+              </div>
+            </div>
+
+            {/* Grid de atributos */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
+              {[
+                ['Quantidade', `${item.quantity} ${item.unit}`],
+                ['Valor Unit.', item.value_auec>0?`${item.value_auec.toLocaleString('pt-BR')} aUEC`:'—'],
+                ['Valor Total', totalVal>0?`${totalVal.toLocaleString('pt-BR')} aUEC`:'—'],
+                ['Fabricante', item.manufacturer||'—'],
+                ['Condição', item.condition||'—'],
+                ['Tamanho', item.size||'—'],
+                ['Grade', item.grade||'—'],
+                ['Sistema', item.system],
+                ['Registrado', item.created_at?new Date(item.created_at).toLocaleDateString('pt-BR'):'—'],
+              ].map(([k,v])=>(
+                <div key={k} style={{padding:'8px 10px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
+                  <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>{k}</div>
+                  <div style={{fontSize:12,color:'var(--text-secondary)',fontFamily:k==='Quantidade'||k.includes('Valor')||k==='Registrado'?'Share Tech Mono,monospace':'inherit'}}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {item.notes && (
+              <div style={{marginBottom:14,padding:'8px 12px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
+                <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Observações</div>
+                <div style={{fontSize:12,color:'var(--text-secondary)',lineHeight:1.6}}>{item.notes}</div>
+              </div>
+            )}
+
+            {/* ScriptPanel dentro do modal */}
+            {isScript && (
+              <div style={{marginBottom:14}}>
+                <ScriptPanel item={item} onUpdate={(id,qty)=>{onScriptUpdate(id,qty);}}/>
+              </div>
+            )}
+
+            {/* Deletar */}
+            <div style={{display:'flex',justifyContent:'flex-end',gap:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
+              {delConf ? (
+                <>
+                  <span style={{fontSize:12,color:'var(--accent-red)',alignSelf:'center'}}>Confirmar exclusão?</span>
+                  <button onClick={()=>{onDelete(item.id);setShowDetail(false);}} style={{padding:'6px 14px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif'}}>Sim, Apagar</button>
+                  <button onClick={()=>setDelConf(false)} style={{padding:'6px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11}}>Cancelar</button>
+                </>
+              ) : (
+                <button onClick={()=>setDelConf(true)} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 14px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+                  <Trash2 size={11}/> Apagar Item
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
+// Navegação: Sistema → Local → Cards
 export default function InventoryPage() {
-  const [itens,       setItens]       = useState([]);
-  const [stats,       setStats]       = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [showForm,    setShowForm]    = useState(false);
-  const [editItem,    setEditItem]    = useState(null);
-  const [search,      setSearch]      = useState('');
-  const [filterSys,   setFilterSys]   = useState('all');
-  const [filterCat,   setFilterCat]   = useState('all');
-  const [filterCon,   setFilterCon]   = useState('all');
-  const [sortBy,      setOrdenarBy]      = useState('name');
-  const [groupBy,     setGroupBy]     = useState('none');
-  const [deleteConfirm,setDeleteConfirm] = useState(null);
-  const [expandedRows, setExpandRows] = useState(new Set());
+  const [itens,        setItens]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [showForm,     setShowForm]     = useState(false);
+  const [editItem,     setEditItem]     = useState(null);
+  const [search,       setSearch]       = useState('');
+  // Navegação hierárquica
+  const [selSystem,    setSelSystem]    = useState(null); // null = tela de sistemas
+  const [selLocation,  setSelLocation]  = useState(null); // null = tela de locais do sistema
+  const [filterCat,    setFilterCat]    = useState('all');
+  const [sortBy,       setSortBy]       = useState('name');
+  const [viewMode,     setViewMode]     = useState('grid'); // grid | list
 
-  // Use electronAPI if available, else mock
   const invAPI = useMemo(() => {
     if (window.electronAPI) {
       return {
-        getAll:    () => window.electronAPI.inventoryGetAll(),
-        create:    (i) => window.electronAPI.inventoryCreate(i),
-        update:    (i) => window.electronAPI.inventoryUpdate(i),
-        delete:    (id) => window.electronAPI.inventoryDelete(id),
-        getStats:  () => window.electronAPI.inventoryGetStats(),
+        getAll:  () => window.electronAPI.inventoryGetAll(),
+        create:  (i) => window.electronAPI.inventoryCreate(i),
+        update:  (i) => window.electronAPI.inventoryUpdate(i),
+        delete:  (id) => window.electronAPI.inventoryDelete(id),
+        getStats:() => window.electronAPI.inventoryGetStats(),
       };
     }
     return getMockInvAPI();
@@ -378,9 +644,8 @@ export default function InventoryPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [all, st] = await Promise.all([invAPI.getAll(), invAPI.getStats()]);
+      const all = await invAPI.getAll();
       setItens(all);
-      setStats(st);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }, [invAPI]);
@@ -389,343 +654,317 @@ export default function InventoryPage() {
 
   async function handleSave(data) {
     if (data.id) await invAPI.update(data);
-    else {
-      await invAPI.create(data);
-      setProvenance('item', data.name, SOURCES.MANUAL);
-    }
+    else { await invAPI.create(data); setProvenance('item', data.name, SOURCES.MANUAL); }
     setShowForm(false); setEditItem(null);
     await loadData();
   }
-
-  async function handleDelete(id) {
-    await invAPI.delete(id);
-    setDeleteConfirm(null);
-    await loadData();
+  async function handleDelete(id) { await invAPI.delete(id); await loadData(); }
+  function handleScriptUpdate(id, newQty) {
+    setItens(prev => {
+      const KEY = 'sc_inventory_v1';
+      const s = JSON.parse(localStorage.getItem(KEY)||'{"itens":[],"nextId":1}');
+      const updated = prev.map(i => i.id===id ? {...i, quantity:newQty, updated_at:new Date().toISOString()} : i);
+      s.itens = updated;
+      localStorage.setItem(KEY, JSON.stringify(s));
+      return updated;
+    });
   }
 
-  // Filtered + sorted itens
-  const filtered = useMemo(() => {
+  // ── Derivados para navegação ──
+  // Sistemas que têm itens
+  const systemsWithItems = useMemo(() => {
+    const counts = {};
+    itens.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
+    return SYSTEMS.map(s => ({ name:s, count:counts[s]||0 }));
+  }, [itens]);
+
+  // Locais dentro do sistema selecionado que têm itens
+  const locationsInSystem = useMemo(() => {
+    if (!selSystem) return [];
+    const inSys = itens.filter(i => i.system === selSystem);
+    const map = {};
+    inSys.forEach(i => {
+      const loc = i.location_name || 'Desconhecido';
+      if (!map[loc]) map[loc] = { name:loc, count:0, categories:new Set(), totalValue:0 };
+      map[loc].count++;
+      map[loc].categories.add(i.category);
+      map[loc].totalValue += (i.value_auec||0)*(i.quantity||1);
+    });
+    return Object.values(map).sort((a,b) => b.count - a.count);
+  }, [itens, selSystem]);
+
+  // Itens filtrados para exibição
+  const displayItems = useMemo(() => {
     let res = [...itens];
-    if (search) {
+    if (selSystem)   res = res.filter(i => i.system === selSystem);
+    if (selLocation) res = res.filter(i => i.location_name === selLocation);
+    if (search.trim()) {
       const q = search.toLowerCase();
       res = res.filter(i =>
         i.name?.toLowerCase().includes(q) ||
         i.category?.toLowerCase().includes(q) ||
         i.location_name?.toLowerCase().includes(q) ||
-        i.notes?.toLowerCase().includes(q) ||
-        i.manufacturer?.toLowerCase().includes(q)
+        i.manufacturer?.toLowerCase().includes(q) ||
+        i.notes?.toLowerCase().includes(q)
       );
     }
-    if (filterSys !== 'all') res = res.filter(i => i.system === filterSys);
     if (filterCat !== 'all') res = res.filter(i => i.category === filterCat);
-    if (filterCon === 'contraband') res = res.filter(i => i.is_contraband);
-    if (filterCon === 'legal')      res = res.filter(i => !i.is_contraband);
-
     res.sort((a,b) => {
       switch(sortBy) {
         case 'value':    return (b.value_auec*b.quantity)-(a.value_auec*a.quantity);
-        case 'qty':      return b.quantity-a.quantity;
-        case 'location': return (a.location_name||'').localeCompare(b.location_name||'');
+        case 'qty':      return b.quantity - a.quantity;
         case 'category': return (a.category||'').localeCompare(b.category||'');
-        case 'system':   return (a.system||'').localeCompare(b.system||'');
         default:         return (a.name||'').localeCompare(b.name||'');
       }
     });
     return res;
-  }, [itens, search, filterSys, filterCat, filterCon, sortBy]);
+  }, [itens, selSystem, selLocation, search, filterCat, sortBy]);
 
-  // Grupo itens
-  const grouped = useMemo(() => {
-    if (groupBy === 'none') return [{ label: null, itens: filtered }];
-    const map = new Map();
-    for (const item of filtered) {
-      const key = groupBy === 'system'   ? item.system
-                : groupBy === 'category' ? item.category
-                : groupBy === 'location' ? `${item.system} — ${item.location_name}`
-                : 'Todos';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(item);
-    }
-    return [...map.entries()].map(([label, itens]) => ({ label, itens }))
-      .sort((a,b) => (a.label||'').localeCompare(b.label||''));
-  }, [filtered, groupBy]);
+  const totalValor     = itens.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
+  const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
+  const catList        = [...new Set(displayItems.map(i=>i.category))].sort();
 
-  const totalValor = filtered.reduce((a,i) => a+(i.value_auec||0)*(i.quantity||1), 0);
-
-  function toggleRow(id) {
-    setExpandRows(prev => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  }
-
-  const catList = [...new Set(itens.map(i=>i.category))].sort();
-  const sysList = SYSTEMS.filter(s => itens.some(i=>i.system===s));
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   if (loading) return (
-    <div style={{ display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)',fontSize:14 }}>
-      <RefreshCw size={20} style={{ marginRight:8, animation:'spin 1s linear infinite' }} /> Carregando inventário...
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)',fontSize:14}}>
+      <RefreshCw size={20} style={{marginRight:8,animation:'spin 1s linear infinite'}}/> Carregando inventário...
     </div>
   );
 
   return (
-    <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
+    <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
       {/* Header */}
       <div className="page-header">
         <div>
           <div className="page-title">INVENTÁRIO DE ITENS</div>
           <div className="page-subtitle">
-            {itens.length} item{itens.length!==1?'s':''} registrado{itens.length!==1?'s':''} · Valor total: {totalValor.toLocaleString('pt-BR')} aUEC
+            {itens.length} item{itens.length!==1?'s':''} · {totalValor.toLocaleString('pt-BR')} aUEC total
           </div>
         </div>
-        <div style={{ display:'flex',gap:10 }}>
-          <button onClick={loadData} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',cursor:'pointer',fontSize:12 }}>
-            <RefreshCw size={13}/>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
+            <Plus size={14}/> Novo Item
           </button>
-          {!showForm && !editItem && (
-            <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 20px',background:'rgba(0,212,255,0.1)',border:'1px solid var(--border-normal)',borderRadius:8,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',cursor:'pointer' }}>
-              <Plus size={16}/> Registrar Item
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Stats cards */}
-      {stats && !showForm && !editItem && (
-        <div style={{ padding:'12px 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',flexShrink:0 }}>
-          <div style={{ display:'flex',gap:12,overflowX:'auto',paddingBottom:4 }}>
-            {/* Total */}
-            <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 16px',minWidth:120,flexShrink:0 }}>
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:20,fontWeight:800,color:'var(--accent-primary)' }}>{stats.total}</div>
-              <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600 }}>Total Itens</div>
+      {/* Formulário */}
+      {(showForm||editItem) && (
+        <div style={{padding:'0 24px',overflow:'auto',maxHeight:'60vh',flexShrink:0}}>
+          <ItemForm initial={editItem||undefined} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
+        </div>
+      )}
+
+      {/* ── Breadcrumb de navegação ── */}
+      <div style={{padding:'8px 24px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
+        <button onClick={()=>{setSelSystem(null);setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selSystem?'pointer':'default',color:selSystem?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,padding:0}}>
+          🌌 Todos os Sistemas
+        </button>
+        {selSystem && (
+          <>
+            <span style={{color:'var(--text-muted)'}}>›</span>
+            <button onClick={()=>{setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selLocation?'pointer':'default',color:selLocation?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,padding:0,display:'flex',alignItems:'center',gap:4}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:SYSTEM_COLORS[selSystem],display:'inline-block'}}/>
+              {selSystem}
+            </button>
+          </>
+        )}
+        {selLocation && (
+          <>
+            <span style={{color:'var(--text-muted)'}}>›</span>
+            <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:4}}>
+              <MapPin size={10} style={{color:SYSTEM_COLORS[selSystem]}}/>{selLocation}
+            </span>
+          </>
+        )}
+        <span style={{marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)'}}>
+          {displayItems.length} item{displayItems.length!==1?'s':''}
+          {displayValor>0&&<span style={{color:'var(--accent-gold)',marginLeft:8}}>{displayValor.toLocaleString('pt-BR')} aUEC</span>}
+        </span>
+      </div>
+
+      {/* ── Conteúdo principal ── */}
+      <div className="page-body">
+
+        {/* NÍVEL 1 — Seleção de sistema */}
+        {!selSystem && !search.trim() && (
+          <div>
+            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
+              Selecione um Sistema Espacial
             </div>
-            {/* By system */}
-            {(stats.bySys||[]).map(({system,count})=>(
-              <div key={system} style={{ background:'var(--bg-card)',border:`1px solid ${SYSTEM_COLORS[system]||'var(--border-subtle)'}33`,borderRadius:8,padding:'10px 16px',minWidth:110,flexShrink:0 }}>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:20,fontWeight:800,color:SYSTEM_COLORS[system]||'var(--text-primary)' }}>{count}</div>
-                <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600 }}>{system}</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12,marginBottom:24}}>
+              {systemsWithItems.map(({name,count}) => {
+                const color = SYSTEM_COLORS[name] || 'var(--accent-primary)';
+                const inSys = itens.filter(i=>i.system===name);
+                const val   = inSys.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
+                const locs  = [...new Set(inSys.map(i=>i.location_name))].length;
+                return (
+                  <button key={name} onClick={()=>count>0&&setSelSystem(name)} disabled={count===0} style={{
+                    textAlign:'left',padding:'18px 16px',
+                    background: count>0?`linear-gradient(135deg, ${color}12, ${color}06)`:'rgba(255,255,255,0.02)',
+                    border:`1px solid ${count>0?color+'44':'var(--border-subtle)'}`,
+                    borderRadius:10,cursor:count>0?'pointer':'not-allowed',
+                    opacity:count===0?0.35:1,transition:'all 0.2s',
+                  }}
+                  onMouseEnter={e=>{if(count>0){e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow=`0 8px 25px ${color}22, 0 0 0 1px ${color}66`;}}}
+                  onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
+                    <div style={{width:12,height:12,borderRadius:'50%',background:color,boxShadow:`0 0 10px ${color}88`,marginBottom:10}}/>
+                    <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color,marginBottom:6,letterSpacing:'0.04em'}}>{name}</div>
+                    <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:3}}>{count}</div>
+                    <div style={{fontSize:10,color:'var(--text-muted)'}}>item{count!==1?'s':''} em {locs} local{locs!==1?'is':''}</div>
+                    {val>0&&<div style={{fontSize:10,color:'var(--accent-gold)',marginTop:4,fontFamily:'Share Tech Mono,monospace'}}>{val.toLocaleString('pt-BR')} aUEC</div>}
+                  </button>
+                );
+              })}
+              {/* Botão "Ver Tudo" */}
+              <button onClick={()=>{setSelSystem('__all');}} style={{
+                textAlign:'left',padding:'18px 16px',
+                background:'rgba(255,255,255,0.03)',
+                border:'1px dashed var(--border-normal)',
+                borderRadius:10,cursor:'pointer',transition:'all 0.2s',
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--accent-primary)';e.currentTarget.style.background='rgba(0,212,255,0.05)';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-normal)';e.currentTarget.style.background='rgba(255,255,255,0.03)';}}>
+                <BarChart3 size={16} style={{color:'var(--text-muted)',marginBottom:10}}/>
+                <div style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-muted)',marginBottom:6}}>VER TUDO</div>
+                <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:3}}>{itens.length}</div>
+                <div style={{fontSize:10,color:'var(--text-muted)'}}>todos os sistemas</div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* NÍVEL 2 — Locais dentro do sistema */}
+        {selSystem && selSystem!=='__all' && !selLocation && !search.trim() && (
+          <div>
+            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:SYSTEM_COLORS[selSystem]}}/>
+              Locais em {selSystem}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:10,marginBottom:20}}>
+              {locationsInSystem.map(({name,count,categories,totalValue}) => {
+                const sysColor = SYSTEM_COLORS[selSystem];
+                const cats = [...categories].slice(0,3);
+                return (
+                  <button key={name} onClick={()=>setSelLocation(name)} style={{
+                    textAlign:'left',padding:'14px 14px',
+                    background:'var(--bg-card)',border:`1px solid var(--border-subtle)`,borderLeft:`3px solid ${sysColor}`,
+                    borderRadius:8,cursor:'pointer',transition:'all 0.15s',
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=sysColor;e.currentTarget.style.background=`rgba(${sysColor==='#00d4ff'?'0,212,255':sysColor==='#ff8c00'?'255,140,0':sysColor==='#b44cff'?'180,76,255':sysColor==='#00e5a0'?'0,229,160':'255,196,54'},0.05)`;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.background='var(--bg-card)';}}>
+                    <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:5}}>
+                      <MapPin size={10} style={{color:sysColor,flexShrink:0}}/>
+                      <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span>
+                    </div>
+                    <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:16,fontWeight:800,color:sysColor,marginBottom:3}}>{count} <span style={{fontSize:11,color:'var(--text-muted)',fontFamily:'Rajdhani,sans-serif'}}>item{count!==1?'s':''}</span></div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:3,marginBottom:4}}>
+                      {cats.map(c=>(
+                        <span key={c} style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:`${CATEGORY_COLORS[c]||'#7a90b0'}18`,color:CATEGORY_COLORS[c]||'#7a90b0',border:`1px solid ${CATEGORY_COLORS[c]||'#7a90b0'}33`}}>{c}</span>
+                      ))}
+                      {categories.size>3&&<span style={{fontSize:8,color:'var(--text-muted)'}}>+{categories.size-3}</span>}
+                    </div>
+                    {totalValue>0&&<div style={{fontSize:10,color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace'}}>{totalValue.toLocaleString('pt-BR')} aUEC</div>}
+                  </button>
+                );
+              })}
+              {/* Ver todos os itens do sistema */}
+              <button onClick={()=>setSelLocation('__all_in_system')} style={{
+                textAlign:'left',padding:'14px 14px',background:'rgba(255,255,255,0.02)',
+                border:'1px dashed var(--border-normal)',borderRadius:8,cursor:'pointer',
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=SYSTEM_COLORS[selSystem];e.currentTarget.style.background='rgba(255,255,255,0.04)';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-normal)';e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
+                <Package size={14} style={{color:'var(--text-muted)',marginBottom:8}}/>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--text-muted)',fontFamily:'Orbitron,monospace',marginBottom:4}}>TODOS</div>
+                <div style={{fontSize:11,color:'var(--text-muted)'}}>Ver todos os {itens.filter(i=>i.system===selSystem).length} itens de {selSystem}</div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* NÍVEL 3 — Cards de itens */}
+        {(selLocation || selSystem==='__all' || search.trim()) && (
+          <div>
+            {/* Controles */}
+            <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
+              <div style={{position:'relative',flex:1,minWidth:160}}>
+                <Search size={11} style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none'}}/>
+                <input style={{width:'100%',padding:'6px 10px 6px 26px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                  placeholder="Buscar item..." value={search} onChange={e=>setSearch(e.target.value)}/>
               </div>
-            ))}
-            {/* Contrabando */}
-            {stats.contraband > 0 && (
-              <div style={{ background:'rgba(231,76,60,0.06)',border:'1px solid rgba(231,76,60,0.3)',borderRadius:8,padding:'10px 16px',minWidth:110,flexShrink:0 }}>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:20,fontWeight:800,color:'#e74c3c' }}>{stats.contraband}</div>
-                <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600 }}>⚠️ Contrabando</div>
+              <select style={SS} value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
+                <option value="all">Todas as categorias</option>
+                {catList.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+              <select style={SS} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+                <option value="name">Nome A-Z</option>
+                <option value="category">Categoria</option>
+                <option value="value">Maior valor</option>
+                <option value="qty">Maior quantidade</option>
+              </select>
+              {/* Toggle grid/lista */}
+              <div style={{display:'flex',gap:3}}>
+                <button onClick={()=>setViewMode('grid')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='grid'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='grid'?'rgba(0,212,255,0.1)':'transparent',color:viewMode==='grid'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <Box size={12}/>
+                </button>
+                <button onClick={()=>setViewMode('list')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='list'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='list'?'rgba(0,212,255,0.1)':'transparent',color:viewMode==='list'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <Filter size={12}/>
+                </button>
+              </div>
+            </div>
+
+            {displayItems.length === 0 ? (
+              <div style={{textAlign:'center',padding:'50px 0',color:'var(--text-muted)'}}>
+                <Package size={44} style={{display:'block',margin:'0 auto 12px',opacity:0.15}}/>
+                <div style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,marginBottom:8}}>NENHUM ITEM</div>
+                <div style={{fontSize:12}}>{search.trim()?'Nenhum item encontrado para a busca.':'Nenhum item registrado aqui ainda.'}</div>
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+                {displayItems.map(item=>(
+                  <ItemCard key={item.id} item={item}
+                    onEdit={i=>{setEditItem(i);setShowForm(false);}}
+                    onDelete={handleDelete}
+                    onScriptUpdate={handleScriptUpdate}/>
+                ))}
+              </div>
+            ) : (
+              /* Vista lista compacta */
+              <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                {displayItems.map(item=>{
+                  const catColor = CATEGORY_COLORS[item.category]||'var(--text-muted)';
+                  const isScript = isScriptItem(item.name);
+                  return (
+                    <ItemCard key={item.id} item={item}
+                      onEdit={i=>{setEditItem(i);setShowForm(false);}}
+                      onDelete={handleDelete}
+                      onScriptUpdate={handleScriptUpdate}/>
+                  );
+                })}
               </div>
             )}
-            {/* Valor */}
-            <div style={{ background:'var(--bg-card)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:8,padding:'10px 16px',minWidth:160,flexShrink:0,marginLeft:'auto' }}>
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:'var(--accent-gold)' }}>{(stats.totalValor||0).toLocaleString('pt-BR')}</div>
-              <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600 }}>Valor Total (aUEC)</div>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Form */}
-      {(showForm || editItem) && (
-        <div style={{ flexShrink:0,overflowY:'auto',maxHeight:'80vh',padding:'16px 32px' }}>
-          <ItemForm
-            initial={editItem}
-            onSave={handleSave}
-            onCancelar={()=>{ setShowForm(false); setEditItem(null); }}
-          />
-        </div>
-      )}
-
-      {/* Filters */}
-      {!showForm && !editItem && (
-        <div style={{ padding:'10px 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',flexShrink:0 }}>
-          <div style={{ display:'flex',gap:10,flexWrap:'wrap',alignItems:'center' }}>
-            {/* Search */}
-            <div style={{ position:'relative',flex:'1 1 220px',minWidth:180 }}>
-              <Search size={13} style={{ position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
-              <input className="search-input" style={{ paddingLeft:32,width:'100%' }}
-                placeholder="Buscar item, local, fabricante..."
-                value={search} onChange={e=>setSearch(e.target.value)}/>
+        {/* Busca global — mesmo sem sistema selecionado */}
+        {!selSystem && search.trim() && (
+          <div>
+            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
+              Resultados para "{search}"
             </div>
-            {/* Sistema filter */}
-            <select className="filter-select" value={filterSys} onChange={e=>setFilterSys(e.target.value)}>
-              <option value="all">Todos os Sistemas</option>
-              {SYSTEMS.map(s=><option key={s} value={s}>{s}</option>)}
-            </select>
-            {/* Categoria filter */}
-            <select className="filter-select" value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
-              <option value="all">Todas Categorias</option>
-              {catList.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-            {/* Contrabando filter */}
-            <select className="filter-select" value={filterCon} onChange={e=>setFilterCon(e.target.value)}>
-              <option value="all">Legal + Contrabando</option>
-              <option value="legal">Somente Legal</option>
-              <option value="contraband">⚠️ Somente Contrabando</option>
-            </select>
-            {/* Ordenar */}
-            <select className="filter-select" value={sortBy} onChange={e=>setOrdenarBy(e.target.value)}>
-              <option value="name">Nome (A-Z)</option>
-              <option value="value">Valor (maior)</option>
-              <option value="qty">Quantidade (maior)</option>
-              <option value="location">Localização</option>
-              <option value="category">Categoria</option>
-              <option value="system">Sistema</option>
-            </select>
-            {/* Grupo */}
-            <select className="filter-select" value={groupBy} onChange={e=>setGroupBy(e.target.value)}>
-              <option value="none">Sem Agrupamento</option>
-              <option value="system">Agrupar por Sistema</option>
-              <option value="category">Agrupar por Categoria</option>
-              <option value="location">Agrupar por Local</option>
-            </select>
-          </div>
-          <div className="results-info" style={{ marginTop:6 }}>
-            Exibindo <span>{filtered.length}</span> de {itens.length} itens
-            {totalValor>0 && <span style={{ marginLeft:12,color:'var(--accent-gold)' }}>≈ {totalValor.toLocaleString('pt-BR')} aUEC</span>}
-          </div>
-        </div>
-      )}
-
-      {/* Itens list */}
-      {!showForm && !editItem && (
-        <div className="page-body">
-          {filtered.length === 0 ? (
-            <div className="empty-state">
-              <Package size={64} className="empty-state-icon"/>
-              <div className="empty-state-title">INVENTÁRIO VAZIO</div>
-              <div className="empty-state-text">
-                {itens.length === 0
-                  ? 'Clique em "Registrar Item" para começar a rastrear seus itens no Universo.'
-                  : 'Nenhum item encontrado com os filtros atuais.'}
-              </div>
-              {itens.length === 0 && (
-                <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:8,padding:'12px 24px',background:'rgba(0,212,255,0.1)',border:'1px solid var(--border-normal)',borderRadius:8,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,cursor:'pointer',letterSpacing:'0.08em',textTransform:'uppercase',marginTop:8 }}>
-                  <Plus size={16}/> Registrar Primeiro Item
-                </button>
-              )}
-            </div>
-          ) : (
-            <div>
-              {grouped.map(({ label, itens: groupItens }) => (
-                <div key={label||'all'}>
-                  {label && (
-                    <div className="section-divider" style={{ marginBottom:12 }}>
-                      <span className="section-divider-label" style={{ color: SYSTEM_COLORS[label]||CATEGORY_COLORS[label]||'var(--text-secondary)', display:'flex',alignItems:'center',gap:8 }}>
-                        {label}
-                      </span>
-                      <div className="section-divider-line"/>
-                      <span className="section-divider-count">{groupItens.length} item{groupItens.length!==1?'s':''}</span>
-                    </div>
-                  )}
-
-                  <div style={{ display:'flex',flexDirection:'column',gap:6,marginBottom:label?20:0 }}>
-                    {groupItens.map(item => {
-                      const isExpandired = expandedRows.has(item.id);
-                      const catColor = CATEGORY_COLORS[item.category]||'var(--text-muted)';
-                      const sysColor = SYSTEM_COLORS[item.system]||'var(--accent-primary)';
-
-                      return (
-                        <div key={item.id} style={{
-                          background:'var(--bg-card)',
-                          border:`1px solid ${item.is_contraband?'rgba(231,76,60,0.25)':'var(--border-subtle)'}`,
-                          borderRadius:8,overflow:'hidden',transition:'all 0.2s',
-                        }}>
-                          {/* Main row */}
-                          <div style={{ display:'flex',alignItems:'center',gap:12,padding:'10px 14px',cursor:'pointer' }}
-                            onClick={()=>toggleRow(item.id)}
-                            onMouseEnter={e=>e.currentTarget.parentElement.style.borderColor=item.is_contraband?'rgba(231,76,60,0.5)':'var(--border-normal)'}
-                            onMouseLeave={e=>e.currentTarget.parentElement.style.borderColor=item.is_contraband?'rgba(231,76,60,0.25)':'var(--border-subtle)'}
-                          >
-                            {/* Categoria dot */}
-                            <div style={{ width:10,height:10,borderRadius:'50%',background:catColor,flexShrink:0,boxShadow:`0 0 6px ${catColor}66` }}/>
-
-                            {/* Nome + details */}
-                            <div style={{ flex:1,minWidth:0 }}>
-                              <div style={{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap' }}>
-                                <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{item.name}</span>
-                                {item.is_contraband ? <span style={{ fontSize:9,color:'#e74c3c',fontWeight:700,background:'rgba(231,76,60,0.1)',border:'1px solid rgba(231,76,60,0.3)',padding:'1px 5px',borderRadius:3,letterSpacing:'0.08em' }}>⚠️ CONTRABAND</span> : null}
-                                {item.size && <span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>S{item.size}</span>}
-                                {item.grade && <span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>Grade {item.grade}</span>}
-                              </div>
-                              <div style={{ display:'flex',gap:12,marginTop:3,flexWrap:'wrap',alignItems:'center' }}>
-                                <span style={{ fontSize:11,color:catColor,fontWeight:600 }}>{item.category}{item.subcategory?` · ${item.subcategory}`:''}</span>
-                                <span style={{ fontSize:11,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:3 }}>
-                                  <MapPin size={10} style={{ color:sysColor }}/>
-                                  <span style={{ color:sysColor,fontWeight:600 }}>{item.system}</span>
-                                  {' — '}{item.location_name}
-                                  {item.container && <span style={{ color:'var(--text-muted)' }}> [{item.container}]</span>}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Qty + value */}
-                            <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3,flexShrink:0 }}>
-                              <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:14,color:item.quantity>1?'var(--accent-primary)':'var(--text-secondary)',fontWeight:600 }}>
-                                {item.quantity} {item.unit}
-                              </span>
-                              {item.value_auec>0 && (
-                                <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)' }}>
-                                  {(item.value_auec*item.quantity).toLocaleString('pt-BR')} aUEC
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Actions */}
-                            <div style={{ display:'flex',gap:6,flexShrink:0 }} onClick={e=>e.stopPropagation()}>
-                              <button onClick={()=>setEditItem(item)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                                <Edit3 size={12}/>
-                              </button>
-                              {deleteConfirm===item.id ? (
-                                <div style={{ display:'flex',alignItems:'center',gap:5 }}>
-                                  <button onClick={()=>handleDelete(item.id)} style={{ padding:'4px 8px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
-                                  <button onClick={()=>setDeleteConfirm(null)} style={{ padding:'4px 8px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-secondary)',cursor:'pointer',fontSize:11 }}>Não</button>
-                                </div>
-                              ) : (
-                                <button onClick={()=>setDeleteConfirm(item.id)} style={{ width:28,height:28,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                                  <Trash2 size={12}/>
-                                </button>
-                              )}
-                              {isExpandired ? <ChevronUp size={14} style={{ color:'var(--text-muted)',alignSelf:'center' }}/> : <ChevronDown size={14} style={{ color:'var(--text-muted)',alignSelf:'center' }}/>}
-                            </div>
-                          </div>
-
-                          {/* Expandired details */}
-                          {isExpandired && (
-                            <div style={{ padding:'12px 36px 14px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.15)',display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12 }}>
-                              {[
-                                ['Fabricante', item.manufacturer||'—'],
-                                ['Condição',   item.condition||'—'],
-                                ['Tamanho',    item.size||'—'],
-                                ['Grade',      item.grade||'—'],
-                                ['Unidade',    `${item.quantity} ${item.unit}`],
-                                ['Valor unit.', item.value_auec>0 ? `${item.value_auec.toLocaleString('pt-BR')} aUEC` : '—'],
-                              ].map(([k,v])=>(
-                                <div key={k}>
-                                  <div style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:2 }}>{k}</div>
-                                  <div style={{ fontSize:13,color:'var(--text-secondary)' }}>{v}</div>
-                                </div>
-                              ))}
-                              {item.notes && (
-                                <div style={{ gridColumn:'1/-1' }}>
-                                  <div style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:2 }}>Observações</div>
-                                  <div style={{ fontSize:13,color:'var(--text-secondary)',lineHeight:1.6 }}>{item.notes}</div>
-                                </div>
-                              )}
-                              <div style={{ gridColumn:'1/-1',fontSize:10,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace' }}>
-                                Registrado em: {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '—'}
-                                {item.updated_at && item.updated_at!==item.created_at && ` · Atualizado: ${new Date(item.updated_at).toLocaleString('pt-BR')}`}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+              {displayItems.map(item=>(
+                <ItemCard key={item.id} item={item}
+                  onEdit={i=>{setEditItem(i);setShowForm(false);}}
+                  onDelete={handleDelete}
+                  onScriptUpdate={handleScriptUpdate}/>
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
