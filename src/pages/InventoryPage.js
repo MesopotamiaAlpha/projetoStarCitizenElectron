@@ -5,6 +5,7 @@ import {
   BarChart3, Filter, RefreshCw, Coins, Minus, Star
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
+import { searchUexItems, getUexItemByName, loadUexItemsDB } from '../data/uexItemsDB';
 import { setProvenance, SOURCES } from '../data/provenance';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +18,56 @@ const WIKELO_COLOR = '#a29bfe';
 function isScriptItem(name) {
   if (!name) return false;
   return SCRIPT_ITEMS.some(s => name.trim().toLowerCase() === s.toLowerCase());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAF Items — missão de satélites
+// ─────────────────────────────────────────────────────────────────────────────
+const PAF_COLOR = '#00d4ff';
+const PAF_ITEMS = {
+  'Cartão de Alinhamento':  { ratio:3,  unit:'cartões', yields:'satélite (alinhamento)',  icon:'📡', description:'3 conjuntos = 1 satélite alinhado' },
+  'Bateria PAF':            { ratio:3,  unit:'conjuntos',yields:'satélite (energia)',      icon:'🔋', description:'3 conjuntos = 1 satélite ligado' },
+  'Cartão de Ativação do Lazer': { ratio:1, unit:'cartão', yields:'lazer ativado',        icon:'🔫', description:'1 cartão = 1 lazer ativado' },
+};
+const PAF_ITEM_NAMES = Object.keys(PAF_ITEMS);
+
+function isPafItem(name) {
+  if (!name) return false;
+  return PAF_ITEM_NAMES.some(p => name.trim().toLowerCase() === p.toLowerCase());
+}
+
+// Calcular resumo PAF a partir de lista de itens do inventário
+export function calcPafSummary(inventoryItems) {
+  const itens = inventoryItems || [];
+  const get = (name) => {
+    const item = itens.find(i => i.name?.toLowerCase() === name.toLowerCase());
+    return item?.quantity || 0;
+  };
+  const alinhamento = get('Cartão de Alinhamento');
+  const bateria     = get('Bateria PAF');
+  const lazer       = get('Cartão de Ativação do Lazer');
+  const satsAlign   = Math.floor(alinhamento / 3);
+  const satsEnergy  = Math.floor(bateria     / 3);
+  const lazersReady = lazer;
+  // PAF completo = mínimo dos 3 recursos
+  const pafCompletos = Math.min(satsAlign, satsEnergy, lazersReady);
+  return {
+    alinhamento, bateria, lazer,
+    satsAlign, satsEnergy, lazersReady,
+    pafCompletos,
+    restoAlign:  alinhamento % 3,
+    restoBateria:bateria     % 3,
+  };
+}
+
+// Calcular Wikelo Favors totais de todos os scripts no inventário
+export function calcWikeloTotal(inventoryItems) {
+  const itens = inventoryItems || [];
+  let total = 0;
+  itens.forEach(i => {
+    if (isScriptItem(i.name)) total += Math.floor((i.quantity||0) / SCRIPT_RATIO);
+  });
+  return total;
 }
 
 // Painel de ajuste de quantidade para Script Items
@@ -235,6 +286,24 @@ const SYSTEM_COLORS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fuso horário Brasil (America/Sao_Paulo)
+function nowBrasil() {
+  return new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit',
+  });
+}
+function ptDateTimeBrasil(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit',
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Mock API helpers (browser fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 function getMockInvAPI() {
@@ -286,10 +355,66 @@ const emptyItem = () => ({
 });
 
 function ItemForm({ initial, onSave, onCancelar }) {
-  const [data, setData] = useState(initial || emptyItem());
-  const [error, setError] = useState('');
+  const [data, setData]       = useState(initial || emptyItem());
+  const [error, setError]     = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSugg, setShowSugg]       = useState(false);
+  const [importModal, setImportModal] = useState(null); // item UEX para importar
+  const uexDbInfo = useMemo(() => {
+    const db = loadUexItemsDB();
+    return db.itemCount > 0 ? `${db.itemCount.toLocaleString('pt-BR')} itens UEX disponíveis` : null;
+  }, []);
 
   const set = (k,v) => setData(p=>({...p,[k]:v}));
+
+  // Autocomplete: buscar sugestões ao digitar o nome
+  function handleNameChange(val) {
+    set('name', val);
+    if (val.trim().length >= 2) {
+      const suggs = searchUexItems(val, 8);
+      setSuggestions(suggs);
+      setShowSugg(suggs.length > 0);
+    } else {
+      setSuggestions([]);
+      setShowSugg(false);
+    }
+  }
+
+  // Ao escolher uma sugestão — abre modal de importação
+  function handleSelectSuggestion(uexItem) {
+    set('name', uexItem.name);
+    setShowSugg(false);
+    setSuggestions([]);
+    setImportModal(uexItem);
+  }
+
+  // Aplicar dados UEX ao form
+  function applyUexData(uexItem, fields) {
+    const updates = {};
+    if (fields.includes('category') && uexItem.category) {
+      // Tentar mapear categoria UEX para categoria local
+      const catMap = {
+        'armor': 'Armadura FPS', 'helmet': 'Armadura FPS', 'arms': 'Armadura FPS',
+        'legs': 'Armadura FPS', 'backpack': 'Armadura FPS', 'undersuit': 'Armadura FPS',
+        'pistol': 'Arma Pessoal', 'rifle': 'Arma Pessoal', 'shotgun': 'Arma Pessoal',
+        'smg': 'Arma Pessoal', 'sniper': 'Arma Pessoal',
+        'optics': 'Acessório de Arma', 'barrel': 'Acessório de Arma',
+        'shield': 'Componente de Nave', 'power plant': 'Componente de Nave',
+        'cooler': 'Componente de Nave', 'quantum': 'Componente de Nave',
+        'medical': 'Utilitário', 'multi-tool': 'Utilitário',
+        'food': 'Consumível', 'drink': 'Consumível',
+        'flair': 'Decoração / Flair', 'decal': 'Decoração / Flair',
+      };
+      const catLower = (uexItem.category||'').toLowerCase();
+      const mapped = Object.entries(catMap).find(([k]) => catLower.includes(k));
+      if (mapped) updates.category = mapped[1];
+    }
+    if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
+    if (fields.includes('manufacturer') && uexItem.company_name) updates.manufacturer = uexItem.company_name;
+    if (fields.includes('grade')        && uexItem.color)        updates.grade = uexItem.color;
+    setData(p => ({ ...p, ...updates }));
+    setImportModal(null);
+  }
 
   const locationTipos = data.system && LOCATIONS[data.system]
     ? Object.keys(LOCATIONS[data.system]) : [];
@@ -465,14 +590,93 @@ function ItemForm({ initial, onSave, onCancelar }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PafPanel — exibido no modal do item PAF
+// ─────────────────────────────────────────────────────────────────────────────
+function PafPanel({ item, allItems }) {
+  const pafInfo = PAF_ITEMS[item.name];
+  if (!pafInfo) return null;
+  const qty     = item.quantity || 0;
+  const yields  = Math.floor(qty / pafInfo.ratio);
+  const resto   = qty % pafInfo.ratio;
+  const faltam  = resto > 0 ? pafInfo.ratio - resto : 0;
+  const pct     = pafInfo.ratio > 1 ? (resto / pafInfo.ratio) * 100 : 100;
+  const summary = calcPafSummary(allItems);
+
+  return (
+    <div style={{ gridColumn:'1/-1', marginTop:4, padding:'13px 14px', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:8 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:12 }}>
+        <span style={{ fontSize:16 }}>{pafInfo.icon}</span>
+        <span style={{ fontFamily:'Orbitron,monospace', fontSize:11, fontWeight:700, color:PAF_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+          Missão PAF — {item.name}
+        </span>
+        <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:4 }}>· {pafInfo.description}</span>
+      </div>
+
+      {/* Contadores deste item */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:12 }}>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>{pafInfo.unit}</div>
+        </div>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:PAF_COLOR, lineHeight:1 }}>{yields}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>{pafInfo.yields}</div>
+        </div>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:resto>0?'var(--accent-gold)':'var(--accent-green)', lineHeight:1 }}>{resto}</div>
+          <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Sobra</div>
+        </div>
+      </div>
+
+      {/* Progress bar para o próximo */}
+      {pafInfo.ratio > 1 && (
+        <div style={{ marginBottom:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'var(--text-muted)', marginBottom:4 }}>
+            <span>Progresso para próximo {pafInfo.yields}</span>
+            {resto > 0
+              ? <span style={{ color:'var(--accent-gold)', fontFamily:'Share Tech Mono,monospace' }}>{resto}/{pafInfo.ratio} · faltam {faltam}</span>
+              : <span style={{ color:'var(--accent-green)' }}>✓ Quantidade exata!</span>
+            }
+          </div>
+          <div style={{ height:5, background:'rgba(255,255,255,0.06)', borderRadius:3, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${resto>0?pct:100}%`, background:PAF_COLOR, borderRadius:3, transition:'width 0.4s', boxShadow:`0 0 8px ${PAF_COLOR}88` }}/>
+          </div>
+        </div>
+      )}
+
+      {/* Resumo geral PAF com todos os itens */}
+      <div style={{ padding:'10px 12px', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:7 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:PAF_COLOR, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>📡 Capacidade Total de Missão PAF</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+          {[
+            { label:'Alinhamento', value:summary.satsAlign,   icon:'📡', color:'var(--accent-primary)', sub:`${summary.alinhamento} cartões` },
+            { label:'Energia',     value:summary.satsEnergy,  icon:'🔋', color:'var(--accent-gold)',    sub:`${summary.bateria} baterias` },
+            { label:'Lazers',      value:summary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${summary.lazer} cartões` },
+            { label:'PAF Completo',value:summary.pafCompletos,icon:'🛰',  color:'var(--accent-green)',  sub:'mínimo dos 3' },
+          ].map(({label,value,icon,color,sub})=>(
+            <div key={label} style={{ textAlign:'center', padding:'8px 4px', background:'rgba(255,255,255,0.03)', border:`1px solid ${color}22`, borderRadius:6 }}>
+              <div style={{ fontSize:16, marginBottom:3 }}>{icon}</div>
+              <div style={{ fontFamily:'Orbitron,monospace', fontSize:17, fontWeight:800, color, lineHeight:1, marginBottom:2 }}>{value}</div>
+              <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>{label}</div>
+              <div style={{ fontSize:9, color:'var(--text-muted)', fontStyle:'italic', marginTop:2 }}>{sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ItemCard — card visual com modal de detalhes
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onEdit, onDelete, onScriptUpdate }) {
+function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
   const [showDetail, setShowDetail] = useState(false);
   const [delConf,    setDelConf]    = useState(false);
   const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
   const sysColor = SYSTEM_COLORS[item.system]     || 'var(--accent-primary)';
   const isScript = isScriptItem(item.name);
+  const isPaf    = isPafItem(item.name);
   const favors   = isScript ? Math.floor((item.quantity||0) / SCRIPT_RATIO) : 0;
   const resto    = isScript ? (item.quantity||0) % SCRIPT_RATIO : 0;
   const totalVal = (item.value_auec||0) * (item.quantity||1);
@@ -496,6 +700,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate }) {
           <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {isScript && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700,flexShrink:0}}>★ WIKELO</span>}
+          {isPaf && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(0,212,255,0.15)',color:PAF_COLOR,border:'1px solid rgba(0,212,255,0.3)',fontWeight:700,flexShrink:0}}>📡 PAF</span>}
         </div>
 
         {/* Linha 2: categoria + sistema */}
@@ -587,6 +792,12 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate }) {
             {isScript && (
               <div style={{marginBottom:14}}>
                 <ScriptPanel item={item} onUpdate={(id,qty)=>{onScriptUpdate(id,qty);}}/>
+              </div>
+            )}
+            {/* PafPanel dentro do modal */}
+            {isPafItem(item.name) && (
+              <div style={{marginBottom:14}}>
+                <PafPanel item={item} allItems={allItems||[]}/>
               </div>
             )}
 
@@ -927,7 +1138,8 @@ export default function InventoryPage() {
                   <ItemCard key={item.id} item={item}
                     onEdit={i=>{setEditItem(i);setShowForm(false);}}
                     onDelete={handleDelete}
-                    onScriptUpdate={handleScriptUpdate}/>
+                    onScriptUpdate={handleScriptUpdate}
+                    allItems={itens}/>
                 ))}
               </div>
             ) : (
@@ -940,7 +1152,8 @@ export default function InventoryPage() {
                     <ItemCard key={item.id} item={item}
                       onEdit={i=>{setEditItem(i);setShowForm(false);}}
                       onDelete={handleDelete}
-                      onScriptUpdate={handleScriptUpdate}/>
+                      onScriptUpdate={handleScriptUpdate}
+                      allItems={itens}/>
                   );
                 })}
               </div>
@@ -959,7 +1172,8 @@ export default function InventoryPage() {
                 <ItemCard key={item.id} item={item}
                   onEdit={i=>{setEditItem(i);setShowForm(false);}}
                   onDelete={handleDelete}
-                  onScriptUpdate={handleScriptUpdate}/>
+                  onScriptUpdate={handleScriptUpdate}
+                  allItems={itens}/>
               ))}
             </div>
           </div>

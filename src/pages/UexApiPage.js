@@ -6,6 +6,7 @@ import {
   Download, Info , Star, Filter, Key, Eye, EyeOff, Save, Lock, X
 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from '../data/provenance';
+import { saveUexItemsDB, loadUexItemsDB } from '../data/uexItemsDB';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
@@ -805,6 +806,100 @@ function TerminaisTab() {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Botão de sync do banco de itens ──────────────────────────────────────────
+// Busca todos os itens da UEX por categoria e salva localmente
+// Só deve ser chamado pelo usuário nesta tela (não automático)
+function ItemDBSyncButton() {
+  const [syncing,  setSyncing]  = useState(false);
+  const [syncInfo, setSyncInfo] = useState(() => {
+    const db = loadUexItemsDB();
+    return db.updatedAt ? { count: db.itemCount, updatedAt: db.updatedAt } : null;
+  });
+  const [error, setError] = useState('');
+
+  // IDs de categoria a buscar (cobrindo tudo de items na UEX)
+  // Buscamos por seção: items inclui armor, weapons, components, etc.
+  async function handleSync() {
+    setSyncing(true); setError('');
+    try {
+      const allItems = [];
+      const seenIds  = new Set();
+
+      // Buscar categorias primeiro
+      const catRes = await uexFetch('categories');
+      if (!catRes || !Array.isArray(catRes)) throw new Error('Falha ao buscar categorias');
+
+      // Filtrar categorias de items (não commodities, não veículos)
+      // A API separa por section: 'items', 'components', 'weapons', 'armor', etc.
+      const itemCats = catRes.filter(c =>
+        c.section && !['commodities','vehicles','mining','refineries'].includes(c.section.toLowerCase())
+      );
+
+      setSyncInfo(prev => ({ ...prev, progress: `Buscando ${itemCats.length} categorias...` }));
+
+      // Buscar itens de cada categoria (em lotes para não sobrecarregar)
+      for (let i = 0; i < itemCats.length; i++) {
+        const cat = itemCats[i];
+        try {
+          const items = await uexFetch(`items?id_category=${cat.id}`);
+          if (items && Array.isArray(items)) {
+            items.forEach(item => {
+              if (!seenIds.has(item.id)) {
+                seenIds.add(item.id);
+                allItems.push({
+                  id:           item.id,
+                  name:         item.name,
+                  category:     item.category,
+                  section:      item.section,
+                  size:         item.size,
+                  company_name: item.company_name,
+                  quality:      item.quality,
+                  uuid:         item.uuid,
+                  wiki:         item.wiki,
+                  color:        item.color,
+                  is_commodity: item.is_commodity,
+                });
+              }
+            });
+          }
+        } catch { /* categoria pode não ter itens, pular */ }
+        // Pequena pausa para não sobrecarregar a API
+        if (i % 5 === 4) await new Promise(r => setTimeout(r, 300));
+      }
+
+      const db = saveUexItemsDB(allItems);
+      setSyncInfo({ count: db.itemCount, updatedAt: db.updatedAt, progress: null });
+    } catch (err) {
+      setError(`Erro: ${err.message}`);
+    }
+    setSyncing(false);
+  }
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
+
+  return (
+    <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4 }}>
+      <button onClick={handleSync} disabled={syncing} style={{
+        display:'flex',alignItems:'center',gap:6,padding:'8px 14px',
+        background:syncing?'rgba(255,200,0,0.08)':'rgba(0,229,160,0.08)',
+        border:`1px solid ${syncing?'rgba(255,200,0,0.3)':'rgba(0,229,160,0.3)'}`,
+        borderRadius:6,color:syncing?'var(--accent-gold)':'var(--accent-green)',
+        fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',
+        cursor:syncing?'not-allowed':'pointer',letterSpacing:'0.06em',opacity:syncing?0.8:1,
+      }}>
+        <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
+        {syncing ? (syncInfo?.progress||'Sincronizando...') : 'Sync Banco de Itens'}
+      </button>
+      {syncInfo?.count > 0 && !syncing && (
+        <span style={{ fontSize:10,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace' }}>
+          {syncInfo.count.toLocaleString('pt-BR')} itens · {ptDate(syncInfo.updatedAt)}
+        </span>
+      )}
+      {error && <span style={{ fontSize:10,color:'var(--accent-red)' }}>{error}</span>}
+    </div>
+  );
+}
+
 export default function UexApiPage() {
   const [activeTab, setActiveTab] = useState('commodities');
   const [apiStatus, setApiStatus] = useState(null); // null | true | false
@@ -829,10 +924,13 @@ export default function UexApiPage() {
             Dados em tempo real da comunidade Star Citizen via UEX Corp API 2.0 · api.uexcorp.uk/2.0
           </div>
         </div>
-        <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
-          style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
-          <ExternalLink size={13}/> Documentação
-        </a>
+        <div style={{ display:'flex',gap:8,alignItems:'center' }}>
+          <ItemDBSyncButton/>
+          <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
+            style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
+            <ExternalLink size={13}/> Documentação
+          </a>
+        </div>
       </div>
 
       {/* Info banner */}

@@ -1,5 +1,42 @@
 import React, { useMemo } from 'react';
-import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap } from 'lucide-react';
+
+// ── Leitura do inventário diretamente do localStorage ─────────────────────────
+function readInventoryItems() {
+  try {
+    const inv = JSON.parse(localStorage.getItem('sc_inventory_v1') || '{"itens":[]}');
+    return inv.itens || [];
+  } catch { return []; }
+}
+
+const SCRIPT_ITEMS = ['Mg Script', 'Concuil Script'];
+const SCRIPT_RATIO = 50;
+const PAF_WIKELO_COLOR = '#a29bfe';
+const PAF_COLOR = '#00d4ff';
+
+function isScriptItemDash(name) {
+  return SCRIPT_ITEMS.some(s => (name||'').trim().toLowerCase() === s.toLowerCase());
+}
+function isPafItemDash(name) {
+  const PAF_NAMES = ['Cartão de Alinhamento','Bateria PAF','Cartão de Ativação do Lazer'];
+  return PAF_NAMES.some(p => (name||'').trim().toLowerCase() === p.toLowerCase());
+}
+
+function calcPafLocal(items) {
+  const get = (n) => (items.find(i => i.name?.toLowerCase() === n.toLowerCase())?.quantity || 0);
+  const alinhamento = get('Cartão de Alinhamento');
+  const bateria     = get('Bateria PAF');
+  const lazer       = get('Cartão de Ativação do Lazer');
+  const satsAlign   = Math.floor(alinhamento / 3);
+  const satsEnergy  = Math.floor(bateria     / 3);
+  const lazersReady = lazer;
+  const pafCompletos = Math.min(satsAlign, satsEnergy, lazersReady);
+  return { alinhamento, bateria, lazer, satsAlign, satsEnergy, lazersReady, pafCompletos, restoAlign: alinhamento%3, restoBateria: bateria%3 };
+}
+
+function calcWikeloLocal(items) {
+  return items.reduce((total, i) => isScriptItemDash(i.name) ? total + Math.floor((i.quantity||0)/SCRIPT_RATIO) : total, 0);
+}
+import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio } from 'lucide-react';
 
 const PIECE_ICONS  = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
 const PIECE_PT_PLU = { Helmet:'Capacetes', Torso:'Torsos', Arms:'Braços', Legs:'Pernas', Backpack:'Mochilas' };
@@ -36,6 +73,16 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
     sets.forEach(s=>(s.pieces||[]).forEach(p=>{ if(p.owned&&p.obtained_date) itens.push({piece:p,set:s}); }));
     return itens.sort((a,b)=>new Date(b.piece.obtained_date)-new Date(a.piece.obtained_date)).slice(0,4);
   },[sets]);
+
+  // Lê inventário direto do localStorage a cada render do Dashboard
+  const inventoryItems = useMemo(() => readInventoryItems(), []);
+  const pafSummary     = useMemo(() => calcPafLocal(inventoryItems),  [inventoryItems]);
+  const wfTotal        = useMemo(() => calcWikeloLocal(inventoryItems), [inventoryItems]);
+  // Mostrar widgets mesmo com valores zero — se o item existe, mostra
+  const hasPafItems    = inventoryItems.some(i => isPafItemDash(i.name));
+  const hasScriptItems = inventoryItems.some(i => isScriptItemDash(i.name));
+  const hasPafData     = hasPafItems;
+  const hasWfData      = hasScriptItems;
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -206,6 +253,80 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
             ))}
           </div>
         </div>
+
+        {/* ── Widgets PAF e Wikelo ── */}
+        {(hasPafData || hasWfData) && (
+          <div style={{ display:'grid', gridTemplateColumns: hasPafData&&hasWfData?'2fr 1fr':'1fr', gap:16, marginBottom:20 }}>
+
+            {/* Widget PAF */}
+            {hasPafData && (
+              <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:10, padding:'16px 18px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                  <Radio size={16} style={{ color:'var(--accent-primary)' }}/>
+                  <span style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.08em' }}>MISSÃO PAF — SATÉLITES</span>
+                </div>
+
+                {/* Cards dos 3 recursos + total */}
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:12 }}>
+                  {[
+                    { label:'Alinhamento',   value:pafSummary.satsAlign,   icon:'📡', color:'var(--accent-primary)', sub:`${pafSummary.alinhamento} cartões`, resto:pafSummary.restoAlign,  ratio:3 },
+                    { label:'Energia',        value:pafSummary.satsEnergy,  icon:'🔋', color:'var(--accent-gold)',    sub:`${pafSummary.bateria} baterias`,    resto:pafSummary.restoBateria,ratio:3 },
+                    { label:'Lazers',         value:pafSummary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${pafSummary.lazer} cartões`,        resto:0,                      ratio:1 },
+                    { label:'PAF Completo',   value:pafSummary.pafCompletos,icon:'🛰', color:'var(--accent-green)',  sub:'mín. dos 3',                          resto:0,                      ratio:0 },
+                  ].map(({label,value,icon,color,sub,resto,ratio})=>(
+                    <div key={label} style={{ textAlign:'center', padding:'10px 6px', background:`${color}08`, border:`1px solid ${color}25`, borderRadius:8 }}>
+                      <div style={{ fontSize:20, marginBottom:4 }}>{icon}</div>
+                      <div style={{ fontFamily:'Orbitron,monospace', fontSize:20, fontWeight:800, color, lineHeight:1, marginBottom:2 }}>{value}</div>
+                      <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>{label}</div>
+                      <div style={{ fontSize:9, color:'var(--text-muted)', fontStyle:'italic' }}>{sub}</div>
+                      {ratio > 1 && resto > 0 && (
+                        <div style={{ marginTop:5 }}>
+                          <div style={{ height:3, background:'rgba(255,255,255,0.06)', borderRadius:2, overflow:'hidden' }}>
+                            <div style={{ height:'100%', width:`${(resto/ratio)*100}%`, background:color, borderRadius:2 }}/>
+                          </div>
+                          <div style={{ fontSize:8, color:'var(--accent-gold)', marginTop:2 }}>+{resto}/{ratio}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Status do PAF */}
+                {pafSummary.pafCompletos === 0 ? (
+                  <div style={{ padding:'7px 12px', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:6, fontSize:11, color:'var(--accent-red)', display:'flex', alignItems:'center', gap:6 }}>
+                    <AlertTriangle size={12}/>
+                    {pafSummary.satsAlign === 0 && pafSummary.satsEnergy === 0 && pafSummary.lazersReady === 0
+                      ? 'Nenhum recurso PAF suficiente ainda.'
+                      : `Faltam recursos: ${pafSummary.satsAlign===0?'mais cartões de alinhamento ':''} ${pafSummary.satsEnergy===0?'mais baterias ':''} ${pafSummary.lazersReady===0?'mais cartões de lazer':''}`
+                    }
+                  </div>
+                ) : (
+                  <div style={{ padding:'7px 12px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:6, fontSize:11, color:'var(--accent-green)', display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ fontSize:14 }}>🛰</span>
+                    <strong>{pafSummary.pafCompletos} satélite{pafSummary.pafCompletos!==1?'s':''} PAF</strong> pronto{pafSummary.pafCompletos!==1?'s':''} para missão!
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Widget Wikelo Favors */}
+            {hasWfData && (
+              <div style={{ background:'var(--bg-card)', border:'1px solid rgba(162,155,254,0.25)', borderRadius:10, padding:'16px 18px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                  <Star size={16} style={{ color:'#a29bfe' }}/>
+                  <span style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'#a29bfe', letterSpacing:'0.08em' }}>WIKELO FAVORS</span>
+                </div>
+                <div style={{ textAlign:'center', padding:'16px', background:'rgba(162,155,254,0.08)', border:'1px solid rgba(162,155,254,0.2)', borderRadius:8, marginBottom:10 }}>
+                  <div style={{ fontFamily:'Orbitron,monospace', fontSize:36, fontWeight:800, color:'#a29bfe', lineHeight:1, marginBottom:4 }}>{wfTotal}</div>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Wikelo Favor{wfTotal!==1?'s':''} totais</div>
+                </div>
+                <div style={{ fontSize:10, color:'var(--text-muted)', textAlign:'center', lineHeight:1.5 }}>
+                  Contagem de Mg Script + Concuil Script<br/>no inventário de itens (50 = 1 favor)
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick nav */}
         <div style={{ display:'flex',gap:12 }}>

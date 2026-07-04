@@ -1,0 +1,389 @@
+{
+  "entries": [
+    {
+      "relPath": "electron/main.js",
+      "language": "js",
+      "symbols": [],
+      "imports": [
+        "electron",
+        "path",
+        "fs",
+        "sql.js",
+        "https",
+        "http"
+      ]
+    },
+    {
+      "relPath": "electron/preload.js",
+      "language": "js",
+      "symbols": [],
+      "imports": [
+        "electron"
+      ]
+    },
+    {
+      "relPath": "src/App.js",
+      "language": "js",
+      "symbols": [
+        "api",
+        "App"
+      ],
+      "imports": [
+        "react",
+        "./pages/AllArmorsPage",
+        "./pages/MyCollectionPage",
+        "./pages/DashboardPage",
+        "./pages/CustomArmorPage",
+        "./pages/InventoryPage",
+        "./pages/BlueprintPage",
+        "./pages/MaterialTrackerPage",
+        "./pages/MiningPage",
+        "./pages/MiningGroupPage",
+        "./pages/MissionTrackerPage",
+        "./pages/OreVaultPage",
+        "./pages/UexApiPage",
+        "./pages/UexSalesPage",
+        "lucide-react",
+        "./data/provenance"
+      ]
+    },
+    {
+      "relPath": "src/components/ArmorSetCard.js",
+      "language": "js",
+      "symbols": [
+        "ArmorSetCard"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    },
+    {
+      "relPath": "src/components/ArmorSetModal.js",
+      "language": "js",
+      "symbols": [
+        "ArmorSetModal"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "./ProvenanceBadge"
+      ]
+    },
+    {
+      "relPath": "src/components/ProvenanceBadge.js",
+      "language": "js",
+      "symbols": [
+        "ProvenanceBadge",
+        "ProvenanceIcon",
+        "ProvenanceSummaryWidget"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/provenance"
+      ]
+    },
+    {
+      "relPath": "src/data/dataStore.js",
+      "language": "js",
+      "symbols": [
+        "DATASETS",
+        "loadDataset",
+        "saveDataset",
+        "resetDataset",
+        "isOverridden",
+        "useDataset"
+      ],
+      "imports": [
+        "react"
+      ]
+    },
+    {
+      "relPath": "src/data/materialQueue.js",
+      "language": "js",
+      "symbols": [
+        "loadQueue",
+        "saveQueue",
+        "queueBlueprint",
+        "dequeueBlueprint",
+        "updateQueuedQty",
+        "collectMaterial",
+        "uncollectMaterial",
+        "addManualMaterial",
+        "removeManualMaterial",
+        "resetMaterialCollected",
+        "calcShoppingList",
+        "isBlueprintQueued",
+        "clearCompleted"
+      ],
+      "imports": []
+    },
+    {
+      "relPath": "src/data/oreVault.js",
+      "language": "js",
+      "symbols": [
+        "loadVault",
+        "saveVault",
+        "addOreEntry",
+        "removeOreEntry",
+        "deductOreEntry",
+        "findVaultMatches",
+        "vaultTotalFor"
+      ],
+      "imports": []
+    },
+    {
+      "relPath": "src/data/provenance.js",
+      "language": "js",
+      "symbols": [
+        "SOURCES",
+        "SOURCE_META",
+        "setProvenance",
+        "setBatchProvenance",
+        "getProvenance",
+        "getCategoryProvenance",
+        "clearAllProvenance",
+        "formatImportedAt",
+        "getProvenanceSummary"
+      ],
+      "imports": [
+        "../data/provenance"
+      ]
+    },
+    {
+      "relPath": "src/index.js",
+      "language": "js",
+      "symbols": [],
+      "imports": [
+        "react",
+        "react-dom/client",
+        "./App"
+      ]
+    },
+    {
+      "relPath": "src/pages/AllArmorsPage.js",
+      "language": "js",
+      "symbols": [
+        "TodosArmorsPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../components/ArmorSetCard",
+        "../components/ArmorSetModal"
+      ]
+    },
+    {
+      "relPath": "src/pages/BlueprintPage.js",
+      "language": "js",
+      "symbols": [
+        "BlueprintPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../components/ProvenanceBadge",
+        "../data/provenance",
+        "../data/materialQueue"
+      ]
+    },
+    {
+      "relPath": "src/pages/CustomArmorPage.js",
+      "language": "js",
+      "symbols": [
+        "CustomArmorPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/provenance"
+      ]
+    },
+    {
+      "relPath": "src/pages/DashboardPage.js",
+      "language": "js",
+      "symbols": [
+        "DashboardPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    },
+    {
+      "relPath": "src/pages/DataEditorPage.js",
+      "language": "js",
+      "symbols": [
+        "DataEditorPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    },
+    {
+      "relPath": "src/pages/InventoryPage.js",
+      "language": "js",
+      "symbols": [
+        "InventoryPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../components/ProvenanceBadge",
+        "../data/provenance"
+      ]
+    },
+    {
+      "relPath": "src/pages/MarketFinderPage.js",
+      "language": "js",
+      "symbols": [
+        "DEFAULT_MARKET_LOCATIONS",
+        "MarketFinderPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/dataStore"
+      ]
+    },
+    {
+      "relPath": "src/pages/materialQueue.js",
+      "language": "js",
+      "symbols": [
+        "loadQueue",
+        "saveQueue",
+        "queueBlueprint",
+        "dequeueBlueprint",
+        "updateQueuedQty",
+        "collectMaterial",
+        "resetMaterialCollected",
+        "calcShoppingList",
+        "isBlueprintQueued",
+        "clearCompleted"
+      ],
+      "imports": []
+    },
+    {
+      "relPath": "src/pages/MaterialTrackerPage.js",
+      "language": "js",
+      "symbols": [
+        "MaterialTrackerPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/materialQueue",
+        "../data/oreVault"
+      ]
+    },
+    {
+      "relPath": "src/pages/MiningGroupPage.js",
+      "language": "js",
+      "symbols": [
+        "MiningGrupoPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    },
+    {
+      "relPath": "src/pages/MiningPage.js",
+      "language": "js",
+      "symbols": [
+        "DEFAULT_MINEABLE_ORES",
+        "DEFAULT_SHIP_LASERS",
+        "DEFAULT_MINING_SHIPS",
+        "DEFAULT_MINING_MODULES",
+        "DEFAULT_MINING_LOCATIONS",
+        "MiningPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/dataStore",
+        "../components/ProvenanceBadge"
+      ]
+    },
+    {
+      "relPath": "src/pages/MissionTrackerPage.js",
+      "language": "js",
+      "symbols": [
+        "MissionTrackerPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    },
+    {
+      "relPath": "src/pages/MyCollectionPage.js",
+      "language": "js",
+      "symbols": [
+        "MyCollectionPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../components/ArmorSetModal"
+      ]
+    },
+    {
+      "relPath": "src/pages/OreVaultPage.js",
+      "language": "js",
+      "symbols": [
+        "OreVaultPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/oreVault"
+      ]
+    },
+    {
+      "relPath": "src/pages/TradeHubPage.js",
+      "language": "js",
+      "symbols": [
+        "DEFAULT_COMMODITIES",
+        "TradeHubPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/dataStore",
+        "../components/ProvenanceBadge"
+      ]
+    },
+    {
+      "relPath": "src/pages/UexApiPage.js",
+      "language": "js",
+      "symbols": [
+        "UexApiPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "../data/provenance",
+        "../components/ProvenanceBadge"
+      ]
+    },
+    {
+      "relPath": "src/pages/UexSalesPage.js",
+      "language": "js",
+      "symbols": [
+        "UexSalesPage"
+      ],
+      "imports": [
+        "react",
+        "lucide-react"
+      ]
+    }
+  ],
+  "totalFiles": 28,
+  "indexedFiles": 28,
+  "method": "regex",
+  "generatedAt": 1783113473093,
+  "merkleRoot": "3e24314570507bd28bd47f11000eb65198adc2c2b195385e9e763352d53f4cf9"
+}

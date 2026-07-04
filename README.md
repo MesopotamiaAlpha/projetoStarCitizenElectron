@@ -35,11 +35,7 @@ O app abre automaticamente em uma janela Electron.
 | 🔧 Blueprints | Blueprints de crafting com fila de materiais |
 | ⚒️ Tracking Materiais | Lista consolidada de materiais para craftar |
 | 📋 Missões | Rastreador com timer, gráficos, divisão por crew |
-| ⚡ Calculadora DPS | Loadout de armas por nave |
-| 📈 Trade Hub | Rotas de comércio e lucro |
 | ⛏️ Mineração | Guia completo de minérios, lasers e locais |
-| 📦 Cargo Loader | Planejador de carga |
-| 👥 Battle Buddy | Roster de crew e wingmen |
 | 🗺️ Market Finder | Onde encontrar cada item |
 | 🌐 UEX API | Dados em tempo real da API UEX Corp |
 | ✏️ Editor de Dados | Edite qualquer dado estático das ferramentas |
