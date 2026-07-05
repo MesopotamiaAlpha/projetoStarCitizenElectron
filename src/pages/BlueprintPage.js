@@ -263,7 +263,7 @@ function BpForm({ initial, onSave, onCancelar }) {
 }
 
 // ── Blueprint Card ────────────────────────────────────────────────────────────
-function BpCard({ bp, onToggleOwned, onToggleWishlist, onIncrementCrafted, onSelect, isSelected, onEdit, onDelete, onQueue, isQueued }) {
+function BpCard({ bp, onToggleOwned, onToggleWishlist, onSelect, isSelected, onEdit, onDelete, onQueue, isQueued }) {
   const catColor = CAT_COLORS[bp.category]||'#7a90b0';
   const facColor = FACTION_COLORS[bp.faction]||'#7a90b0';
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -312,8 +312,7 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onIncrementCrafted, onSel
             </button>
             <button onClick={()=>onToggleOwned(bp.id)} title={bp.owned?'Remover da coleção':'Marcar como obtida'} style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.owned?'rgba(0,229,160,0.4)':'var(--border-subtle)'}`,background:bp.owned?'rgba(0,229,160,0.15)':'transparent',color:bp.owned?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>✓</button>
             <button onClick={()=>onToggleWishlist(bp.id)} title="wishlist" style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.wishlist?'rgba(255,196,54,0.4)':'var(--border-subtle)'}`,background:bp.wishlist?'rgba(255,196,54,0.12)':'transparent',color:bp.wishlist?'var(--accent-gold)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>★</button>
-            {bp.owned&&<button onClick={()=>onIncrementCrafted(bp.id)} title="Registrar craft" style={{ width:28,height:28,borderRadius:5,border:'1px solid rgba(0,212,255,0.25)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Hammer size={12}/></button>}
-            {!bp.is_default&&<button onClick={()=>onEdit(bp)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Edit3 size={12}/></button>}
+            <button onClick={()=>onEdit(bp)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Edit3 size={12}/></button>
             {!bp.is_default&&(deleteConfirm?(
               <div style={{ display:'flex',gap:4,alignItems:'center' }}>
                 <button onClick={()=>onDelete(bp.id)} style={{ padding:'4px 8px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
@@ -410,7 +409,12 @@ export default function BlueprintPage() {
   }
 
   async function handleEdit(data) {
-    await api.updateCustom({ bpId: editingBp.id, ...data });
+    if (editingBp.is_default) {
+      // Blueprint padrão: criar cópia custom com as alterações
+      await api.createCustom({ ...data, patch_added: editingBp.patch_added || '4.7' });
+    } else {
+      await api.updateCustom({ bpId: editingBp.id, ...data });
+    }
     setProvenance('blueprint', data.bp.name, SOURCES.MANUAL);
     setEditingBp(null);
     await loadData();
@@ -478,7 +482,7 @@ export default function BlueprintPage() {
               {l:'Obtidos',v:ownedCount,c:'var(--accent-primary)'},
               {l:'Faltando',v:bps.length-ownedCount,c:'var(--text-secondary)'},
               {l:'Desejos',v:bps.filter(b=>b.wishlist&&!b.owned).length,c:'var(--accent-gold)'},
-              {l:'Total Craftado',v:bps.reduce((a,b)=>a+(b.crafted_count||0),0),c:'var(--accent-green)'},
+    
               {l:'🛒 Na Fila',v:queuedCount,c:queuedCount>0?'var(--accent-gold)':'var(--text-muted)'},
             ].map(({l,v,c})=>(
               <div key={l} style={{ background:'var(--bg-card)',border:`1px solid ${l.includes('Fila')&&v>0?'rgba(255,196,54,0.25)':'var(--border-subtle)'}`,borderRadius:8,padding:'8px 14px',minWidth:100,flexShrink:0,textAlign:'center' }}>
@@ -530,7 +534,7 @@ export default function BlueprintPage() {
               <option value="name">Nome (A-Z)</option>
               <option value="faction">Facção</option>
               <option value="cat">Categoria</option>
-              <option value="crafted">Mais Craftado</option>
+
             </select>
           </div>
           <div style={{ display:'flex',gap:6,flexWrap:'wrap',alignItems:'center' }}>

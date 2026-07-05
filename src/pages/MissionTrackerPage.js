@@ -29,7 +29,36 @@ const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)
 const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mining':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function todayStr()   { return new Date().toISOString().slice(0,10); }
+function todayStr() {
+  // Usa o fuso horário LOCAL do computador do usuário — sem forçar fuso fixo
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Gera ISO string no fuso LOCAL (não UTC) para evitar virada de dia
+function localISOString(date) {
+  const d = date || new Date();
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  const hh   = String(d.getHours()).padStart(2, '0');
+  const min  = String(d.getMinutes()).padStart(2, '0');
+  const ss   = String(d.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
+}
+
+// Extrai data local (YYYY-MM-DD) de qualquer string ISO
+function localDateStr(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 function ptData(iso)  {
   const [y,m,d] = iso.split('-');
   const wday = new Date(iso+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long'});
@@ -161,8 +190,8 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
       })),
       totalAuec,
       perPersonAuec,
-      registered_at: initialLoot?.registered_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      registered_at: initialLoot?.registered_at || localISOString(),
+      updated_at: localISOString(),
     };
     onSave(loot);
   }
@@ -376,7 +405,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
     id:null,title:'',type:'Bounty Hunt',faction:'Foxwell Enforcement',
     system:'Stanton',location:'',difficulty:'Médio',status:'Active',
     reward:0,reputation_gain:0,crew_needed:1,notes:'',bug_description:'',
-    created_at:new Date().toISOString(),completed_at:null,
+    created_at:localISOString(),completed_at:null,
     objectives:[],timer_elapsed:0,
   });
   const [objInput,setObjInput]=useState('');
@@ -403,7 +432,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
   function handleSave() {
     if(!data.title.trim()){setError('Título obrigatório.');return;}
     const saved={...data,id:data.id||Date.now(),
-      completed_at:data.status==='Completed'&&!data.completed_at?new Date().toISOString():data.completed_at};
+      completed_at:data.status==='Completed'&&!data.completed_at?localISOString():data.completed_at};
     onSave(saved);
   }
 
@@ -1369,7 +1398,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const [selected,setSelected]     = useState(new Set());
   const [showReuse,setShowReuse]   = useState(false);
   const today = todayStr();
-  const todayMissions = missions.filter(m=>m.created_at?.slice(0,10)===today);
+  const todayMissions = missions.filter(m=>localDateStr(m.created_at)===today);
   const filtered = filterStatus==='all' ? todayMissions : todayMissions.filter(m=>m.status===filterStatus);
 
   function handleSave(m) { onSave(m); setShowForm(false); setEditM(null); }
@@ -1505,7 +1534,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 
 // ── TAB 2: History ────────────────────────────────────────────────────────────
 function HistoryTab({ missions, losses }) {
-  const dates=useMemo(()=>[...new Set(missions.map(m=>m.created_at?.slice(0,10)).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
+  const dates=useMemo(()=>[...new Set(missions.map(m=>localDateStr(m.created_at)).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
   const years=useMemo(()=>[...new Set(dates.map(d=>Number(d.slice(0,4))))].sort((a,b)=>b-a),[dates]);
   const [selYear,setSelYear]=useState(()=>years[0]||new Date().getFullYear());
   const [selMonth,setSelMonth]=useState(()=>new Date().getMonth());
@@ -1513,7 +1542,7 @@ function HistoryTab({ missions, losses }) {
 
   const monthsWithData=useMemo(()=>[...new Set(dates.filter(d=>Number(d.slice(0,4))===selYear).map(d=>Number(d.slice(5,7))-1))],[dates,selYear]);
   const monthDatas=useMemo(()=>dates.filter(d=>Number(d.slice(0,4))===selYear&&Number(d.slice(5,7))-1===selMonth),[dates,selYear,selMonth]);
-  const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>m.created_at?.slice(0,10)===selDay):[],[selDay,missions]);
+  const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>localDateStr(m.created_at)===selDay):[],[selDay,missions]);
   const selectedDayLosses=useMemo(()=>selDay?losses.filter(l=>l.date===selDay):[],[selDay,losses]);
 
   const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
@@ -1537,7 +1566,7 @@ function HistoryTab({ missions, losses }) {
           <div>
             <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{monthDatas.length} dia{monthDatas.length!==1?'s':''} com missões</div>
             {monthDatas.map(date=>{
-              const dayM=missions.filter(m=>m.created_at?.slice(0,10)===date);
+              const dayM=missions.filter(m=>localDateStr(m.created_at)===date);
               const earned=dayM.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
               const lost=losses.filter(l=>l.date===date).reduce((a,l)=>a+(l.amount||0),0);
               const net=earned-lost;
@@ -1639,15 +1668,15 @@ function HistoryTab({ missions, losses }) {
 // ── TAB 3: Global Estatísticas ──────────────────────────────────────────────────
 function StatsTab({ missions, losses }) {
   const [period,setPeriod]=useState(30);
-  const cutdef=useMemo(()=>{const d=new Date();d.setDate(d.getDate()-period);return d.toISOString().slice(0,10);},[period]);
-  const inAlcance=useMemo(()=>missions.filter(m=>m.created_at?.slice(0,10)>=cutdef),[missions,cutdef]);
+  const cutdef=useMemo(()=>{const d=new Date();d.setDate(d.getDate()-period);return localDateStr(d);},[period]);
+  const inAlcance=useMemo(()=>missions.filter(m=>localDateStr(m.created_at)>=cutdef),[missions,cutdef]);
 
   const dailyData=useMemo(()=>{
     const days=[];
     for(let i=period-1;i>=0;i--){
       const d=new Date();d.setDate(d.getDate()-i);
-      const ds=d.toISOString().slice(0,10);
-      const dm=missions.filter(m=>m.created_at?.slice(0,10)===ds);
+      const ds=localDateStr(d);
+      const dm=missions.filter(m=>localDateStr(m.created_at)===ds);
       const earned=dm.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
       const failed=dm.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0);
       const bugged=dm.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0);
@@ -1778,7 +1807,7 @@ export default function MissionTrackerPage() {
     const mission = missions.find(m => m.id === id);
     const updated = missions.map(m => m.id === id ? {
       ...m, status,
-      completed_at: status === 'Completed' ? new Date().toISOString() : m.completed_at,
+      completed_at: status === 'Completed' ? localISOString() : m.completed_at,
       objectives: status === 'Completed' ? (m.objectives||[]).map(o=>({...o,done:true})) : m.objectives,
     } : m);
     persistMissions(updated);
@@ -1810,7 +1839,7 @@ export default function MissionTrackerPage() {
   }
 
   const today=todayStr();
-  const todayM=missions.filter(m=>m.created_at?.slice(0,10)===today);
+  const todayM=missions.filter(m=>localDateStr(m.created_at)===today);
   const totalRewards=missions.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
   const activeCount=missions.filter(m=>m.status==='Active').length;
   const buggedCount=missions.filter(m=>m.status==='Bugged').length;

@@ -182,7 +182,7 @@ function ScriptPanel({ item, onUpdate }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Reference data
 // ─────────────────────────────────────────────────────────────────────────────
-const SYSTEMS = ['Stanton','Pyro','Nyx','Terra','Odin'];
+const SYSTEMS = ['Stanton','Pyro','Nyx'];
 
 const LOCATIONS = {
   Stanton: {
@@ -349,7 +349,7 @@ function getMockInvAPI() {
 const emptyItem = () => ({
   name:'', category:'Arma Pessoal', subcategory:'',
   system:'Stanton', location_type:'Estação Orbital', location_name:'',
-  container:'', quantity:1, unit:'un',
+  container:'', quantity:0, unit:'un',
   size:'', grade:'', manufacturer:'', condition:'Bom',
   value_auec:0, is_contraband:false, notes:'',
 });
@@ -388,30 +388,40 @@ function ItemForm({ initial, onSave, onCancelar }) {
     setImportModal(uexItem);
   }
 
-  // Aplicar dados UEX ao form
+  // Mapear categoria UEX para categoria local
+  function mapCategory(uexCat) {
+    const catMap = {
+      'armor': 'Armadura FPS', 'helmet': 'Armadura FPS', 'arms': 'Armadura FPS',
+      'legs': 'Armadura FPS', 'backpack': 'Armadura FPS', 'undersuit': 'Armadura FPS',
+      'pistol': 'Arma Pessoal', 'rifle': 'Arma Pessoal', 'shotgun': 'Arma Pessoal',
+      'smg': 'Arma Pessoal', 'sniper': 'Arma Pessoal',
+      'optics': 'Acessório de Arma', 'barrel': 'Acessório de Arma',
+      'shield': 'Componente de Nave', 'power plant': 'Componente de Nave',
+      'cooler': 'Componente de Nave', 'quantum': 'Componente de Nave',
+      'medical': 'Utilitário', 'multi-tool': 'Utilitário',
+      'food': 'Consumível', 'drink': 'Consumível',
+      'flair': 'Decoração / Flair', 'decal': 'Decoração / Flair',
+    };
+    const lower = (uexCat||'').toLowerCase();
+    const mapped = Object.entries(catMap).find(([k]) => lower.includes(k));
+    return mapped ? mapped[1] : null;
+  }
+
+  // Aplicar dados UEX ao form (incluindo preço)
   function applyUexData(uexItem, fields) {
     const updates = {};
     if (fields.includes('category') && uexItem.category) {
-      // Tentar mapear categoria UEX para categoria local
-      const catMap = {
-        'armor': 'Armadura FPS', 'helmet': 'Armadura FPS', 'arms': 'Armadura FPS',
-        'legs': 'Armadura FPS', 'backpack': 'Armadura FPS', 'undersuit': 'Armadura FPS',
-        'pistol': 'Arma Pessoal', 'rifle': 'Arma Pessoal', 'shotgun': 'Arma Pessoal',
-        'smg': 'Arma Pessoal', 'sniper': 'Arma Pessoal',
-        'optics': 'Acessório de Arma', 'barrel': 'Acessório de Arma',
-        'shield': 'Componente de Nave', 'power plant': 'Componente de Nave',
-        'cooler': 'Componente de Nave', 'quantum': 'Componente de Nave',
-        'medical': 'Utilitário', 'multi-tool': 'Utilitário',
-        'food': 'Consumível', 'drink': 'Consumível',
-        'flair': 'Decoração / Flair', 'decal': 'Decoração / Flair',
-      };
-      const catLower = (uexItem.category||'').toLowerCase();
-      const mapped = Object.entries(catMap).find(([k]) => catLower.includes(k));
-      if (mapped) updates.category = mapped[1];
+      const cat = mapCategory(uexItem.category);
+      if (cat) updates.category = cat;
     }
     if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
     if (fields.includes('manufacturer') && uexItem.company_name) updates.manufacturer = uexItem.company_name;
     if (fields.includes('grade')        && uexItem.color)        updates.grade = uexItem.color;
+    // Preço: usar price_avg se disponível, senão price_buy ou price_sell
+    if (fields.includes('price')) {
+      const price = uexItem.price_avg || uexItem.price_buy || uexItem.price_sell || 0;
+      if (price > 0) updates.value_auec = price;
+    }
     setData(p => ({ ...p, ...updates }));
     setImportModal(null);
   }
@@ -437,7 +447,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
     if (!data.name.trim())          { setError('Nome do item é obrigatório.'); return; }
     if (!data.location_name.trim()) { setError('Localização é obrigatória.'); return; }
     setError('');
-    onSave({ ...data, quantity:Number(data.quantity)||1, value_auec:Number(data.value_auec)||0, is_contraband:data.is_contraband?1:0 });
+    onSave({ ...data, quantity:Number(data.quantity) >= 0 ? Number(data.quantity) : 1, value_auec:Number(data.value_auec)||0, is_contraband:data.is_contraband?1:0 });
   }
 
   const IS = { width:'100%',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:14,outline:'none' };
@@ -455,11 +465,132 @@ function ItemForm({ initial, onSave, onCancelar }) {
         </button>
       </div>
 
+      {/* Modal de importação UEX */}
+      {importModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,padding:16}} onClick={()=>setImportModal(null)}>
+          <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,212,255,0.4)',borderRadius:10,padding:20,width:'100%',maxWidth:480,boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontSize:16}}>💡</span>
+              <span style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>DADOS DA UEX ENCONTRADOS</span>
+            </div>
+            <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:14,lineHeight:1.6}}>
+              <strong style={{color:'var(--text-primary)'}}>{importModal.name}</strong> foi encontrado no banco da UEX.<br/>
+              Deseja importar as informações disponíveis?
+            </div>
+
+            {/* Preço em destaque */}
+            {(importModal.price_avg||importModal.price_buy||importModal.price_sell||0) > 0 && (
+              <div style={{marginBottom:12,padding:'10px 14px',background:'rgba(255,200,0,0.08)',border:'1px solid rgba(255,200,0,0.3)',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>💰 Preço Médio UEX</div>
+                  <div style={{fontFamily:'Orbitron,monospace',fontSize:20,fontWeight:800,color:'var(--accent-gold)'}}>
+                    {(importModal.price_avg||importModal.price_buy||importModal.price_sell||0).toLocaleString('pt-BR')} aUEC
+                  </div>
+                </div>
+                {importModal.price_max > 0 && (
+                  <div style={{textAlign:'right',fontSize:10,color:'var(--text-muted)'}}>
+                    <div>Máx: <span style={{color:'var(--accent-green)'}}>{importModal.price_max.toLocaleString('pt-BR')}</span></div>
+                    <div>Mín: <span style={{color:'var(--accent-red)'}}>{(importModal.price_min||0).toLocaleString('pt-BR')}</span></div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Campos disponíveis */}
+            <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:14}}>
+              {[
+                ['Categoria',  importModal.category],
+                ['Fabricante', importModal.company_name],
+                ['Tamanho',    importModal.size ? `S${importModal.size}` : null],
+                ['Cor/Grade',  importModal.color],
+              ].filter(([,v]) => v).map(([label, val]) => (
+                <div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 10px',background:'rgba(0,212,255,0.05)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:5,fontSize:11}}>
+                  <span style={{color:'var(--text-muted)'}}>{label}</span>
+                  <strong style={{color:'var(--text-primary)'}}>{val}</strong>
+                </div>
+              ))}
+            </div>
+
+            {importModal.wiki && (
+              <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:12}}>
+                📖 <a href={importModal.wiki} target="_blank" rel="noreferrer" style={{color:'var(--accent-primary)'}}>{importModal.wiki}</a>
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setImportModal(null)} style={{padding:'7px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+                Só o Nome
+              </button>
+              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade'])} style={{padding:'7px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:5,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+                Sem Preço
+              </button>
+              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade','price'])} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+                <Save size={11}/> Importar com Preço
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Row 1: Nome + Categoria + Subcategoria */}
       <div style={{ display:'grid',gridTemplateColumns:'2fr 1.5fr 1.5fr',gap:12,marginBottom:12 }}>
-        <div>
-          <label style={LS}>Nome do Item *</label>
-          <input style={IS} value={data.name} onChange={e=>set('name',e.target.value)} placeholder="ex: Klaus & Werner Demeco, Behring P8-SC..."/>
+        <div style={{position:'relative'}}>
+          <label style={LS}>
+            Nome do Item *
+            {uexDbInfo && <span style={{marginLeft:8,fontSize:9,color:'var(--accent-green)',fontWeight:400}}>· {uexDbInfo}</span>}
+          </label>
+          <input
+            style={IS}
+            value={data.name}
+            onChange={e=>handleNameChange(e.target.value)}
+            onFocus={()=>{ if(data.name.trim().length>=2&&suggestions.length>0) setShowSugg(true); }}
+            onBlur={()=>setTimeout(()=>setShowSugg(false),180)}
+            placeholder="ex: Klaus & Werner Demeco, Behring P8-SC..."
+          />
+          {/* Dropdown de sugestões */}
+          {showSugg && suggestions.length > 0 && (
+            <div style={{
+              position:'absolute',top:'100%',left:0,right:0,
+              background:'var(--bg-card)',border:'1px solid var(--accent-primary)',
+              borderTop:'none',borderRadius:'0 0 7px 7px',
+              zIndex:500,maxHeight:240,overflowY:'auto',
+              boxShadow:'0 8px 24px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{padding:'4px 10px',fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',background:'var(--bg-panel)',borderBottom:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',gap:4}}>
+                💡 Sugestões da UEX — clique para preencher
+              </div>
+              {suggestions.map(s => {
+                const price = s.price_avg || s.price_buy || s.price_sell || 0;
+                return (
+                  <button key={s.id} onMouseDown={()=>handleSelectSuggestion(s)} style={{
+                    display:'flex',alignItems:'center',justifyContent:'space-between',
+                    width:'100%',padding:'8px 12px',background:'none',border:'none',
+                    borderBottom:'1px solid var(--border-subtle)',
+                    cursor:'pointer',fontSize:12,textAlign:'left',gap:10,
+                  }}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,212,255,0.07)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='none'}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
+                      <div style={{fontSize:10,color:'var(--text-muted)',marginTop:1,display:'flex',gap:6}}>
+                        {s.category&&<span>{s.category}</span>}
+                        {s.company_name&&<span>· {s.company_name}</span>}
+                        {s.size&&<span>· S{s.size}</span>}
+                      </div>
+                    </div>
+                    {price > 0 && (
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',fontWeight:700}}>
+                          {price.toLocaleString('pt-BR')} aUEC
+                        </div>
+                        <div style={{fontSize:9,color:'var(--text-muted)'}}>preço médio</div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div>
           <label style={LS}>Categoria</label>
@@ -685,12 +816,12 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
     <>
       {/* Card */}
       <div onClick={()=>setShowDetail(true)} style={{
-        background:'var(--bg-card)',
-        border:`1px solid ${item.is_contraband?'rgba(231,76,60,0.35)':isScript?'rgba(162,155,254,0.3)':'var(--border-subtle)'}`,
-        borderTop:`3px solid ${item.is_contraband?'#e74c3c':isScript?WIKELO_COLOR:catColor}`,
+        background: item.quantity === 0 ? 'rgba(255,255,255,0.01)' : 'var(--bg-card)',
+        border:`1px solid ${item.quantity===0?'rgba(255,255,255,0.06)':item.is_contraband?'rgba(231,76,60,0.35)':isScript?'rgba(162,155,254,0.3)':'var(--border-subtle)'}`,
+        borderTop:`3px solid ${item.quantity===0?'rgba(255,255,255,0.1)':item.is_contraband?'#e74c3c':isScript?WIKELO_COLOR:catColor}`,
         borderRadius:8, padding:'12px 13px', cursor:'pointer',
         transition:'all 0.18s', display:'flex', flexDirection:'column', gap:8,
-        minHeight:110,
+        minHeight:110, opacity: item.quantity === 0 ? 0.45 : 1,
       }}
       onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 6px 20px rgba(0,0,0,0.3), 0 0 0 1px ${isScript?WIKELO_COLOR:catColor}44`;}}
       onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
@@ -698,6 +829,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
         {/* Linha 1: nome + badges */}
         <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
           <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
+          {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {isScript && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700,flexShrink:0}}>★ WIKELO</span>}
           {isPaf && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(0,212,255,0.15)',color:PAF_COLOR,border:'1px solid rgba(0,212,255,0.3)',fontWeight:700,flexShrink:0}}>📡 PAF</span>}

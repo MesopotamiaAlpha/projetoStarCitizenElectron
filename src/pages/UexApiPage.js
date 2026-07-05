@@ -439,38 +439,60 @@ function CommoditiesTab() {
 
 // ── ITEMS tab ─────────────────────────────────────────────────────────────────
 function ItensTab() {
-  const [data,     setData]     = useState([]);
-  const [cats,     setCats]     = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
-  const [search,   setSearch]   = useState('');
-  const [catFilter,setCatFilter]= useState('');
-  const [selected, setSelected] = useState(null);
+  const [data,      setData]      = useState([]);
+  const [cats,      setCats]      = useState([]);
+  const [selCat,    setSelCat]    = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [loadingCat,setLoadingCat]= useState(false);
+  const [error,     setError]     = useState('');
+  const [search,    setSearch]    = useState('');
+  const [selected,  setSelected]  = useState(null);
 
-  async function load() {
+  // Carregar só categorias na montagem (sem buscar items ainda)
+  async function loadCats() {
     setLoading(true); setError('');
     try {
-      const [itens, categories] = await Promise.all([
-        uexFetch('items'),
-        uexFetch('categories'),
-      ]);
-      setData(itens);
-      setCats(categories);
-      setBatchProvenance('item', itens.map(i => i.name), SOURCES.UEX_API, {
-        endpoint: 'itens', gameVersion: '4.8.1',
-      });
+      const categories = await uexFetch('categories');
+      // Filtrar só categorias relevantes (excluir commodities, vehicles, etc.)
+      const relevant = (categories||[]).filter(c =>
+        c.section && !['commodities','vehicles','mining','refineries'].includes((c.section||'').toLowerCase())
+      );
+      setCats(relevant);
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+
+  // Carregar items da categoria selecionada
+  async function loadItemsByCat(catId) {
+    if (!catId) return;
+    setLoadingCat(true); setError(''); setData([]); setSelected(null);
+    try {
+      const itens = await uexFetch(`items?id_category=${catId}`);
+      setData(itens || []);
+      if (itens?.length) {
+        setBatchProvenance('item', itens.map(i => i.name), SOURCES.UEX_API, {
+          endpoint: 'items', gameVersion: '4.8.1',
+        });
+      }
+    } catch(e) { setError(e.message); }
+    finally { setLoadingCat(false); }
+  }
+
+  useEffect(() => { loadCats(); }, []);
+
+  function handleCatChange(catId) {
+    setSelCat(catId);
+    setSearch('');
+    loadItemsByCat(catId);
+  }
 
   const filtered = useMemo(() => {
-    return data.filter(item => {
-      if (search && !item.name?.toLowerCase().includes(search.toLowerCase())) return false;
-      if (catFilter && item.id_category !== Number(catFilter)) return false;
-      return true;
-    });
-  }, [data, search, catFilter]);
+    if (!search.trim()) return data;
+    return data.filter(item =>
+      item.name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.company_name?.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [data, search]);
 
   const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
 
@@ -807,37 +829,32 @@ function TerminaisTab() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 // ── Botão de sync do banco de itens ──────────────────────────────────────────
-// Busca todos os itens da UEX por categoria e salva localmente
-// Só deve ser chamado pelo usuário nesta tela (não automático)
 function ItemDBSyncButton() {
   const [syncing,  setSyncing]  = useState(false);
+  const [phase,    setPhase]    = useState('');
   const [syncInfo, setSyncInfo] = useState(() => {
     const db = loadUexItemsDB();
     return db.updatedAt ? { count: db.itemCount, updatedAt: db.updatedAt } : null;
   });
   const [error, setError] = useState('');
 
-  // IDs de categoria a buscar (cobrindo tudo de items na UEX)
-  // Buscamos por seção: items inclui armor, weapons, components, etc.
   async function handleSync() {
-    setSyncing(true); setError('');
+    setSyncing(true); setError(''); setPhase('Buscando categorias...');
     try {
       const allItems = [];
       const seenIds  = new Set();
+      const priceMap = {}; // id_item -> { price_avg, price_max, price_min }
 
-      // Buscar categorias primeiro
+      // 1. Buscar categorias
       const catRes = await uexFetch('categories');
       if (!catRes || !Array.isArray(catRes)) throw new Error('Falha ao buscar categorias');
-
-      // Filtrar categorias de items (não commodities, não veículos)
-      // A API separa por section: 'items', 'components', 'weapons', 'armor', etc.
       const itemCats = catRes.filter(c =>
-        c.section && !['commodities','vehicles','mining','refineries'].includes(c.section.toLowerCase())
+        c.section && !['commodities','vehicles','mining','refineries'].includes((c.section||'').toLowerCase())
       );
 
-      setSyncInfo(prev => ({ ...prev, progress: `Buscando ${itemCats.length} categorias...` }));
+      setPhase(`Buscando itens de ${itemCats.length} categorias...`);
 
-      // Buscar itens de cada categoria (em lotes para não sobrecarregar)
+      // 2. Buscar itens por categoria
       for (let i = 0; i < itemCats.length; i++) {
         const cat = itemCats[i];
         try {
@@ -858,24 +875,60 @@ function ItemDBSyncButton() {
                   wiki:         item.wiki,
                   color:        item.color,
                   is_commodity: item.is_commodity,
+                  price_buy:    item.price_buy    || 0,
+                  price_sell:   item.price_sell   || 0,
                 });
               }
             });
           }
-        } catch { /* categoria pode não ter itens, pular */ }
-        // Pequena pausa para não sobrecarregar a API
-        if (i % 5 === 4) await new Promise(r => setTimeout(r, 300));
+        } catch { /* categoria vazia */ }
+        if (i % 5 === 4) await new Promise(r => setTimeout(r, 200));
       }
 
-      const db = saveUexItemsDB(allItems);
-      setSyncInfo({ count: db.itemCount, updatedAt: db.updatedAt, progress: null });
+      setPhase(`Buscando preços de ${allItems.length} itens...`);
+
+      // 3. Buscar items_prices para enriquecer com preços de mercado (marketplace)
+      try {
+        const prices = await uexFetch('items_prices');
+        if (prices && Array.isArray(prices)) {
+          // Agrupar por id_item e calcular média/max/min
+          prices.forEach(p => {
+            const id = p.id_item;
+            if (!id) return;
+            if (!priceMap[id]) priceMap[id] = { total: 0, count: 0, max: 0, min: Infinity };
+            const val = p.price_buy || p.price_sell || 0;
+            if (val > 0) {
+              priceMap[id].total += val;
+              priceMap[id].count++;
+              if (val > priceMap[id].max) priceMap[id].max = val;
+              if (val < priceMap[id].min) priceMap[id].min = val;
+            }
+          });
+        }
+      } catch { /* prices podem não estar disponíveis */ }
+
+      // 4. Enriquecer itens com preços
+      const enriched = allItems.map(item => {
+        const p = priceMap[item.id];
+        const priceAvg = p && p.count > 0 ? Math.round(p.total / p.count) : (item.price_buy || item.price_sell || 0);
+        return {
+          ...item,
+          price_avg: priceAvg,
+          price_max: p ? p.max : 0,
+          price_min: p && p.min !== Infinity ? p.min : 0,
+        };
+      });
+
+      const db = saveUexItemsDB(enriched);
+      setSyncInfo({ count: db.itemCount, updatedAt: db.updatedAt });
+      setPhase('');
     } catch (err) {
       setError(`Erro: ${err.message}`);
     }
     setSyncing(false);
   }
 
-  const ptDate = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
 
   return (
     <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4 }}>
@@ -888,7 +941,7 @@ function ItemDBSyncButton() {
         cursor:syncing?'not-allowed':'pointer',letterSpacing:'0.06em',opacity:syncing?0.8:1,
       }}>
         <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
-        {syncing ? (syncInfo?.progress||'Sincronizando...') : 'Sync Banco de Itens'}
+        {syncing ? (phase||'Sincronizando...') : 'Sync Banco de Itens'}
       </button>
       {syncInfo?.count > 0 && !syncing && (
         <span style={{ fontSize:10,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace' }}>
