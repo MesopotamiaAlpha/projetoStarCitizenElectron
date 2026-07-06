@@ -513,25 +513,60 @@ function ItensTab() {
 
   return (
     <div>
-      <div style={{ display:'flex',gap:8,marginBottom:12,flexWrap:'wrap' }}>
-        <div style={{ position:'relative',flex:'1 1 200px' }}>
-          <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
-          <input className="search-input" style={{ paddingLeft:30,width:'100%' }} placeholder="Buscar item (armadura, arma, componente...)..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        </div>
-        <select style={SS} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
-          <option value="">Todas Categorias</option>
-          {cats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+      {/* Seletor de categoria — obrigatório pois a API requer id_category */}
+      <div style={{ display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center' }}>
+        <select
+          style={{ padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',minWidth:240 }}
+          value={selCat} onChange={e=>handleCatChange(e.target.value)}>
+          <option value="">— Selecione uma categoria de itens —</option>
+          {cats.map(c=><option key={c.id} value={String(c.id)}>{c.name_v2||c.name} {c.section?`(${c.section})`:''}</option>)}
         </select>
-        <button onClick={load} style={{ padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',gap:5,fontSize:12 }}>
-          <RefreshCw size={12}/> Atualizar
+        {data.length > 0 && (
+          <div style={{ position:'relative',flex:1,minWidth:180 }}>
+            <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
+            <input className="search-input" style={{ paddingLeft:30,width:'100%' }}
+              placeholder="Buscar por nome ou fabricante..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+        )}
+        <button onClick={loadCats} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+          <RefreshCw size={11}/> Recarregar
         </button>
       </div>
+
       {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
-      <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} itens</div>
-      {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando itens...</div>
-      ) : (
-        <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
+
+      {/* Empty states */}
+      {loading && (
+        <div style={{ textAlign:'center',padding:40,color:'var(--text-muted)' }}>
+          <RefreshCw size={20} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/>
+          Carregando categorias...
+        </div>
+      )}
+      {loadingCat && (
+        <div style={{ textAlign:'center',padding:40,color:'var(--accent-primary)' }}>
+          <RefreshCw size={20} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/>
+          Buscando itens da categoria...
+        </div>
+      )}
+      {!loading && !loadingCat && !selCat && cats.length > 0 && (
+        <div style={{ textAlign:'center',padding:'40px 20px',color:'var(--text-muted)' }}>
+          <div style={{ fontSize:36,marginBottom:10 }}>📦</div>
+          <div style={{ fontSize:13,fontWeight:600,marginBottom:6 }}>Selecione uma categoria acima</div>
+          <div style={{ fontSize:11 }}>A UEX API requer uma categoria específica para listar itens.<br/>Escolha uma no seletor para carregar os resultados.</div>
+        </div>
+      )}
+      {!loading && !loadingCat && !error && selCat && filtered.length === 0 && (
+        <div style={{ color:'var(--text-muted)',fontSize:13,padding:'20px 0',textAlign:'center' }}>
+          Nenhum item encontrado nesta categoria.
+        </div>
+      )}
+
+      {/* Tabela de resultados */}
+      {!loading && !loadingCat && filtered.length > 0 && (
+        <>
+          <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} itens</div>
+          <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
+        </>
       )}
       <DetailPanel item={selected} onClose={()=>setSelected(null)} tab="itens"/>
     </div>

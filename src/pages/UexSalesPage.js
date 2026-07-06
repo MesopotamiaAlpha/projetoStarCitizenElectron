@@ -996,7 +996,12 @@ export default function UexSalesPage() {
 
       {/* Modais */}
       {importQueue.length > 0 && (
-        <ImportConfirmModal listing={importQueue[0]} onConfirm={handleImportConfirm} onSkip={handleImportSkip}/>
+        <ImportConfirmModal
+          key={importQueue[0]?.id || importQueue[0]?.title || 0}
+          listing={importQueue[0]}
+          onConfirm={handleImportConfirm}
+          onSkip={handleImportSkip}
+        />
       )}
       {showManualSale && (
         <ManualSaleModal catalogItems={catalog} onSave={handleManualSale} onClose={()=>setShowManualSale(false)}/>
