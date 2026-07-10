@@ -314,8 +314,9 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 // ── Card de item do catálogo com dados de mercado ─────────────────────────────
 function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
   const [expanded, setExpanded]   = useState(false);
-  const [editStock, setEditStock] = useState(false);
-  const [stockVal, setStockVal]   = useState(String(item.internal_stock || 0));
+  const [editStock, setEditStock]     = useState(false);
+  const [stockVal, setStockVal]       = useState(String(item.in_stock || 0));
+  const [internalVal, setInternalVal] = useState(String(item.internal_stock || 0));
   const [delConf, setDelConf]     = useState(false);
 
   const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
@@ -945,8 +946,17 @@ export default function UexSalesPage() {
   }, []); // eslint-disable-line
 
   // ── Ações ──
-  function handleEditStock(itemId, newStock) {
-    const updated = catalog.map(i => i.id === itemId ? { ...i, internal_stock: newStock } : i);
+  function handleEditStock(itemId, fields) {
+    // fields pode ser número (só internal_stock) ou objeto { internal_stock, in_stock }
+    const updated = catalog.map(i => {
+      if (i.id !== itemId) return i;
+      const patch = typeof fields === 'number'
+        ? { internal_stock: fields }
+        : fields;
+      // Recalcular is_sold_out baseado no in_stock atualizado
+      const newInStock = patch.in_stock !== undefined ? patch.in_stock : i.in_stock;
+      return { ...i, ...patch, is_sold_out: newInStock <= 0 ? 1 : 0 };
+    });
     refreshCatalog(updated);
   }
   function handleDeleteItem(itemId) {

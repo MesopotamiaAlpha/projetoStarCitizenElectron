@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Pickaxe, Gem, MapPin, Star, BarChart3, RefreshCw } from 'lucide-react';
+import { Pickaxe, Gem, MapPin, Star, BarChart3, RefreshCw, Plus, Trash2, Edit3, Save, X, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDataset, DATASETS } from '../data/dataStore';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 
@@ -69,6 +69,418 @@ export const DEFAULT_MINING_LOCATIONS = {
   'Ita': { system:'Stanton',type:'Moon', best:['Laranite','Gold','Iron'], danger:'Baixo', notes:'Lua de Hurston. Menor atmosfera — mais fácil de voar.' },
 };
 
+// ── Banco de dados completo de lasers e módulos de mineração ─────────────────
+const MINING_LASERS_DB = [
+  // Size 1 (Prospector turret, ROC, pequenas)
+  { name:'Helix I',        size:1, tier:'Iniciante',     power:1500, range:25, extr:1.0, instab:0.30, notes:'Básico. Ideal para Quantainium (baixa potência).' },
+  { name:'Arbor MH1',      size:1, tier:'Intermediário', power:2600, range:35, extr:1.4, instab:0.15, notes:'Excelente estabilidade. Padrão para Prospector.' },
+  { name:'Lancet MH1',     size:1, tier:'Intermediário', power:2400, range:30, extr:1.3, instab:0.20, notes:'Boa extração, bom controle.' },
+  { name:'Impact I',       size:1, tier:'Intermediário', power:3200, range:28, extr:1.6, instab:0.30, notes:'Alta potência, cuidado com instáveis.' },
+  { name:'Abrade I',       size:1, tier:'Avançado',      power:4000, range:26, extr:1.8, instab:0.40, notes:'Alta potência para rochas grandes.' },
+  { name:'Torrent I',      size:1, tier:'Avançado',      power:3500, range:30, extr:2.0, instab:0.35, notes:'Máxima extração size 1.' },
+  { name:'Helix II',       size:1, tier:'Craftado',      power:2200, range:28, extr:1.3, instab:0.25, notes:'Craftado. Melhoria do Helix I.' },
+  { name:'Lancet MH2',     size:2, tier:'Intermediário', power:3800, range:35, extr:1.8, instab:0.20, notes:'Size 2. Para MOLE e naves maiores.' },
+  // Size 2 (MOLE)
+  { name:'Abrade II',      size:2, tier:'Avançado',      power:6000, range:28, extr:2.4, instab:0.40, notes:'Size 2. Alta produção.' },
+  { name:'Torrent II',     size:2, tier:'Avançado',      power:5500, range:32, extr:2.8, instab:0.38, notes:'Size 2. Máxima extração.' },
+  { name:'Crush S2',       size:2, tier:'Avançado',      power:5000, range:26, extr:2.5, instab:0.42, notes:'Size 2. Para grupo.' },
+  // Size 3 (MOLE)
+  { name:'Arbor MH3',      size:3, tier:'Intermediário', power:5000, range:40, extr:2.2, instab:0.15, notes:'Size 3. Estabilidade máxima.' },
+  { name:'Crush S3',       size:3, tier:'Avançado',      power:7500, range:28, extr:3.2, instab:0.45, notes:'Size 3. Máxima produção bruta.' },
+  { name:'Torrent III',    size:3, tier:'Avançado',      power:7000, range:32, extr:3.0, instab:0.35, notes:'Size 3. Alta extração com mais controle.' },
+];
+
+const MINING_MODULES_DB = [
+  // Potência
+  { name:'Surge',          type:'Potência',    slot:'Ativo',  effect:'+20% potência máx.',           notes:'Burst de potência temporário.' },
+  { name:'Surge II',       type:'Potência',    slot:'Ativo',  effect:'+30% potência máx.',           notes:'Versão melhorada.' },
+  { name:'Optimum',        type:'Potência',    slot:'Passivo',effect:'+15% zona de extração',        notes:'Amplia a janela de extração segura.' },
+  { name:'Rieger C3',      type:'Potência',    slot:'Passivo',effect:'+15% extração, +calor',        notes:'Mais produção por minuto.' },
+  { name:'Rieger C5',      type:'Potência',    slot:'Passivo',effect:'+20% extração, ++calor',       notes:'Produção máxima, gera calor.' },
+  // Filtragem
+  { name:'FLTR-L',         type:'Filtragem',   slot:'Passivo',effect:'+10% pureza',                  notes:'Menos Inert Material.' },
+  { name:'FLTR-XL',        type:'Filtragem',   slot:'Passivo',effect:'+15% pureza',                  notes:'Filtragem avançada.' },
+  { name:'Fltrn-Grdn',     type:'Filtragem',   slot:'Passivo',effect:'Filtra Inert Material',        notes:'Padrão para toda mineração.' },
+  // Estabilidade / Segurança
+  { name:'Lifeline',       type:'Segurança',   slot:'Passivo',effect:'-30% instabilidade',           notes:'Obrigatório para Quantainium.' },
+  { name:'Rime I',         type:'Segurança',   slot:'Passivo',effect:'-20% superaquecimento',        notes:'Resfria o laser mais rápido.' },
+  { name:'Rime II',        type:'Segurança',   slot:'Passivo',effect:'-35% superaquecimento',        notes:'Versão avançada.' },
+  { name:'Torpid',         type:'Segurança',   slot:'Passivo',effect:'-25% instabilidade + -resistência', notes:'Estabilidade mas reduz dano.' },
+  { name:'XTR I',          type:'Segurança',   slot:'Passivo',effect:'-15% instabilidade',           notes:'Leve redução de instabilidade.' },
+  { name:'XTR II',         type:'Segurança',   slot:'Passivo',effect:'-25% instabilidade',           notes:'Versão melhorada.' },
+  // Fragmentação / Resistência
+  { name:'Brandt',         type:'Fragmentação',slot:'Passivo',effect:'-20% resistência da rocha',    notes:'Para rochas muito duras.' },
+  { name:'Brandt II',      type:'Fragmentação',slot:'Passivo',effect:'-30% resistência da rocha',    notes:'Versão avançada.' },
+  { name:'Forel',          type:'Fragmentação',slot:'Passivo',effect:'-15% resistência + cristais',  notes:'Para rochas cristalizadas.' },
+  // Controle / Foco
+  { name:'Focus I',        type:'Foco',        slot:'Passivo',effect:'Reduz zona — mais controle',   notes:'Ideal para instáveis como Quant.' },
+  { name:'Focus II',       type:'Foco',        slot:'Passivo',effect:'Reduz zona ainda mais',        notes:'Para mineradores experientes.' },
+  { name:'Focus III',      type:'Foco',        slot:'Passivo',effect:'Controle máximo',              notes:'Máxima precisão na extração.' },
+];
+
+const MODULE_TYPE_COLORS = {
+  Potência:'var(--accent-red)', Filtragem:'var(--accent-green)',
+  Segurança:'var(--accent-primary)', Fragmentação:'var(--accent-gold)', Foco:'#a29bfe',
+};
+
+const SHIP_CONFIGS = {
+  'Prospector': { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:2, desc:'1 laser size 1 · 2 módulos' },
+  'MOLE':       { lasers:[{ id:'l1', size:2, label:'Laser Centro' },{ id:'l2', size:2, label:'Laser Esquerda' },{ id:'l3', size:2, label:'Laser Direita' }], moduleSlots:3, desc:'3 lasers size 2 · 3 módulos' },
+  'Vulture':    { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:2, desc:'1 laser size 1 · 2 módulos (salvage)' },
+  'Orion':      { lasers:[{ id:'l1', size:3, label:'Laser 1' },{ id:'l2', size:3, label:'Laser 2' },{ id:'l3', size:3, label:'Laser 3' }], moduleSlots:4, desc:'3 lasers size 3 · 4 módulos' },
+  'Expanse':    { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:2, desc:'1 laser size 1 · 2 módulos' },
+};
+
+const BUILDS_KEY = 'sc_mining_builds_v1';
+function loadBuilds()   { try { return JSON.parse(localStorage.getItem(BUILDS_KEY))||[]; } catch { return []; } }
+function saveBuilds(d)  { localStorage.setItem(BUILDS_KEY, JSON.stringify(d)); }
+function localISO()     { const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function ptDate(iso)    { return iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
+
+// ── Build Editor ───────────────────────────────────────────────────────────────
+function BuildEditor({ build, onSave, onCancel }) {
+  const [name,    setName]    = useState(build?.name    || '');
+  const [ship,    setShip]    = useState(build?.ship    || 'Prospector');
+  const [notes,   setNotes]   = useState(build?.notes   || '');
+  const [lasers,  setLasers]  = useState(build?.lasers  || {});
+  const [modules, setModules] = useState(build?.modules || []);
+  const [active,  setActive]  = useState(build?.active  || false);
+  const [error,   setError]   = useState('');
+
+  const cfg = SHIP_CONFIGS[ship] || SHIP_CONFIGS['Prospector'];
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' };
+  const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
+  const LS = { fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:3 };
+
+  function setLaser(slotId, laserName) { setLasers(p=>({...p,[slotId]:laserName})); }
+  function addModule(mod) {
+    if (modules.length >= cfg.moduleSlots) return;
+    setModules(p=>[...p, mod]);
+  }
+  function removeModule(idx) { setModules(p=>p.filter((_,i)=>i!==idx)); }
+
+  function handleSave() {
+    if (!name.trim()) { setError('Nome da build obrigatório.'); return; }
+    onSave({ id:build?.id||Date.now(), name:name.trim(), ship, lasers, modules, notes, active, created_at:build?.created_at||localISO(), updated_at:localISO() });
+  }
+
+  const lasersBySize = (size) => MINING_LASERS_DB.filter(l=>l.size===size);
+  const usedModuleNames = modules.map(m=>m.name);
+
+  return (
+    <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:10, padding:18, marginBottom:14 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+        <div style={{ fontFamily:'Orbitron,monospace', fontSize:13, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.06em', display:'flex', alignItems:'center', gap:7 }}>
+          <Pickaxe size={15}/> {build?.id ? 'EDITAR BUILD' : 'NOVA BUILD DE MINERAÇÃO'}
+        </div>
+        <button onClick={onCancel} style={{ background:'none', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-secondary)', cursor:'pointer', padding:'4px 8px' }}><X size={13}/></button>
+      </div>
+
+      {/* Nome + Nave + Ativa */}
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr auto', gap:9, marginBottom:12 }}>
+        <div>
+          <label style={LS}>Nome da Build *</label>
+          <input style={IS} value={name} onChange={e=>setName(e.target.value)} placeholder="ex: Quant Hunter, Farm de Laranite..."/>
+        </div>
+        <div>
+          <label style={LS}>Nave</label>
+          <select style={SS} value={ship} onChange={e=>{setShip(e.target.value);setLasers({});setModules([]);}}>
+            {Object.keys(SHIP_CONFIGS).map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{ display:'flex', alignItems:'flex-end', paddingBottom:2 }}>
+          <button onClick={()=>setActive(!active)} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', background:active?'rgba(255,200,0,0.1)':'transparent', border:`1px solid ${active?'rgba(255,200,0,0.4)':'var(--border-subtle)'}`, borderRadius:5, color:active?'var(--accent-gold)':'var(--text-muted)', cursor:'pointer', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, textTransform:'uppercase', whiteSpace:'nowrap' }}>
+            <Star size={12}/> {active ? 'Build Ativa ★' : 'Marcar Ativa'}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:14, padding:'5px 10px', background:'rgba(255,255,255,0.03)', borderRadius:5 }}>
+        <strong style={{ color:'var(--accent-primary)' }}>{ship}:</strong> {cfg.desc}
+      </div>
+
+      {/* Lasers */}
+      <div style={{ marginBottom:14 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>🔫 Lasers de Mineração</div>
+        <div style={{ display:'grid', gridTemplateColumns:`repeat(${cfg.lasers.length},1fr)`, gap:10 }}>
+          {cfg.lasers.map(slot => {
+            const available = lasersBySize(slot.size);
+            const selected  = MINING_LASERS_DB.find(l=>l.name===lasers[slot.id]);
+            return (
+              <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:8 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>
+                  {slot.label} (Size {slot.size})
+                </div>
+                <select style={SS} value={lasers[slot.id]||''} onChange={e=>setLaser(slot.id,e.target.value)}>
+                  <option value="">— Sem laser —</option>
+                  {available.map(l=><option key={l.name} value={l.name}>{l.name} · {l.tier}</option>)}
+                </select>
+                {selected && (
+                  <div style={{ marginTop:6, fontSize:10, color:'var(--text-muted)', lineHeight:1.4 }}>
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:3 }}>
+                      <span>⚡ {selected.power} MW</span>
+                      <span>📏 {selected.range}m</span>
+                      <span style={{ color: selected.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>⚡ Instab: {Math.round(selected.instab*100)}%</span>
+                    </div>
+                    <div style={{ color:'var(--text-secondary)', fontStyle:'italic' }}>{selected.notes}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Módulos */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
+          🔧 Módulos ({modules.length}/{cfg.moduleSlots} slots)
+        </div>
+        {/* Módulos equipados */}
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+          {modules.map((m,i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}18`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}44` }}>
+              <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
+              <span style={{ fontSize:9, color:'var(--text-muted)' }}>{m.effect}</span>
+              <button onClick={()=>removeModule(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0, display:'flex', alignItems:'center' }}><X size={10}/></button>
+            </div>
+          ))}
+          {modules.length === 0 && <span style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Nenhum módulo equipado</span>}
+        </div>
+        {/* Adicionar módulo */}
+        {modules.length < cfg.moduleSlots && (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:5 }}>
+            {MINING_MODULES_DB.filter(m=>!usedModuleNames.includes(m.name)).map(m => (
+              <button key={m.name} onClick={()=>addModule(m)} style={{
+                textAlign:'left', padding:'6px 10px', background:'rgba(255,255,255,0.02)',
+                border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--border-subtle)'}33`,
+                borderRadius:6, cursor:'pointer', transition:'all 0.15s',
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.background=`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}10`;}}
+              onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:5 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
+                  <span style={{ fontSize:8, padding:'1px 5px', borderRadius:3, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}22`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.type}</span>
+                </div>
+                <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:2 }}>{m.effect}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Notas */}
+      <div style={{ marginBottom:12 }}>
+        <label style={LS}>Notas / Estratégia</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Melhor para Quantainium, usar em Yela, rodar com tripulação..."
+          style={{ width:'100%', minHeight:44, padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', resize:'vertical', boxSizing:'border-box' }}/>
+      </div>
+
+      {error && <div style={{ color:'var(--accent-red)', fontSize:12, marginBottom:8 }}>{error}</div>}
+      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+        <button onClick={onCancel} style={{ padding:'7px 16px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <Save size={12}/> {build?.id?'Salvar':'Criar Build'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Build Card ─────────────────────────────────────────────────────────────────
+function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
+  const [expanded, setExpanded] = useState(false);
+  const [delConf,  setDelConf]  = useState(false);
+  const cfg = SHIP_CONFIGS[build.ship] || SHIP_CONFIGS['Prospector'];
+
+  const laserList = cfg.lasers.map(slot => ({
+    slot, laser: MINING_LASERS_DB.find(l=>l.name===build.lasers?.[slot.id])
+  }));
+
+  return (
+    <div style={{
+      background: build.active ? 'rgba(255,200,0,0.05)' : 'var(--bg-card)',
+      border: `1px solid ${build.active ? 'rgba(255,200,0,0.4)' : 'var(--border-subtle)'}`,
+      borderRadius:9, overflow:'hidden', marginBottom:8, transition:'all 0.2s',
+    }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 14px', cursor:'pointer' }} onClick={()=>setExpanded(!expanded)}>
+        <Pickaxe size={16} style={{ color:build.active?'var(--accent-gold)':'var(--accent-primary)', flexShrink:0 }}/>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:2 }}>
+            <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:14, fontWeight:700, color:build.active?'var(--accent-gold)':'var(--text-primary)' }}>{build.name}</span>
+            {build.active && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:3, background:'rgba(255,200,0,0.15)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.4)', fontWeight:700 }}>★ ATIVA</span>}
+            <span style={{ fontSize:10, color:'var(--text-muted)' }}>🚀 {build.ship}</span>
+          </div>
+          <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
+            {laserList.map(({slot,laser}) => laser && (
+              <span key={slot.id} style={{ display:'flex', alignItems:'center', gap:3 }}>
+                🔫 {laser.name}
+              </span>
+            ))}
+            {(build.modules||[]).map((m,i) => (
+              <span key={i} style={{ color:MODULE_TYPE_COLORS[m.type]||'var(--text-muted)' }}>· {m.name}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:5, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
+          <button onClick={()=>onToggleActive(build.id)} title={build.active?'Desmarcar como ativa':'Marcar como ativa'}
+            style={{ width:28,height:28,borderRadius:5,border:`1px solid ${build.active?'rgba(255,200,0,0.4)':'var(--border-normal)'}`,background:build.active?'rgba(255,200,0,0.12)':'transparent',color:build.active?'var(--accent-gold)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+            <Star size={12}/>
+          </button>
+          <button onClick={()=>onEdit(build)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+            <Edit3 size={11}/>
+          </button>
+          {delConf ? (
+            <>
+              <button onClick={()=>onDelete(build.id)} style={{ padding:'3px 7px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700 }}>Sim</button>
+              <button onClick={()=>setDelConf(false)} style={{ padding:'3px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10 }}>Não</button>
+            </>
+          ) : (
+            <button onClick={()=>setDelConf(true)} style={{ width:28,height:28,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <Trash2 size={11}/>
+            </button>
+          )}
+          {expanded ? <ChevronUp size={13} style={{ color:'var(--text-muted)' }}/> : <ChevronDown size={13} style={{ color:'var(--text-muted)' }}/>}
+        </div>
+      </div>
+
+      {/* Detalhes expandidos */}
+      {expanded && (
+        <div style={{ padding:'0 14px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
+          <div style={{ display:'grid', gridTemplateColumns:`repeat(${cfg.lasers.length},1fr)`, gap:10, margin:'12px 0' }}>
+            {laserList.map(({slot,laser}) => (
+              <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.12)', borderRadius:7 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>{slot.label}</div>
+                {laser ? (
+                  <>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:4 }}>{laser.name}</div>
+                    <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap', marginBottom:3 }}>
+                      <span>⚡ {laser.power} MW</span>
+                      <span>📏 {laser.range}m</span>
+                      <span>Extr: {laser.extr}x</span>
+                      <span style={{ color:laser.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>Instab: {Math.round(laser.instab*100)}%</span>
+                    </div>
+                    <div style={{ fontSize:10, color:'var(--text-secondary)', fontStyle:'italic' }}>{laser.notes}</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Sem laser</div>
+                )}
+              </div>
+            ))}
+          </div>
+          {(build.modules||[]).length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Módulos Equipados</div>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                {build.modules.map((m,i) => (
+                  <div key={i} style={{ padding:'5px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}14`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}33` }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</div>
+                    <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:1 }}>{m.effect}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {build.notes && (
+            <div style={{ padding:'7px 10px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:5, fontSize:11, color:'var(--text-secondary)', fontStyle:'italic' }}>
+              📝 {build.notes}
+            </div>
+          )}
+          <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:8 }}>
+            Criada: {ptDate(build.created_at)}{build.updated_at && build.updated_at!==build.created_at ? ` · Atualizada: ${ptDate(build.updated_at)}` : ''}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Aba de Builds ─────────────────────────────────────────────────────────────
+function BuildsTab() {
+  const [builds,    setBuilds]    = useState(() => loadBuilds());
+  const [showForm,  setShowForm]  = useState(false);
+  const [editBuild, setEditBuild] = useState(null);
+  const [filterShip,setFilterShip]= useState('all');
+
+  function persist(updated) { setBuilds(updated); saveBuilds(updated); }
+
+  function handleSave(build) {
+    const updated = builds.some(b=>b.id===build.id)
+      ? builds.map(b=>b.id===build.id?build:b)
+      : [build, ...builds];
+    persist(updated);
+    setShowForm(false); setEditBuild(null);
+  }
+
+  function handleDelete(id) { persist(builds.filter(b=>b.id!==id)); }
+
+  function handleToggleActive(id) {
+    persist(builds.map(b => b.id===id ? {...b, active:!b.active} : b));
+  }
+
+  const filtered = filterShip==='all' ? builds : builds.filter(b=>b.ship===filterShip);
+  const activeBuild = builds.find(b=>b.active);
+
+  const SS2 = { padding:'5px 22px 5px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center' };
+
+  return (
+    <div>
+      {(showForm || editBuild) && (
+        <BuildEditor
+          build={editBuild}
+          onSave={handleSave}
+          onCancel={()=>{setShowForm(false);setEditBuild(null);}}
+        />
+      )}
+
+      {/* Build ativa em destaque */}
+      {activeBuild && !showForm && !editBuild && (
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'rgba(255,200,0,0.07)', border:'1px solid rgba(255,200,0,0.3)', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
+          <Star size={16} style={{ color:'var(--accent-gold)', flexShrink:0 }}/>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Build Ativa Agora</div>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{activeBuild.name} — {activeBuild.ship}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Controles */}
+      <div style={{ display:'flex', gap:8, marginBottom:12, alignItems:'center', flexWrap:'wrap' }}>
+        {!showForm && !editBuild && (
+          <button onClick={()=>setShowForm(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.35)', borderRadius:7, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer' }}>
+            <Plus size={14}/> Nova Build
+          </button>
+        )}
+        <select style={SS2} value={filterShip} onChange={e=>setFilterShip(e.target.value)}>
+          <option value="all">Todas as naves</option>
+          {Object.keys(SHIP_CONFIGS).map(s=><option key={s}>{s}</option>)}
+        </select>
+        <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} build{filtered.length!==1?'s':''}</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'50px 20px', color:'var(--text-muted)' }}>
+          <Pickaxe size={44} style={{ display:'block', margin:'0 auto 12px', opacity:0.15 }}/>
+          <div style={{ fontFamily:'Orbitron,monospace', fontSize:13, fontWeight:700, marginBottom:8 }}>
+            {builds.length===0 ? 'NENHUMA BUILD SALVA' : 'NENHUMA BUILD PARA ESTA NAVE'}
+          </div>
+          <div style={{ fontSize:12, lineHeight:1.6 }}>
+            {builds.length===0 ? 'Clique em "Nova Build" para configurar sua primeira nave de mineração.' : 'Tente selecionar "Todas as naves".'}
+          </div>
+        </div>
+      ) : (
+        filtered.map(b => (
+          <BuildCard key={b.id} build={b}
+            onEdit={b=>{setEditBuild(b);setShowForm(false);}}
+            onDelete={handleDelete}
+            onToggleActive={handleToggleActive}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function MiningPage() {
   const { data: MINEABLE_ORES } = useDataset(DATASETS.MINING_ORES.key, DEFAULT_MINEABLE_ORES);
   const { data: SHIP_LASERS } = useDataset(DATASETS.MINING_LASERS.key, DEFAULT_SHIP_LASERS);
@@ -92,9 +504,10 @@ export default function MiningPage() {
 
   const TABS = [
     { id:'locations', label:'Locais de Mineração' },
-    { id:'ores', label:'Minérios & Valores' },
-    { id:'lasers', label:'Lasers de Mining' },
-    { id:'ships', label:'Naves & Módulos' },
+    { id:'ores',      label:'Minérios & Valores' },
+    { id:'lasers',    label:'Lasers de Mining' },
+    { id:'ships',     label:'Naves & Módulos' },
+    { id:'builds',    label:'Builds de Nave' },
   ];
 
   return (
@@ -242,7 +655,8 @@ export default function MiningPage() {
         )}
 
         {/* SHIPS & MODULES TAB */}
-        {activeTab==='ships' && (
+        {activeTab==='builds' && <BuildsTab/>}
+      {activeTab==='ships' && (
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:20 }}>
             <div>
               <div className="modal-section-title">Naves de Mining</div>

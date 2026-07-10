@@ -13,7 +13,8 @@ import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
 import UexSalesPage       from './pages/UexSalesPage';
-import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag } from 'lucide-react';
+import WikeloTrackerPage  from './pages/WikeloTrackerPage';
+import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -132,6 +133,7 @@ const PAGES = [
   { id:'missions',   label:'Missões',             icon:ListChecks },
   { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
   { id:'uexsales',   label:'Acompanhamento UEX',  icon:ShoppingBag},
+  { id:'wikelo',     label:'Acompanhamento Wikelo',icon:Star       },
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
 ];
 
@@ -164,6 +166,7 @@ export default function App() {
   const handleTogglePiece         = async id     => { await api.togglePiece(id);         await loadData(); };
   const handleTogglePieceWishlist = async id     => { await api.togglePieceWishlist(id);  await loadData(); };
   const handleupdatePieceNotes    = async (id,n) => { await api.updatePieceNotes(id,n);   await loadData(); };
+  const handleUpdatePieceQuantity = async (id,qty) => { await api.updatePieceQuantity(id,qty); await loadData(); };
 
   if (loading) return (
     <div className="app-loading">
@@ -225,7 +228,7 @@ export default function App() {
       <main className="main-content">
         {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
         {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
         {activePage==='inventory'  && <InventoryPage />}
         {activePage==='blueprints' && <BlueprintPage />}
         {activePage==='materials'  && <MaterialTrackerPage />}
@@ -235,6 +238,7 @@ export default function App() {
         {activePage==='missions'   && <MissionTrackerPage />}
         {activePage==='orevault'   && <OreVaultPage />}
         {activePage==='uexsales'   && <UexSalesPage />}
+        {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
       </main>
     </div>

@@ -692,14 +692,15 @@ export default function MaterialTrackerPage() {
             </span>
           </div>
 
-          {queue.queuedBlueprints.length === 0 ? (
+          {queue.queuedBlueprints.length === 0 && (queue.manualMaterials||[]).length === 0 ? (
             <div style={{ textAlign:'center',padding:'60px 20px',color:'var(--text-muted)' }}>
               <FlaskConical size={48} style={{ display:'block',margin:'0 auto 14px',opacity:0.2 }}/>
               <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,letterSpacing:'0.06em',marginBottom:8 }}>NENHUM BLUEPRINT NA FILA</div>
               <div style={{ fontSize:12,lineHeight:1.6 }}>
                 Vá para a aba <strong style={{ color:'var(--accent-primary)' }}>Blueprints</strong> e clique em<br/>
                 <strong style={{ color:'var(--accent-gold)' }}>🛒 Quero Craftar</strong> nos blueprints que deseja criar.<br/>
-                Os materiais necessários aparecerão aqui automaticamente.
+                Os materiais necessários aparecerão aqui automaticamente.<br/>
+                Ou use o botão <strong style={{ color:'var(--accent-primary)' }}>+ Adicionar Minério Manual</strong> acima.
               </div>
             </div>
           ) : display.length === 0 ? (
