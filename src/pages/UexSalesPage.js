@@ -534,8 +534,8 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       const q = search.toLowerCase();
       list = list.filter(i => i.title?.toLowerCase().includes(q) || i.location?.toLowerCase().includes(q));
     }
-    if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out);
-    if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out);
+    if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out && (i.in_stock === undefined || i.in_stock > 0));
+    if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out || (i.in_stock !== undefined && i.in_stock <= 0));
     if (filterStatus === 'expiring') list = list.filter(i => {
       if (!i.date_expiration) return false;
       return Math.floor((i.date_expiration * 1000 - Date.now()) / 86400000) <= 2;
@@ -556,8 +556,8 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
         {[
           { label:'Total de Itens', value:catalog.length, color:'var(--accent-primary)', sub:'no catálogo' },
-          { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out).length, color:'var(--accent-green)', sub:'listados ativamente' },
-          { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out).length, color:'var(--accent-red)', sub:'sem estoque' },
+          { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out && (i.in_stock===undefined||i.in_stock>0)).length, color:'var(--accent-green)', sub:'listados ativamente' },
+          { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out||(i.in_stock!==undefined&&i.in_stock<=0)).length, color:'var(--accent-red)', sub:'sem estoque' },
           { label:'Estoque Total', value:catalog.reduce((a,i)=>a+(i.internal_stock||0),0), color:'var(--accent-gold)', sub:'no inventário' },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
@@ -881,8 +881,18 @@ export default function UexSalesPage() {
 
       // Atualizar sempre os existentes (preço, estoque API, etc.) preservando dados internos
       const updatedExisting = currentCatalog.map(cat => {
-        const fresh = data.find(d => d.id === cat.id);
-        return fresh ? { ...cat, ...fresh, internal_stock: cat.internal_stock, notes: cat.notes } : cat;
+        const fresh = data.find(d => String(d.id) === String(cat.id));
+        if (!fresh) return cat;
+        // Recalcular is_sold_out baseado no in_stock recebido da API
+        const newInStock = fresh.in_stock !== undefined ? Number(fresh.in_stock) : (cat.in_stock || 0);
+        return {
+          ...cat,
+          ...fresh,
+          in_stock:       newInStock,
+          is_sold_out:    newInStock <= 0 ? 1 : 0, // forçar recálculo correto
+          internal_stock: cat.internal_stock,       // preservar estoque interno
+          notes:          cat.notes,                // preservar notas
+        };
       });
       refreshCatalog(updatedExisting);
 
