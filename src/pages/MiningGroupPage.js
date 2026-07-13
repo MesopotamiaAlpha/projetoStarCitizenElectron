@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Pickaxe, Users, Plus, Trash2, Edit3, X, Save,
   ChevronDown, ChevronUp, MapPin, Package, DollarSign,
   Scale, AlertTriangle, CheckCircle2, RefreshCw,
-  TrendingUp, Gem, Archive, Clock, Star, BarChart3, Search
+  TrendingUp, Gem, Archive, Clock, Star, BarChart3, Search,
+  PlayCircle, StopCircle, Timer, Send, Lock
 } from 'lucide-react';
+import { addClanVaultEntries } from '../data/clanVault';
 
 // ── Estoque ───────────────────────────────────────────────────────────────────
 const KEY = 'sc_mining_group_v1';
@@ -18,6 +20,7 @@ const REFINE_METHODS = ['CAMS Refinaria','CRU-L1 Refinaria','HUR-L1 Refinaria','
 const ORE_LIST       = ['Quantainium','Bexalite','Taranite','Laranite','Gold','Diamond','Tungsten','Copper','Titanium','Hephaestanite','Dolivine','Aluminum','Corundum','Borase','Agricium','Inert Material','Outro'];
 const STORAGE_LOCS   = ['CRU-L1 Stash House','Port Tressler','Everus Harbor','Baijini Point','Area18 - Warehouse','Lorville - Warehouse','New Babbage - Warehouse','Ruin Station','Levski','Grim HEX','Outro'];
 const SESSION_STATUS = ['Planejando','Em andamento','Refinando','Concluída','Cancelarada'];
+const QUALITY_PRESETS = ['','Grade A','Grade B','Grade C','Pristine','High','Medium','Low','Raw'];
 
 const STATUS_COLORS = {
   'Planejando':'var(--accent-gold)','Em andamento':'var(--accent-primary)',
@@ -29,6 +32,47 @@ function ptMoney(v) { return Number(v||0).toLocaleString('pt-BR',{minimumFractio
 function ptSCU(v)   { return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:3}); }
 function fmtData(iso) { return iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 function newId()    { return Date.now() + Math.random(); }
+
+// ── Duração / Timers ao vivo ───────────────────────────────────────────────────
+function fmtDuration(ms) {
+  const totalSec = Math.max(0, Math.floor(Math.abs(ms)/1000));
+  const h = Math.floor(totalSec/3600);
+  const m = Math.floor((totalSec%3600)/60);
+  const sec = totalSec%60;
+  return h>0 ? `${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s` : `${m}m ${String(sec).padStart(2,'0')}s`;
+}
+
+// Cronômetro contando para cima (desde o início da mineração)
+function LiveCountUp({ startIso, color='var(--accent-primary)' }) {
+  const [elapsed, setElapsed] = useState(() => Date.now() - new Date(startIso).getTime());
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Date.now() - new Date(startIso).getTime()), 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  return (
+    <span style={{ display:'flex',alignItems:'center',gap:5,fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:700,color }}>
+      <Timer size={12}/> {fmtDuration(elapsed)}
+    </span>
+  );
+}
+
+// Contagem regressiva (tempo restante de refino)
+function LiveCountDown({ targetIso, onComplete, color='#a29bfe' }) {
+  const [remaining, setRemaining] = useState(() => new Date(targetIso).getTime() - Date.now());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const r = new Date(targetIso).getTime() - Date.now();
+      setRemaining(r);
+      if (r <= 0) { clearInterval(id); onComplete && onComplete(); }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [targetIso]);
+  return (
+    <span style={{ display:'flex',alignItems:'center',gap:5,fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:700,color:remaining>0?color:'var(--accent-green)' }}>
+      <Timer size={12}/> {remaining>0?fmtDuration(remaining):'Refino pronto!'}
+    </span>
+  );
+}
 
 // ── Styles shared ─────────────────────────────────────────────────────────────
 const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none' };
@@ -47,6 +91,11 @@ function newSessão() {
     refinery: '',
     refinery_duration_h: 0,
     notes: '',
+    // Fluxo de mineração em grupo
+    start_time: null,        // quando "Iniciar Mineração em Grupo" foi clicado
+    end_time: null,          // quando "Finalizar Mineração em Grupo" foi clicado
+    refine_start_time: null, // quando o refino começou a contar
+    division_mode: 'equal',  // 'equal' | 'manual'
     // Tripulação
     members: [],
     // Ores collected
@@ -87,6 +136,325 @@ function KPI({ label, value, color='var(--text-primary)', unit='' }) {
   );
 }
 
+// ── Modal de Início Rápido ────────────────────────────────────────────────────
+function StartSessionModal({ onStart, onCancel }) {
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState(LOCATIONS_LIST[0]);
+  const [ship, setShip] = useState(MINING_SHIPS[0]);
+  const [memberNames, setMemberNames] = useState(['']);
+  const [error, setError] = useState('');
+
+  function updateMemberName(i,v) { setMemberNames(p=>p.map((n,j)=>j===i?v:n)); }
+  function addMemberField() { setMemberNames(p=>[...p,'']); }
+  function removeMemberField(i) { setMemberNames(p=>p.filter((_,j)=>j!==i)); }
+
+  function handleStart() {
+    if (!name.trim()) { setError('Dê um nome para a sessão.'); return; }
+    const validNames = memberNames.map(n=>n.trim()).filter(Boolean);
+    if (validNames.length===0) { setError('Adicione ao menos um participante.'); return; }
+    onStart({
+      ...newSessão(),
+      name: name.trim(),
+      location, ship,
+      members: validNames.map(n=>newMember(n)),
+      status: 'Em andamento',
+      start_time: new Date().toISOString(),
+    });
+  }
+
+  return (
+    <div style={{ background:'var(--bg-card)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:10,padding:'18px',marginBottom:16 }}>
+      <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10 }}>
+        <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
+          <PlayCircle size={16}/> INICIAR NOVA SESSÃO DE MINERAÇÃO
+        </span>
+        <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}><X size={13}/></button>
+      </div>
+
+      <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:14,lineHeight:1.5 }}>
+        Registre só o essencial agora. Minério coletado, custo de refino, tempo de refino e divisão são pedidos quando você <strong>finalizar</strong> a mineração.
+      </div>
+
+      <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10,marginBottom:12 }}>
+        <div><label style={LS}>Nome da Sessão</label><input style={IS} value={name} onChange={e=>setName(e.target.value)} placeholder="ex: MOLE Run Yela — Noite de sexta"/></div>
+        <div><label style={LS}>Local de Mineração</label>
+          <select style={SS_STYLE} value={location} onChange={e=>setLocation(e.target.value)}>
+            {LOCATIONS_LIST.map(l=><option key={l}>{l}</option>)}
+          </select>
+        </div>
+        <div><label style={LS}>Nave Principal</label>
+          <select style={SS_STYLE} value={ship} onChange={e=>setShip(e.target.value)}>
+            {MINING_SHIPS.map(sh=><option key={sh}>{sh}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom:10 }}>
+        <label style={LS}>Participantes</label>
+        {memberNames.map((n,i)=>(
+          <div key={i} style={{ display:'flex',gap:6,marginBottom:6 }}>
+            <input style={IS} value={n} onChange={e=>updateMemberName(i,e.target.value)} placeholder={`Nome do participante ${i+1}`}/>
+            {memberNames.length>1&&(
+              <button onClick={()=>removeMemberField(i)} style={{ width:34,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
+            )}
+          </div>
+        ))}
+        <button onClick={addMemberField} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(0,229,160,0.08)',border:'1px solid rgba(0,229,160,0.25)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+          <Plus size={12}/> Adicionar Participante
+        </button>
+      </div>
+
+      {error&&(
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:10 }}>
+          <AlertTriangle size={13}/>{error}
+        </div>
+      )}
+
+      <div style={{ display:'flex',gap:8,justifyContent:'flex-end',marginTop:6,paddingTop:12,borderTop:'1px solid var(--border-subtle)' }}>
+        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleStart} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(255,196,54,0.12)',border:'1px solid rgba(255,196,54,0.4)',borderRadius:6,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+          <PlayCircle size={14}/> Iniciar Mineração em Grupo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal de Finalização (colhido no fim da mineração) ────────────────────────
+function FinishSessionModal({ session, onFinish, onCancel }) {
+  const [tab, setTab] = useState('ores'); // ores | division | storage
+  const [ores, setOres] = useState(() => session.ores.length ? JSON.parse(JSON.stringify(session.ores)) : [{id:newId(),name:'Quantainium',raw_scu:0,refined_scu:0,yield_pct:80,price_per_scu:0}]);
+  const [refiningCost, setRefiningCost] = useState(0);
+  const [refinery, setRefinery] = useState(session.refinery||'');
+  const [refineDurationH, setRefineDurationH] = useState(session.refinery_duration_h||1);
+  const [divisionMode, setDivisionMode] = useState(session.division_mode||'equal');
+  const [members, setMembers] = useState(() => JSON.parse(JSON.stringify(session.members||[])));
+  const [storage, setStorage] = useState(() => session.storage.length ? JSON.parse(JSON.stringify(session.storage)) : []);
+  const [error, setError] = useState('');
+
+  const memberNomes = members.map(m=>m.name).filter(Boolean);
+
+  function addOre()        { setOres(p=>[...p,{id:newId(),name:'Quantainium',raw_scu:0,refined_scu:0,yield_pct:80,price_per_scu:0}]); }
+  function updateOre(i,k,v){ setOres(p=>p.map((o,j)=>j===i?{...o,[k]:v}:o)); }
+  function removeOre(i)    { setOres(p=>p.filter((_,j)=>j!==i)); }
+
+  function updateMemberPct(i,v) { setMembers(p=>p.map((m,j)=>j===i?{...m,scu_share_pct:v}:m)); }
+  function applyEqualDivision() {
+    setDivisionMode('equal');
+    if (members.length===0) return;
+    const pct = +(100/members.length).toFixed(2);
+    setMembers(p=>p.map((m,i)=>({...m,scu_share_pct:i<p.length-1?pct:+(100-(pct*(p.length-1))).toFixed(2)})));
+  }
+
+  function addStorage()      { setStorage(p=>[...p,{id:newId(),location:STORAGE_LOCS[0],owner:memberNomes[0]||'',ore:ores[0]?.name||'',scu:0,quality:'',status:'Guardado',send_to_vault:false,notes:''}]); }
+  function updateStorage(i,k,v){ setStorage(p=>p.map((st,j)=>j===i?{...st,[k]:v}:st)); }
+  function removeStorage(i)  { setStorage(p=>p.filter((_,j)=>j!==i)); }
+
+  const totalRaw     = ores.reduce((a,o)=>a+(Number(o.raw_scu)||0),0);
+  const totalRefined = ores.reduce((a,o)=>a+(Number(o.refined_scu)||0),0);
+  const totalPct     = members.reduce((a,m)=>a+(Number(m.scu_share_pct)||0),0);
+
+  const FINISH_TABS = [
+    {id:'ores',     label:'Minérios',    icon:Gem},
+    {id:'division', label:'Divisão',     icon:Scale},
+    {id:'storage',  label:`Estoque (${storage.length})`, icon:Archive},
+  ];
+
+  function handleSubmit() {
+    if (totalRefined<=0) { setError('Informe o SCU refinado de ao menos um minério.'); setTab('ores'); return; }
+    if (members.length>0 && Math.abs(totalPct-100)>0.5) { setError(`A divisão soma ${totalPct.toFixed(2)}% — ajuste para somar 100%.`); setTab('division'); return; }
+    if (refineDurationH<=0) { setError('Informe o tempo de refino (em horas).'); setTab('ores'); return; }
+    setError('');
+
+    const newCosts = [...session.costs];
+    if (refiningCost>0) newCosts.push({ id:newId(), desc:'Custo de Refino', amount:refiningCost, paid_by:'Grupo' });
+
+    onFinish({
+      ...session,
+      ores, costs:newCosts, refinery, refinery_duration_h:refineDurationH,
+      division_mode:divisionMode, members, storage,
+      end_time: new Date().toISOString(),
+      refine_start_time: new Date().toISOString(),
+      status: 'Refinando',
+    });
+  }
+
+  return (
+    <div style={{ background:'var(--bg-card)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:10,padding:'18px',marginBottom:16 }}>
+      <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6 }}>
+        <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'#a29bfe',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
+          <StopCircle size={16}/> FINALIZAR MINERAÇÃO — {session.name}
+        </span>
+        <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}><X size={13}/></button>
+      </div>
+      <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:14,lineHeight:1.5 }}>
+        Registre o que foi coletado, o custo e tempo de refino, como dividir entre os participantes e onde vai ficar guardado.
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display:'flex',gap:0,marginBottom:16,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden' }}>
+        {FINISH_TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:5,padding:'8px 6px',background:tab===t.id?'rgba(162,155,254,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:tab===t.id?'#a29bfe':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em',textTransform:'uppercase' }}>
+            <t.icon size={11}/><span style={{ fontSize:10 }}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── MINÉRIOS ── */}
+      {tab==='ores'&&(
+        <div>
+          <button onClick={addOre} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.3)',borderRadius:6,color:'var(--accent-gold)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+            <Plus size={13}/> Adicionar Minério
+          </button>
+          {ores.map((o,i)=>(
+            <div key={o.id} style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'12px',marginBottom:8 }}>
+              <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr auto',gap:8,alignItems:'end' }}>
+                <div><label style={LS}>Minério</label>
+                  <select style={SS_STYLE} value={o.name} onChange={e=>updateOre(i,'name',e.target.value)}>
+                    {ORE_LIST.map(ore=><option key={ore}>{ore}</option>)}
+                  </select>
+                </div>
+                <div><label style={LS}>SCU Bruto Coletado</label><input style={IS} type="number" min="0" step="0.001" value={o.raw_scu||''} onChange={e=>updateOre(i,'raw_scu',Number(e.target.value))} placeholder="0"/></div>
+                <div><label style={LS}>SCU Refinado (esperado)</label><input style={IS} type="number" min="0" step="0.001" value={o.refined_scu||''} onChange={e=>updateOre(i,'refined_scu',Number(e.target.value))} placeholder="0"/></div>
+                <button onClick={()=>removeOre(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+              </div>
+            </div>
+          ))}
+          {ores.length>0&&(
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,marginTop:6,marginBottom:16 }}>
+              <KPI label="Total SCU Bruto"    value={ptSCU(totalRaw)}     color="var(--accent-gold)"  unit="SCU"/>
+              <KPI label="Total SCU Refinado" value={ptSCU(totalRefined)} color="var(--accent-green)" unit="SCU"/>
+            </div>
+          )}
+
+          <SectionHeader icon={Timer} title="Refino" color="#a29bfe"/>
+          <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10 }}>
+            <div><label style={LS}>Custo do Refino (aUEC)</label>
+              <input style={IS} type="text" inputMode="numeric"
+                value={refiningCost?ptMoney(refiningCost):''}
+                onChange={e=>setRefiningCost(Number(String(e.target.value).replace(/\./g,'').replace(',','.').replace(/[^\d.]/g,''))||0)}
+                placeholder="0"/>
+            </div>
+            <div><label style={LS}>Refinaria</label>
+              <select style={SS_STYLE} value={refinery} onChange={e=>setRefinery(e.target.value)}>
+                <option value="">— Selecionar —</option>
+                {REFINE_METHODS.map(r=><option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div><label style={LS}>Tempo de Refino (horas)</label><input style={IS} type="number" min="0.1" step="0.5" value={refineDurationH||''} onChange={e=>setRefineDurationH(Number(e.target.value))} placeholder="ex: 4.5"/></div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DIVISÃO ── */}
+      {tab==='division'&&(
+        <div>
+          {members.length===0?(
+            <div style={{ textAlign:'center',padding:'30px 20px',color:'var(--text-muted)',fontSize:13 }}>
+              <Users size={36} style={{ display:'block',margin:'0 auto 10px',opacity:0.2 }}/>
+              Nenhum participante nesta sessão.
+            </div>
+          ):(
+            <>
+              <div style={{ display:'flex',gap:0,marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden',width:'fit-content' }}>
+                <button onClick={applyEqualDivision} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='equal'?'rgba(0,229,160,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:divisionMode==='equal'?'var(--accent-green)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                  <Scale size={13}/> Dividir Igual
+                </button>
+                <button onClick={()=>setDivisionMode('manual')} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='manual'?'rgba(0,212,255,0.12)':'transparent',border:'none',color:divisionMode==='manual'?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                  <Edit3 size={13}/> Manual
+                </button>
+              </div>
+
+              {members.map((m,i)=>{
+                const scuShare = totalRefined*(Number(m.scu_share_pct)||0)/100;
+                return (
+                  <div key={m.id} style={{ display:'flex',alignItems:'center',gap:10,background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',marginBottom:7 }}>
+                    <div style={{ width:28,height:28,borderRadius:'50%',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Orbitron,monospace',fontSize:11,color:'var(--accent-primary)',fontWeight:700,flexShrink:0 }}>{i+1}</div>
+                    <span style={{ flex:1,fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{m.name}</span>
+                    <input style={{ ...IS,width:80,textAlign:'right' }} type="number" min="0" max="100" step="0.01"
+                      disabled={divisionMode==='equal'}
+                      value={m.scu_share_pct||''} onChange={e=>{ setDivisionMode('manual'); updateMemberPct(i,Number(e.target.value)); }}/>
+                    <span style={{ fontSize:11,color:'var(--text-muted)',width:16 }}>%</span>
+                    <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-gold)',fontWeight:700,minWidth:90,textAlign:'right' }}>{ptSCU(scuShare)} SCU</span>
+                  </div>
+                );
+              })}
+
+              {Math.abs(totalPct-100)>0.5&&(
+                <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginTop:6 }}>
+                  <AlertTriangle size={13}/>Total: {totalPct.toFixed(2)}% (deve somar 100%)
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── ESTOQUE / COFRE ── */}
+      {tab==='storage'&&(
+        <div>
+          <button onClick={addStorage} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(0,119,255,0.1)',border:'1px solid rgba(0,119,255,0.3)',borderRadius:6,color:'var(--accent-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+            <Plus size={13}/> Adicionar Local de Estoque
+          </button>
+          {storage.length===0&&<div style={{ textAlign:'center',padding:'30px',color:'var(--text-muted)',fontSize:13 }}>Nenhum estoque registrado ainda.</div>}
+          {storage.map((st,i)=>(
+            <div key={st.id} style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px',marginBottom:7 }}>
+              <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr auto',gap:8,alignItems:'end' }}>
+                <div><label style={LS}>Local de Armazenamento</label>
+                  <select style={SS_STYLE} value={st.location} onChange={e=>updateStorage(i,'location',e.target.value)}>
+                    {STORAGE_LOCS.map(l=><option key={l}>{l}</option>)}
+                  </select>
+                </div>
+                <div><label style={LS}>Fica com</label>
+                  <select style={SS_STYLE} value={st.owner} onChange={e=>updateStorage(i,'owner',e.target.value)}>
+                    <option value="">— Selecionar —</option>
+                    {memberNomes.map(n=><option key={n}>{n}</option>)}
+                    <option value="Grupo">Grupo</option>
+                  </select>
+                </div>
+                <div><label style={LS}>Minério</label>
+                  <select style={SS_STYLE} value={st.ore} onChange={e=>updateStorage(i,'ore',e.target.value)}>
+                    <option value="">— Tipo —</option>
+                    {ores.map(o=><option key={o.id}>{o.name}</option>)}
+                    {ORE_LIST.map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div><label style={LS}>Quantidade (SCU)</label><input style={IS} type="number" min="0" step="0.001" value={st.scu||''} onChange={e=>updateStorage(i,'scu',Number(e.target.value))} placeholder="0"/></div>
+                <div><label style={LS}>Qualidade</label>
+                  <select style={SS_STYLE} value={st.quality||''} onChange={e=>updateStorage(i,'quality',e.target.value)}>
+                    {QUALITY_PRESETS.map(q=><option key={q} value={q}>{q||'— N/A —'}</option>)}
+                  </select>
+                </div>
+                <button onClick={()=>removeStorage(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+              </div>
+              <div style={{ marginTop:6,display:'flex',gap:8,alignItems:'center' }}>
+                <input style={{ ...IS,flex:1,fontSize:11 }} value={st.notes||''} onChange={e=>updateStorage(i,'notes',e.target.value)} placeholder="Observações..."/>
+                <label style={{ display:'flex',alignItems:'center',gap:5,fontSize:11,color:st.send_to_vault?'var(--accent-gold)':'var(--text-muted)',fontWeight:700,whiteSpace:'nowrap',cursor:'pointer' }}>
+                  <input type="checkbox" checked={!!st.send_to_vault} onChange={e=>updateStorage(i,'send_to_vault',e.target.checked)}/>
+                  <Send size={11}/> Enviar ao Cofre do Clã
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error&&(
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginTop:12 }}>
+          <AlertTriangle size={13}/>{error}
+        </div>
+      )}
+
+      <div style={{ display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,paddingTop:12,borderTop:'1px solid var(--border-subtle)' }}>
+        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleSubmit} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(162,155,254,0.15)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+          <StopCircle size={14}/> Finalizar e Iniciar Refino
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Sessão Form ──────────────────────────────────────────────────────────────
 function SessãoForm({ initial, onSave, onCancelar }) {
   const [s, setS] = useState(() => initial ? JSON.parse(JSON.stringify(initial)) : newSessão());
@@ -116,7 +484,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
   function removeCost(i)   { setS(p=>({...p,costs:p.costs.filter((_,j)=>j!==i)})); }
 
   // ── STORAGE helpers ──
-  function addEstoque()      { setS(p=>({...p,storage:[...p.storage,{id:newId(),location:'CRU-L1 Stash House',owner:'',ore:'',scu:0,status:'Guardado',notes:''}]})); }
+  function addEstoque()      { setS(p=>({...p,storage:[...p.storage,{id:newId(),location:'CRU-L1 Stash House',owner:'',ore:'',scu:0,quality:'',status:'Guardado',send_to_vault:false,notes:''}]})); }
   function updateEstoque(i,k,v){ setS(p=>({...p,storage:p.storage.map((st,j)=>j===i?{...st,[k]:v}:st)})); }
   function removeEstoque(i)  { setS(p=>({...p,storage:p.storage.filter((_,j)=>j!==i)})); }
 
@@ -367,7 +735,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
           {s.storage.length===0&&<div style={{ textAlign:'center',padding:'30px',color:'var(--text-muted)',fontSize:13 }}>Nenhum estoque registrado.</div>}
           {s.storage.map((st,i)=>(
             <div key={st.id} style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px',marginBottom:7 }}>
-              <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr auto',gap:8,alignItems:'end' }}>
+              <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 1fr 1fr auto',gap:8,alignItems:'end' }}>
                 <div><label style={LS}>Local de Armazenamento</label>
                   <select style={SS_STYLE} value={st.location} onChange={e=>updateEstoque(i,'location',e.target.value)}>
                     {STORAGE_LOCS.map(l=><option key={l}>{l}</option>)}
@@ -388,6 +756,11 @@ function SessãoForm({ initial, onSave, onCancelar }) {
                   </select>
                 </div>
                 <div><label style={LS}>Quantidade (SCU)</label><input style={IS} type="number" min="0" step="0.001" value={st.scu||''} onChange={e=>updateEstoque(i,'scu',Number(e.target.value))} placeholder="0"/></div>
+                <div><label style={LS}>Qualidade</label>
+                  <select style={SS_STYLE} value={st.quality||''} onChange={e=>updateEstoque(i,'quality',e.target.value)}>
+                    {QUALITY_PRESETS.map(q=><option key={q} value={q}>{q||'— N/A —'}</option>)}
+                  </select>
+                </div>
                 <div><label style={LS}>Status</label>
                   <select style={SS_STYLE} value={st.status||'Guardado'} onChange={e=>updateEstoque(i,'status',e.target.value)}>
                     {['Guardado','Aguardando Refino','Refinando','Pronto para Venda','Vendido'].map(st=><option key={st}>{st}</option>)}
@@ -395,8 +768,12 @@ function SessãoForm({ initial, onSave, onCancelar }) {
                 </div>
                 <button onClick={()=>removeEstoque(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
               </div>
-              <div style={{ marginTop:6 }}>
-                <input style={{ ...IS,fontSize:11 }} value={st.notes||''} onChange={e=>updateEstoque(i,'notes',e.target.value)} placeholder="Observações..."/>
+              <div style={{ marginTop:6,display:'flex',gap:8,alignItems:'center' }}>
+                <input style={{ ...IS,flex:1,fontSize:11 }} value={st.notes||''} onChange={e=>updateEstoque(i,'notes',e.target.value)} placeholder="Observações..."/>
+                <label style={{ display:'flex',alignItems:'center',gap:5,fontSize:11,color:st.send_to_vault?'var(--accent-gold)':'var(--text-muted)',fontWeight:700,whiteSpace:'nowrap',cursor:'pointer' }}>
+                  <input type="checkbox" checked={!!st.send_to_vault} onChange={e=>updateEstoque(i,'send_to_vault',e.target.checked)}/>
+                  <Send size={11}/> Enviar ao Cofre do Clã
+                </label>
               </div>
             </div>
           ))}
@@ -556,7 +933,7 @@ function DivisãoTab({ session:s, totalRefinedSCU, totalCosts, netRevenue }) {
 }
 
 // ── Sessão Card (list view) ──────────────────────────────────────────────────
-function SessãoCard({ session:s, onEdit, onDelete }) {
+function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMining, onCompleteRefine }) {
   const [expanded,setExpandired]=useState(false);
   const [delConf,setDelConf]=useState(false);
   const totalRefinedSCU = s.ores.reduce((a,o)=>a+(Number(o.refined_scu)||0),0);
@@ -605,6 +982,39 @@ function SessãoCard({ session:s, onEdit, onDelete }) {
           </div>
         </div>
       </div>
+
+      {/* Barra de ação do fluxo de mineração (iniciar / finalizar / refino) */}
+      {(s.status==='Planejando'||s.status==='Em andamento'||s.status==='Refinando')&&(
+        <div onClick={e=>e.stopPropagation()} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'8px 16px',background:`${statusColor}0d`,borderTop:`1px solid ${statusColor}22` }}>
+          {s.status==='Planejando'&&(
+            <>
+              <span style={{ fontSize:11,color:'var(--text-muted)' }}>Sessão ainda não iniciada</span>
+              <button onClick={()=>onStartMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.35)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                <PlayCircle size={13}/> Iniciar Mineração em Grupo
+              </button>
+            </>
+          )}
+          {s.status==='Em andamento'&&(
+            <>
+              <LiveCountUp startIso={s.start_time||s.created_at} color="var(--accent-primary)"/>
+              <button onClick={()=>onFinishMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(162,155,254,0.12)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                <StopCircle size={13}/> Finalizar Mineração em Grupo
+              </button>
+            </>
+          )}
+          {s.status==='Refinando'&&s.refine_start_time&&(
+            <>
+              <LiveCountDown
+                targetIso={new Date(new Date(s.refine_start_time).getTime()+(s.refinery_duration_h||0)*3600*1000).toISOString()}
+                onComplete={()=>onCompleteRefine(s)}
+              />
+              <button onClick={()=>onCompleteRefine(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                <CheckCircle2 size={13}/> Marcar Refino Concluído
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {expanded&&(
         <div style={{ padding:'12px 16px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.1)' }}>
@@ -674,10 +1084,38 @@ export default function MiningGrupoPage() {
   const [search,      setSearch]      = useState('');
   const [filterStatus,setFilterStatus]= useState('all');
   const [activeTab,   setActiveTab]   = useState('section'); // section | stats
+  const [startingSessão, setStartingSessão] = useState(false); // modal de início rápido
+  const [finishingSessão, setFinishingSessão] = useState(null); // sessão sendo finalizada
 
   function persist(updated) { setSesscao(updated); saveSessãos(updated); }
-  function handleSave(s)    { persist(section.some(x=>x.id===s.id)?section.map(x=>x.id===s.id?s:x):[s,...section]); setShowForm(false); setEditSessão(null); }
+
+  function handleSave(sIn) {
+    let s = sIn;
+    // Sincroniza itens marcados para o Cofre do Clã (evita duplicar em salvamentos futuros)
+    const toSync = (s.storage||[]).filter(st => st.send_to_vault && !st.vault_synced);
+    if (toSync.length) {
+      addClanVaultEntries(toSync.map(st => ({
+        session_id: s.id, session_name: s.name,
+        owner: st.owner || 'Grupo', ore_name: st.ore || 'Minério',
+        quantity: Number(st.scu)||0, unit:'SCU', quality: st.quality||'', notes: st.notes||'',
+      })));
+      s = { ...s, storage: s.storage.map(st => st.send_to_vault ? {...st, vault_synced:true} : st) };
+    }
+    persist(section.some(x=>x.id===s.id)?section.map(x=>x.id===s.id?s:x):[s,...section]);
+    setShowForm(false); setEditSessão(null); setStartingSessão(false); setFinishingSessão(null);
+  }
+
   function handleDelete(id) { persist(section.filter(s=>s.id!==id)); }
+
+  // Inicia a mineração de uma sessão já criada mas ainda "Planejando"
+  function handleStartMining(s) {
+    handleSave({ ...s, status:'Em andamento', start_time:new Date().toISOString() });
+  }
+
+  // Marca o refino como concluído (manual ou quando a contagem regressiva zera)
+  function handleCompleteRefine(s) {
+    handleSave({ ...s, status:'Concluída' });
+  }
 
   const filtered = useMemo(()=>section.filter(s=>{
     if(search&&!s.name.toLowerCase().includes(search.toLowerCase())&&!s.location?.toLowerCase().includes(search.toLowerCase())) return false;
@@ -702,9 +1140,9 @@ export default function MiningGrupoPage() {
           <div className="page-title">MINERAÇÃO EM GRUPO</div>
           <div className="page-subtitle">{section.length} section · {allCompleted.length} concluídas · {ptSCU(totalScuTodos)} SCU refinado total</div>
         </div>
-        {!showForm&&!editSessão&&activeTab==='section'&&(
-          <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 18px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
-            <Plus size={15}/> Nova Sessão
+        {!showForm&&!editSessão&&!startingSessão&&!finishingSessão&&activeTab==='section'&&(
+          <button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 18px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
+            <PlayCircle size={15}/> Nova Sessão
           </button>
         )}
       </div>
@@ -722,10 +1160,16 @@ export default function MiningGrupoPage() {
         {/* SESSIONS TAB */}
         {activeTab==='section'&&(
           <div>
+            {startingSessão&&(
+              <StartSessionModal onStart={handleSave} onCancel={()=>setStartingSessão(false)}/>
+            )}
+            {finishingSessão&&(
+              <FinishSessionModal session={finishingSessão} onFinish={handleSave} onCancel={()=>setFinishingSessão(null)}/>
+            )}
             {(showForm||editSessão)&&(
               <SessãoForm initial={editSessão} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditSessão(null);}}/>
             )}
-            {!showForm&&!editSessão&&(
+            {!showForm&&!editSessão&&!startingSessão&&!finishingSessão&&(
               <>
                 <div style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
                   <div style={{ position:'relative',flex:'1 1 180px' }}>
@@ -742,11 +1186,12 @@ export default function MiningGrupoPage() {
                   <div className="empty-state">
                     <Pickaxe size={56} className="empty-state-icon"/>
                     <div className="empty-state-title">{section.length===0?'NENHUMA SESSÃO REGISTRADA':'NENHUM RESULTADO'}</div>
-                    <div className="empty-state-text">{section.length===0?'Clique em "Nova Sessão" para registrar sua primeira sessão de mineração em grupo.':''}</div>
-                    {section.length===0&&<button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 20px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:8 }}><Plus size={14}/>Nova Sessão</button>}
+                    <div className="empty-state-text">{section.length===0?'Clique em "Nova Sessão" para iniciar sua primeira sessão de mineração em grupo.':''}</div>
+                    {section.length===0&&<button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 20px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:8 }}><PlayCircle size={14}/>Nova Sessão</button>}
                   </div>
                 ):(
-                  filtered.map(s=><SessãoCard key={s.id} session={s} onEdit={s=>{setEditSessão(s);setShowForm(false);}} onDelete={handleDelete}/>)
+                  filtered.map(s=><SessãoCard key={s.id} session={s} onEdit={s=>{setEditSessão(s);setShowForm(false);}} onDelete={handleDelete}
+                    onStartMining={handleStartMining} onFinishMining={s=>setFinishingSessão(s)} onCompleteRefine={handleCompleteRefine}/>)
                 )}
               </>
             )}

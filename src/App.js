@@ -9,12 +9,15 @@ import BlueprintPage       from './pages/BlueprintPage';
 import MaterialTrackerPage from './pages/MaterialTrackerPage';
 import MiningPage         from './pages/MiningPage';
 import MiningGrupoPage    from './pages/MiningGroupPage';
+import ClanVaultPage      from './pages/ClanVaultPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
 import UexSalesPage       from './pages/UexSalesPage';
+import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
-import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star } from 'lucide-react';
+import UexNotificationBell from './components/UexNotificationBell';
+import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -130,9 +133,11 @@ const PAGES = [
   { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
   { id:'mining',     label:'Guia de Mineração',   icon:Pickaxe    },
   { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
+  { id:'clanvault',  label:'Cofre do Clã',        icon:Lock       },
   { id:'missions',   label:'Missões',             icon:ListChecks },
   { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
   { id:'uexsales',   label:'Acompanhamento UEX',  icon:ShoppingBag},
+  { id:'uexnegotiations', label:'Negociações UEX', icon:MessageSquare },
   { id:'wikelo',     label:'Acompanhamento Wikelo',icon:Star       },
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
 ];
@@ -235,12 +240,16 @@ export default function App() {
         {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
         {activePage==='mining'     && <MiningPage />}
         {activePage==='mininggroup' && <MiningGrupoPage />}
+        {activePage==='clanvault' && <ClanVaultPage />}
         {activePage==='missions'   && <MissionTrackerPage />}
         {activePage==='orevault'   && <OreVaultPage />}
         {activePage==='uexsales'   && <UexSalesPage />}
+        {activePage==='uexnegotiations' && <UexNegotiationsPage />}
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
       </main>
+
+      <UexNotificationBell onNavigate={setActivePage} />
     </div>
   );
 }

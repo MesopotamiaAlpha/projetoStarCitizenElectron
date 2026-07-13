@@ -12,17 +12,22 @@ import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/Provenan
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
 const TOKEN_KEY = 'sc_uex_token_v1';
+const SECRET_KEY = 'sc_uex_secretkey_v1';
 function loadToken()    { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function saveToken(t)   { localStorage.setItem(TOKEN_KEY, t); }
 function clearToken()   { localStorage.removeItem(TOKEN_KEY); }
+function loadSecretKey()  { try { return localStorage.getItem(SECRET_KEY) || ''; } catch { return ''; } }
+function saveSecretKey(t) { localStorage.setItem(SECRET_KEY, t); }
+function clearSecretKey() { localStorage.removeItem(SECRET_KEY); }
 
 // No auth required for public endpoints
 async function uexFetch(endpoint, params = {}, token = '') {
   const t = token || loadToken();
+  const sk = loadSecretKey();
 
   // In Electron: use IPC proxy to avoid CORS
   if (window.electronAPI?.uexFetch) {
-    const result = await window.electronAPI.uexFetch({ endpoint, token: t });
+    const result = await window.electronAPI.uexFetch({ endpoint, token: t, secretKey: sk });
     if (result.success) return result.data;
     throw new Error(result.message || 'Erro na API');
   }
@@ -55,6 +60,7 @@ const TABS = [
 // ── Token Configuration Panel ─────────────────────────────────────────────────
 function TokenConfigPanel({ onTokenChange }) {
   const [token,      setToken]     = React.useState(loadToken);
+  const [secretKey,  setSecretKey] = React.useState(loadSecretKey);
   const [showToken,  setShowToken] = React.useState(false);
   const [testStatus, setTestStatus]= React.useState(null); // null | 'testing' | 'ok' | 'error'
   const [testMsg,    setTestMsg]   = React.useState('');
@@ -64,6 +70,7 @@ function TokenConfigPanel({ onTokenChange }) {
 
   function handleSave() {
     saveToken(token.trim());
+    saveSecretKey(secretKey.trim());
     setSaved(true);
     onTokenChange && onTokenChange(token.trim());
     setTimeout(() => setSaved(false), 2000);
@@ -71,7 +78,9 @@ function TokenConfigPanel({ onTokenChange }) {
 
   function handleLimpar() {
     clearToken();
+    clearSecretKey();
     setToken('');
+    setSecretKey('');
     setTestStatus(null);
     setTestMsg('');
     onTokenChange && onTokenChange('');
@@ -172,6 +181,29 @@ function TokenConfigPanel({ onTokenChange }) {
               }}>
                 {showToken ? <EyeOff size={13}/> : <Eye size={13}/>}
               </button>
+            </div>
+          </div>
+
+          {/* Secret key input (necessária para negociações/notificações do Marketplace) */}
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '2px 0 6px' }}>
+            Para receber notificações de novas mensagens de negociação do Marketplace, informe também a <strong>secret key</strong> do seu app UEX (gerada em{' '}
+            <a href="https://uexcorp.space/api/apps/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/api/apps</a>).
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Key size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}/>
+              <input
+                type="password"
+                value={secretKey}
+                onChange={e => setSecretKey(e.target.value)}
+                placeholder="Cole sua secret key aqui (opcional)..."
+                style={{
+                  width: '100%', padding: '9px 12px 9px 32px',
+                  background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 6, color: 'var(--text-primary)',
+                  fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
+                }}
+              />
             </div>
           </div>
 

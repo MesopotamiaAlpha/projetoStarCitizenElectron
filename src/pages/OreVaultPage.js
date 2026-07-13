@@ -3,7 +3,7 @@ import {
   Pickaxe, Plus, Trash2, Edit3, Save, X, Search,
   MapPin, Star, CheckCircle2, Package, FlaskConical,
   ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Archive,
-  Gem, Layers, Minus, ArrowLeft
+  Gem, Layers, Minus, ArrowLeft, Camera, Download, Copy
 } from 'lucide-react';
 import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry } from '../data/oreVault';
 
@@ -408,6 +408,165 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
   );
 }
 
+// ── Geração de imagem do Baú (tabela em PNG para compartilhar) ───────────────
+async function generateVaultImage(summary) {
+  try { await document.fonts.ready; } catch { /* segue mesmo assim */ }
+
+  // Agrupar por categoria de minério (mesma organização do baú)
+  const grouped = CATEGORIES.map(cat => ({
+    cat,
+    color: ORE_DATABASE[cat].color,
+    icon: ORE_DATABASE[cat].icon,
+    items: summary.filter(s => getOreCategory(s.name) === cat).sort((a,b)=>b.total-a.total),
+  })).filter(g => g.items.length > 0);
+
+  const uncategorized = summary.filter(s => !getOreCategory(s.name));
+  if (uncategorized.length) grouped.push({ cat:'Outros', color:'#7a90b0', icon:'📦', items:uncategorized });
+
+  const WIDTH = 760;
+  const PAD = 28;
+  const ROW_H = 36;
+  const SECTION_H = 32;
+  const HEADER_H = 78;
+  const FOOTER_H = 50;
+
+  const totalRows = grouped.reduce((a,g)=>a+g.items.length,0);
+  const height = HEADER_H + grouped.length*SECTION_H + totalRows*ROW_H + FOOTER_H + PAD;
+
+  const canvas = document.createElement('canvas');
+  const scale = 2; // retina, texto nítido
+  canvas.width = WIDTH*scale;
+  canvas.height = height*scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.textBaseline = 'top';
+
+  // Fundo
+  const bg = ctx.createLinearGradient(0,0,0,height);
+  bg.addColorStop(0,'#0d1220'); bg.addColorStop(1,'#080b12');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,WIDTH,height);
+  ctx.strokeStyle = 'rgba(0,212,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5,0.5,WIDTH-1,height-1);
+
+  let y = PAD;
+  const totalTypes = summary.length;
+  const totalEntradas = summary.reduce((a,s)=>a+s.entries,0);
+
+  ctx.fillStyle = '#ffc436';
+  ctx.font = '800 20px Orbitron, sans-serif';
+  ctx.fillText('⛏ BAÚ DE MINÉRIO', PAD, y);
+  y += 27;
+  ctx.fillStyle = '#7a90b0';
+  ctx.font = '600 12px Rajdhani, sans-serif';
+  ctx.fillText(`${totalTypes} tipo${totalTypes!==1?'s':''} · ${totalEntradas} entrada${totalEntradas!==1?'s':''} · gerado em ${new Date().toLocaleString('pt-BR')}`, PAD, y);
+  y += 22;
+  ctx.strokeStyle = 'rgba(0,212,255,0.15)';
+  ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(WIDTH-PAD,y); ctx.stroke();
+  y += 12;
+
+  grouped.forEach(g => {
+    ctx.fillStyle = `${g.color}18`;
+    ctx.fillRect(PAD-10, y, WIDTH-2*(PAD-10), SECTION_H-6);
+    ctx.fillStyle = g.color;
+    ctx.font = '700 13px Orbitron, sans-serif';
+    ctx.fillText(`${g.icon}  ${g.cat.toUpperCase()}`, PAD, y+7);
+    y += SECTION_H;
+
+    g.items.forEach((it,i) => {
+      if (i%2===1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.02)';
+        ctx.fillRect(PAD-10, y, WIDTH-2*(PAD-10), ROW_H);
+      }
+      ctx.fillStyle = g.color;
+      ctx.beginPath(); ctx.arc(PAD+2, y+ROW_H/2, 4, 0, Math.PI*2); ctx.fill();
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e8f0ff';
+      ctx.font = '600 14px Rajdhani, sans-serif';
+      ctx.fillText(it.name, PAD+16, y+7);
+      ctx.fillStyle = '#3d5070';
+      ctx.font = '400 10px Rajdhani, sans-serif';
+      let sub = `${it.entries} entrada${it.entries!==1?'s':''}`;
+      if (it.refined>0) sub += ` · ${it.refined} refinada${it.refined!==1?'s':''}`;
+      ctx.fillText(sub, PAD+16, y+23);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = g.color;
+      ctx.font = '800 16px "Share Tech Mono", monospace';
+      ctx.fillText(ptNum(it.total), WIDTH-PAD, y+6);
+      ctx.fillStyle = '#7a90b0';
+      ctx.font = '600 9px Rajdhani, sans-serif';
+      ctx.fillText((it.unit||'un').toUpperCase(), WIDTH-PAD, y+24);
+      ctx.textAlign = 'left';
+
+      y += ROW_H;
+    });
+  });
+
+  y += 10;
+  ctx.strokeStyle = 'rgba(0,212,255,0.15)';
+  ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(WIDTH-PAD,y); ctx.stroke();
+  y += 14;
+  ctx.fillStyle = '#3d5070';
+  ctx.font = '600 10px Rajdhani, sans-serif';
+  ctx.fillText('Gerado por SC Toolbox — Star Citizen Companion App', PAD, y);
+
+  return canvas.toDataURL('image/png');
+}
+
+// ── Modal de exportação de imagem ─────────────────────────────────────────────
+function ImageExportModal({ dataUrl, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
+
+  async function handleCopy() {
+    setCopyError('');
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new window.ClipboardItem({ [blob.type]: blob })]);
+      setCopied(true);
+      setTimeout(()=>setCopied(false), 2500);
+    } catch (e) {
+      setCopyError('Não foi possível copiar. Use "Baixar PNG" e envie o arquivo.');
+    }
+  }
+
+  function handleDownload() {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `bau-minerio-${new Date().toISOString().slice(0,10)}.png`;
+    a.click();
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:12,padding:20,maxWidth:540,width:'100%',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <div style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:7}}>
+            <Camera size={15}/> IMAGEM GERADA
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px'}}><X size={13}/></button>
+        </div>
+        <div style={{overflowY:'auto',marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:8,background:'var(--bg-base)'}}>
+          <img src={dataUrl} alt="Baú de Minério" style={{width:'100%',display:'block'}}/>
+        </div>
+        {copyError && <div style={{fontSize:11,color:'var(--accent-red)',marginBottom:8}}>{copyError}</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={handleDownload} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
+            <Download size={13}/> Baixar PNG
+          </button>
+          <button onClick={handleCopy} style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px',background:copied?'rgba(0,229,160,0.15)':'rgba(0,212,255,0.1)',border:`1px solid ${copied?'rgba(0,229,160,0.4)':'rgba(0,212,255,0.35)'}`,borderRadius:7,color:copied?'var(--accent-green)':'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
+            {copied?<><CheckCircle2 size={13}/> Copiado!</>:<><Copy size={13}/> Copiar Imagem</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function OreVaultPage() {
   const [vault,       setVault]       = useState(() => loadVault());
@@ -421,6 +580,9 @@ export default function OreVaultPage() {
   const [selOre,      setSelOre]      = useState(null); // null = tela de nomes de ore
   // Modal de duplicata
   const [dupData,     setDupData]     = useState(null); // { existing, newEntry }
+  // Exportar imagem
+  const [exportDataUrl, setExportDataUrl] = useState(null);
+  const [generatingImg, setGeneratingImg] = useState(false);
 
   function refresh() { setVault(loadVault()); }
 
@@ -470,6 +632,19 @@ export default function OreVaultPage() {
   }
 
   function handleDelete(id) { removeOreEntry(id); refresh(); }
+
+  async function handleGenerateImage() {
+    setGeneratingImg(true);
+    try {
+      const dataUrl = await generateVaultImage(summary);
+      setExportDataUrl(dataUrl);
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao gerar imagem: ' + e.message);
+    } finally {
+      setGeneratingImg(false);
+    }
+  }
 
   // ── Dados derivados ──
   const entries = useMemo(() => {
@@ -540,6 +715,9 @@ export default function OreVaultPage() {
       {/* Modal duplicata */}
       {dupData && <DuplicateModal existing={dupData.existing} newEntry={dupData.newEntry} onMerge={handleMerge} onNew={handleNewSeparate} onCancel={()=>setDupData(null)}/>}
 
+      {/* Modal de imagem exportada */}
+      {exportDataUrl && <ImageExportModal dataUrl={exportDataUrl} onClose={()=>setExportDataUrl(null)}/>}
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -550,9 +728,14 @@ export default function OreVaultPage() {
             {totalEntries} entrada{totalEntries!==1?'s':''} · {totalTypes} tipo{totalTypes!==1?'s':''} de minério armazenado{totalTypes!==1?'s':''}
           </div>
         </div>
-        <button onClick={()=>{setShowForm(true);setEditEntry(null);setPreOre(selOre||null);}} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
-          <Plus size={14}/> Adicionar Minério
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={handleGenerateImage} disabled={totalEntries===0||generatingImg} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:totalEntries===0?'not-allowed':'pointer',opacity:totalEntries===0?0.5:1}}>
+            {generatingImg ? <><RefreshCw size={14} style={{animation:'spin 1s linear infinite'}}/> Gerando...</> : <><Camera size={14}/> Gerar Imagem</>}
+          </button>
+          <button onClick={()=>{setShowForm(true);setEditEntry(null);setPreOre(selOre||null);}} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
+            <Plus size={14}/> Adicionar Minério
+          </button>
+        </div>
       </div>
 
       <div style={{flex:1,display:'grid',gridTemplateColumns:'240px 1fr',overflow:'hidden'}}>

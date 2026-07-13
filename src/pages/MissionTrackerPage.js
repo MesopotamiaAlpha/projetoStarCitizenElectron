@@ -1533,7 +1533,10 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 }
 
 // ── TAB 2: History ────────────────────────────────────────────────────────────
-function HistoryTab({ missions, losses }) {
+function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary }) {
+  const [editM, setEditM] = useState(null);
+  function handleSaveEdit(m) { onSave(m); setEditM(null); }
+
   const dates=useMemo(()=>[...new Set(missions.map(m=>localDateStr(m.created_at)).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
   const years=useMemo(()=>[...new Set(dates.map(d=>Number(d.slice(0,4))))].sort((a,b)=>b-a),[dates]);
   const [selYear,setSelYear]=useState(()=>years[0]||new Date().getFullYear());
@@ -1549,6 +1552,9 @@ function HistoryTab({ missions, losses }) {
 
   return (
     <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16,height:'100%'}}>
+      {editM && (
+        <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary}/>
+      )}
       <div style={{borderRight:'1px solid var(--border-subtle)',overflowY:'auto',paddingRight:12}}>
         <div style={{display:'flex',gap:7,marginBottom:12}}>
           <select style={{...SS,flex:1}} value={selYear} onChange={e=>{setSelYear(Number(e.target.value));setSelDay(null);}}>
@@ -1634,28 +1640,18 @@ function HistoryTab({ missions, losses }) {
               </div>
             )}
             <div>
-              <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{selectedDayMissions.length} Missão(ões)</div>
+              <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{selectedDayMissions.length} Missão(ões) · clique para ver detalhes</div>
               {selectedDayMissions.length===0?(
                 <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',padding:20}}>Nenhuma missão neste dia.</div>
               ):(
-                selectedDayMissions.map(m=>{
-                  const TipoIcon=TYPE_ICONS[m.type]||Crosshair;
-                  return (
-                    <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'var(--bg-card)',border:`1px solid ${STATUS_COLORS[m.status]||'var(--border-subtle)'}22`,borderRadius:7,marginBottom:5}}>
-                      <TipoIcon size={14} style={{color:DIFF_COLORS[m.difficulty]||'var(--text-muted)',flexShrink:0}}/>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.title}</div>
-                        <div style={{fontSize:10,color:'var(--text-muted)'}}>{m.type} · {m.faction} · {fmtHora(m.created_at)}{m.timer_elapsed>0?` · ⏱️ ${fmtDuration(m.timer_elapsed)}`:''}{m.loot?` · 🎁 ${ptMoney(m.loot.perPerson)}/pessoa`:''}</div>
-                      </div>
-                      <div style={{textAlign:'right',flexShrink:0}}>
-                        <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:3,background:`${STATUS_COLORS[m.status]}18`,color:STATUS_COLORS[m.status],border:`1px solid ${STATUS_COLORS[m.status]}33`}}>
-                          {m.status==='Bugged'?'🐛':''}{m.status}
-                        </span>
-                        {m.reward>0&&<div style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',marginTop:2}}>{ptMoney(m.reward)} aUEC</div>}
-                      </div>
-                    </div>
-                  );
-                })
+                selectedDayMissions.map(m=>(
+                  <MissionCard key={m.id} mission={m}
+                    onEdit={mm=>setEditM(mm)}
+                    onDelete={onDelete}
+                    onStatusChange={onStatusChange}
+                    onClockUpdate={onClockUpdate}
+                    onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}/>
+                ))
               )}
             </div>
           </div>
@@ -1900,7 +1896,9 @@ export default function MissionTrackerPage() {
             onAddLoss={handleAddLoss} onRemoveLoss={handleRemoveLoss}
             objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate}/>
         )}
-        {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}/>}
+        {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}
+          onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange}
+          onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} objLibrary={objLibrary}/>}
         {activeTab==='stats'&&<StatsTab missions={missions} losses={losses}/>}
       </div>
     </div>
