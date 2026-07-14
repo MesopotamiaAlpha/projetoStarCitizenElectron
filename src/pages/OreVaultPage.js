@@ -6,6 +6,7 @@ import {
   Gem, Layers, Minus, ArrowLeft, Camera, Download, Copy
 } from 'lucide-react';
 import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry } from '../data/oreVault';
+import { buildLocationFlatList } from '../data/uexLocationsDB';
 
 // ── Lista completa de minérios do Star Citizen (atualizada SCMDB/SCMINER 2026) ──
 const ORE_DATABASE = {
@@ -134,7 +135,7 @@ const ORE_COLORS = {
 };
 function getOreColor(name) { return ORE_COLORS[name] || '#7a90b0'; }
 
-const LOCATIONS = [
+const LOCATIONS_STATIC = [
   'Yela Asteroid Belt','Aaron Halo','Daymar','Cellin','Aberdeen','Arial',
   'Ita','Magda','Calliope','Clio','Euterpe','Hurston','microTech',
   'Port Tressler','ARC-L1','HUR-L3','HUR-L5','MIC-L1',
@@ -205,6 +206,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
 
   const oreInfo = getOreInfo(d.ore_name);
   const oreCat  = getOreCategory(d.ore_name);
+  const LOCATIONS = useMemo(() => buildLocationFlatList(LOCATIONS_STATIC), []);
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
   const SS = {...IS,appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center',paddingRight:26};

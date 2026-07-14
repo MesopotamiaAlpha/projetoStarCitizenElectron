@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { searchUexItems, getUexItemByName, loadUexItemsDB } from '../data/uexItemsDB';
+import { buildLocationTree } from '../data/uexLocationsDB';
 import { setProvenance, SOURCES } from '../data/provenance';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ function ScriptPanel({ item, onUpdate }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const SYSTEMS = ['Stanton','Pyro','Nyx'];
 
-const LOCATIONS = {
+const LOCATIONS_STATIC = {
   Stanton: {
     'Planeta / Lua': [
       'ArcCorp (Area18)','ArcCorp — Wala','ArcCorp — Lyria',
@@ -426,6 +427,8 @@ function ItemForm({ initial, onSave, onCancelar }) {
     setImportModal(null);
   }
 
+  const LOCATIONS = useMemo(() => buildLocationTree(LOCATIONS_STATIC), []);
+
   const locationTipos = data.system && LOCATIONS[data.system]
     ? Object.keys(LOCATIONS[data.system]) : [];
   const locationOptions = data.system && data.location_type && LOCATIONS[data.system]?.[data.location_type]
@@ -612,7 +615,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
         <div>
           <label style={LS}>Sistema</label>
           <select style={SS} value={data.system} onChange={e=>handleSistemaChange(e.target.value)}>
-            {SYSTEMS.map(s=><option key={s} value={s}>{s}</option>)}
+            {Object.keys(LOCATIONS).map(s=><option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div>
@@ -1018,7 +1021,8 @@ export default function InventoryPage() {
   const systemsWithItems = useMemo(() => {
     const counts = {};
     itens.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
-    return SYSTEMS.map(s => ({ name:s, count:counts[s]||0 }));
+    const allSystems = [...new Set([...SYSTEMS, ...Object.keys(counts)])];
+    return allSystems.map(s => ({ name:s, count:counts[s]||0 }));
   }, [itens]);
 
   // Locais dentro do sistema selecionado que têm itens

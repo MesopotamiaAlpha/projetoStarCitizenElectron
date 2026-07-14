@@ -7,6 +7,7 @@ import {
   PlayCircle, StopCircle, Timer, Send, Lock
 } from 'lucide-react';
 import { addClanVaultEntries } from '../data/clanVault';
+import { buildLocationFlatList } from '../data/uexLocationsDB';
 
 // ── Estoque ───────────────────────────────────────────────────────────────────
 const KEY = 'sc_mining_group_v1';
@@ -15,10 +16,10 @@ function saveSessãos(s) { localStorage.setItem(KEY, JSON.stringify(s)); }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MINING_SHIPS   = ['Prospector','MOLE','Expanse','Cutlass Blue','Vulture','Outro'];
-const LOCATIONS_LIST = ['Yela Asteroid Belt','Aaron Halo','Daymar','Cellin','Aberdeen','Calliope','Clio','Euterpe','Arial','Ita','Magda','Hurston','microTech','Pyro I','Pyro II','Pyro III','Outro'];
+const LOCATIONS_STATIC = ['Yela Asteroid Belt','Aaron Halo','Daymar','Cellin','Aberdeen','Calliope','Clio','Euterpe','Arial','Ita','Magda','Hurston','microTech','Pyro I','Pyro II','Pyro III','Outro'];
 const REFINE_METHODS = ['CAMS Refinaria','CRU-L1 Refinaria','HUR-L1 Refinaria','ARC-L1 Refinaria','MIC-L1 Refinaria','Pyro Refinaria','Outro'];
 const ORE_LIST       = ['Quantainium','Bexalite','Taranite','Laranite','Gold','Diamond','Tungsten','Copper','Titanium','Hephaestanite','Dolivine','Aluminum','Corundum','Borase','Agricium','Inert Material','Outro'];
-const STORAGE_LOCS   = ['CRU-L1 Stash House','Port Tressler','Everus Harbor','Baijini Point','Area18 - Warehouse','Lorville - Warehouse','New Babbage - Warehouse','Ruin Station','Levski','Grim HEX','Outro'];
+const STORAGE_LOCS_STATIC = ['CRU-L1 Stash House','Port Tressler','Everus Harbor','Baijini Point','Area18 - Warehouse','Lorville - Warehouse','New Babbage - Warehouse','Ruin Station','Levski','Grim HEX','Outro'];
 const SESSION_STATUS = ['Planejando','Em andamento','Refinando','Concluída','Cancelarada'];
 const QUALITY_PRESETS = ['','Grade A','Grade B','Grade C','Pristine','High','Medium','Low','Raw'];
 
@@ -138,6 +139,7 @@ function KPI({ label, value, color='var(--text-primary)', unit='' }) {
 
 // ── Modal de Início Rápido ────────────────────────────────────────────────────
 function StartSessionModal({ onStart, onCancel }) {
+  const LOCATIONS_LIST = useMemo(() => buildLocationFlatList(LOCATIONS_STATIC), []);
   const [name, setName] = useState('');
   const [location, setLocation] = useState(LOCATIONS_LIST[0]);
   const [ship, setShip] = useState(MINING_SHIPS[0]);
@@ -222,6 +224,7 @@ function StartSessionModal({ onStart, onCancel }) {
 
 // ── Modal de Finalização (colhido no fim da mineração) ────────────────────────
 function FinishSessionModal({ session, onFinish, onCancel }) {
+  const STORAGE_LOCS = useMemo(() => buildLocationFlatList(STORAGE_LOCS_STATIC), []);
   const [tab, setTab] = useState('ores'); // ores | division | storage
   const [ores, setOres] = useState(() => session.ores.length ? JSON.parse(JSON.stringify(session.ores)) : [{id:newId(),name:'Quantainium',raw_scu:0,refined_scu:0,yield_pct:80,price_per_scu:0}]);
   const [refiningCost, setRefiningCost] = useState(0);
@@ -457,6 +460,8 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
 
 // ── Sessão Form ──────────────────────────────────────────────────────────────
 function SessãoForm({ initial, onSave, onCancelar }) {
+  const LOCATIONS_LIST = useMemo(() => buildLocationFlatList(LOCATIONS_STATIC), []);
+  const STORAGE_LOCS   = useMemo(() => buildLocationFlatList(STORAGE_LOCS_STATIC), []);
   const [s, setS] = useState(() => initial ? JSON.parse(JSON.stringify(initial)) : newSessão());
   const [tab, setTab] = useState('info'); // info | crew | ores | costs | storage | division
   const set = (k,v) => setS(p=>({...p,[k]:v}));

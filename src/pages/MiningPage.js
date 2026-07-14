@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Pickaxe, Gem, MapPin, Star, BarChart3, RefreshCw, Plus, Trash2, Edit3, Save, X, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDataset, DATASETS } from '../data/dataStore';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
+import { loadUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
+import { buildLocationTree, getUexLocationsStats } from '../data/uexLocationsDB';
 
 export const DEFAULT_MINEABLE_ORES = [
   { name:'Quantainium', value:7950, rarity:'Raro', locations:['Yela Asteroid Belt','Aaron Halo','Cellin','Daymar'], color:'#00e5a0', hazardous:true, notes:'Instável — pode explodir. Use laser em baixa potência. Vale a pena pelo alto valor.' },
@@ -69,6 +71,59 @@ export const DEFAULT_MINING_LOCATIONS = {
   'Ita': { system:'Stanton',type:'Moon', best:['Laranite','Gold','Iron'], danger:'Baixo', notes:'Lua de Hurston. Menor atmosfera — mais fácil de voar.' },
 };
 
+// ── Mesclagem com dados sincronizados da UEX API ──────────────────────────────
+const ORE_PALETTE = ['#00e5a0','#a29bfe','#74b9ff','#fd79a8','#e17055','#55efc4','#ffc436','#dfe6e9','#b2bec3','#636e72','#fdcb6e','#00cec9','#ff7675','#fab1a0'];
+function pickColor(name='') {
+  let h = 0; for (let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) >>> 0;
+  return ORE_PALETTE[h % ORE_PALETTE.length];
+}
+
+// Atualiza preços dos minérios já cadastrados e adiciona os que a UEX conhece mas
+// ainda não estão na lista curada manualmente.
+function mergeOresWithUex(base) {
+  const db = loadUexMiningDB();
+  if (!db.minerals?.length) return base;
+  const byName = {};
+  base.forEach(o => { byName[o.name.toLowerCase()] = { ...o }; });
+  db.minerals.forEach(m => {
+    if (!m.name) return;
+    const key = m.name.toLowerCase();
+    const price = Number(m.price_sell) || 0;
+    if (byName[key]) {
+      byName[key] = { ...byName[key], value: price>0 ? price : byName[key].value, synced:true };
+    } else {
+      byName[key] = {
+        name: m.name,
+        value: price,
+        rarity: 'A Definir',
+        locations: [],
+        color: pickColor(m.name),
+        hazardous: !!m.is_explosive,
+        notes: 'Minério sincronizado da API UEX — ainda sem local/raridade cadastrados manualmente.',
+        synced: true,
+      };
+    }
+  });
+  return Object.values(byName);
+}
+
+// Adiciona planetas/luas sincronizados que ainda não têm um card de local cadastrado à mão.
+function mergeLocationsWithUex(base) {
+  const tree = buildLocationTree({});
+  if (Object.keys(tree).length === 0) return base;
+  const merged = { ...base };
+  Object.entries(tree).forEach(([system, types]) => {
+    (types['Planeta / Lua'] || []).forEach(name => {
+      if (merged[name]) return; // já cadastrado manualmente, não sobrescreve
+      merged[name] = {
+        system, type:'Planeta/Lua (UEX)', best: [], danger:'Desconhecido',
+        notes: 'Local sincronizado da API UEX. Adicione os melhores minérios e o nível de perigo conforme sua experiência de mineração.',
+        synced: true,
+      };
+    });
+  });
+  return merged;
+}
 // ── Banco de dados completo de lasers e módulos de mineração ─────────────────
 const MINING_LASERS_DB = [
   // Size 1 (Prospector turret, ROC, pequenas)
@@ -482,11 +537,15 @@ function BuildsTab() {
 }
 
 export default function MiningPage() {
-  const { data: MINEABLE_ORES } = useDataset(DATASETS.MINING_ORES.key, DEFAULT_MINEABLE_ORES);
+  const mergedOres      = useMemo(() => mergeOresWithUex(DEFAULT_MINEABLE_ORES), []);
+  const mergedLocations = useMemo(() => mergeLocationsWithUex(DEFAULT_MINING_LOCATIONS), []);
+  const { data: MINEABLE_ORES } = useDataset(DATASETS.MINING_ORES.key, mergedOres);
   const { data: SHIP_LASERS } = useDataset(DATASETS.MINING_LASERS.key, DEFAULT_SHIP_LASERS);
   const { data: MINING_SHIPS } = useDataset(DATASETS.MINING_SHIPS.key, DEFAULT_MINING_SHIPS);
   const { data: MODULES } = useDataset(DATASETS.MINING_MODULES.key, DEFAULT_MINING_MODULES);
-  const { data: LOCATIONS } = useDataset(DATASETS.MINING_LOCATIONS.key, DEFAULT_MINING_LOCATIONS);
+  const { data: LOCATIONS } = useDataset(DATASETS.MINING_LOCATIONS.key, mergedLocations);
+  const miningStats    = getUexMiningStats();
+  const locationsStats = getUexLocationsStats();
   const [activeTab, setActiveTab] = useState('locations');
   const [selectedLaser, setSelectedLaser] = useState(null);
   const [selectedShip, setSelectedShip] = useState(null);
@@ -534,6 +593,23 @@ export default function MiningPage() {
 
       <div className="page-body">
 
+        {(miningStats.updatedAt || locationsStats.updatedAt) && (
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:16,padding:'10px 14px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8 }}>
+            <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
+              <strong style={{ color:'var(--accent-green)' }}>Dados sincronizados da UEX:</strong>{' '}
+              {miningStats.updatedAt ? `${miningStats.count} minérios (${ptDate(miningStats.updatedAt)})` : 'minérios ainda não sincronizados'}
+              {' · '}
+              {locationsStats.updatedAt ? `${locationsStats.counts.planets + locationsStats.counts.moons} planetas/luas (${ptDate(locationsStats.updatedAt)})` : 'locais ainda não sincronizados'}
+            </div>
+            <div style={{ fontSize:10,color:'var(--text-muted)' }}>Sincronize em UEX API (Live) → Mineração / Localizações</div>
+          </div>
+        )}
+        {!miningStats.updatedAt && !locationsStats.updatedAt && (
+          <div style={{ display:'flex',alignItems:'center',gap:10,marginBottom:16,padding:'10px 14px',background:'rgba(255,196,54,0.06)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:8,fontSize:11,color:'var(--text-secondary)' }}>
+            💡 Esta guia ainda está usando apenas dados curados manualmente. Visite <strong style={{ color:'var(--accent-gold)' }}>UEX API (Live)</strong> → abas Mineração/Localizações para trazer preços e locais atualizados da comunidade.
+          </div>
+        )}
+
         {/* LOCATIONS TAB */}
         {activeTab==='locations' && (
           <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:16 }}>
@@ -544,14 +620,17 @@ export default function MiningPage() {
               }} onClick={()=>setSelectedLocalização(selectedLocalização===loc?null:loc)}>
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8 }}>
                   <div>
-                    <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc}</div>
+                    <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                      <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc}</span>
+                      {data.synced && <span style={{ fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:3,background:'rgba(0,229,160,0.1)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.25)' }}>UEX</span>}
+                    </div>
                     <div style={{ fontSize:11,color:'var(--text-muted)',marginTop:2 }}>{data.system} · {data.type}</div>
                   </div>
                   <span style={{
                     fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,letterSpacing:'0.08em',
-                    background:data.danger==='Alto'?'rgba(255,68,102,0.12)':data.danger==='Médio'?'rgba(255,196,54,0.1)':'rgba(0,229,160,0.1)',
-                    color:data.danger==='Alto'?'var(--accent-red)':data.danger==='Médio'?'var(--accent-gold)':'var(--accent-green)',
-                    border:`1px solid ${data.danger==='Alto'?'rgba(255,68,102,0.3)':data.danger==='Médio'?'rgba(255,196,54,0.25)':'rgba(0,229,160,0.25)'}`,
+                    background:data.danger==='Alto'?'rgba(255,68,102,0.12)':data.danger==='Médio'?'rgba(255,196,54,0.1)':data.danger==='Desconhecido'?'rgba(122,144,176,0.1)':'rgba(0,229,160,0.1)',
+                    color:data.danger==='Alto'?'var(--accent-red)':data.danger==='Médio'?'var(--accent-gold)':data.danger==='Desconhecido'?'var(--text-muted)':'var(--accent-green)',
+                    border:`1px solid ${data.danger==='Alto'?'rgba(255,68,102,0.3)':data.danger==='Médio'?'rgba(255,196,54,0.25)':data.danger==='Desconhecido'?'rgba(122,144,176,0.25)':'rgba(0,229,160,0.25)'}`,
                   }}>⚠ {data.danger}</span>
                 </div>
                 <div style={{ display:'flex',gap:5,flexWrap:'wrap',marginBottom:8 }}>
@@ -594,7 +673,10 @@ export default function MiningPage() {
                 <div key={ore.name} style={{ background:'var(--bg-card)',border:`1px solid ${ore.color}33`,borderRadius:8,padding:'14px',borderLeft:`3px solid ${ore.color}` }}>
                   <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8 }}>
                     <div>
-                      <div style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:ore.color }}>{ore.name}</div>
+                      <div style={{ display:'flex',alignItems:'center',gap:6,flexWrap:'wrap' }}>
+                        <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:ore.color }}>{ore.name}</span>
+                        {ore.synced && <ProvenanceBadge category="mining_ore" name={ore.name}/>}
+                      </div>
                       <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginTop:2 }}>{ore.rarity}</div>
                     </div>
                     <div style={{ textAlign:'right' }}>

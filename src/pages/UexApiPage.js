@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from '../data/provenance';
 import { saveUexItemsDB, loadUexItemsDB } from '../data/uexItemsDB';
+import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
+import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
@@ -690,6 +692,7 @@ function MiningTab() {
   const [error,     setError]     = useState('');
   const [search,    setSearch]    = useState('');
   const [selected,  setSelected]  = useState(null);
+  const [dbStats,   setDbStats]   = useState(getUexMiningStats);
 
   async function load() {
     setLoading(true); setError('');
@@ -697,6 +700,8 @@ function MiningTab() {
       const all = await uexFetch('commodities');
       const minerals = all.filter(c => c.is_mineral || c.is_raw || c.is_extractable);
       setBrutosPreços(minerals);
+      const db = saveUexMiningDB(minerals);
+      setDbStats({ updatedAt: db.updatedAt, count: minerals.length });
       setBatchProvenance('mining_ore', minerals.map(m => m.name), SOURCES.UEX_API, {
         endpoint: 'commodities', gameVersion: '4.8.1',
       });
@@ -704,6 +709,8 @@ function MiningTab() {
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
 
   const filtered = useMemo(() =>
     rawPreços.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase()))
@@ -729,6 +736,13 @@ function MiningTab() {
 
   return (
     <div>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8 }}>
+        <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
+          <strong style={{ color:'var(--accent-green)' }}>Banco local de minérios:</strong>{' '}
+          {dbStats.updatedAt ? `${dbStats.count} minérios/recursos — atualizado em ${ptDate(dbStats.updatedAt)}` : 'ainda não sincronizado'}
+        </div>
+        <div style={{ fontSize:10,color:'var(--text-muted)' }}>Alimenta os preços e a lista de minérios na Guia de Mineração</div>
+      </div>
       <div style={{ display:'flex',gap:8,marginBottom:12 }}>
         <div style={{ position:'relative',flex:1 }}>
           <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
@@ -741,7 +755,7 @@ function MiningTab() {
       {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} minérios/recursos · Dados crowdsourced UEX</div>
       {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando...</div>
+        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando e sincronizando banco...</div>
       ) : (
         <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
       )}
@@ -756,20 +770,37 @@ function LocalizaçãosTab() {
   const [planets,  setPlanetas]  = useState([]);
   const [moons,    setLuas]    = useState([]);
   const [stations, setEstações] = useState([]);
+  const [cities,   setCidades]  = useState([]);
+  const [outposts, setPostos]   = useState([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
   const [subTab,   setSubTab]   = useState('systems');
+  const [dbStats,  setDbStats]  = useState(getUexLocationsStats);
 
   async function load() {
     setLoading(true); setError('');
     try {
-      const [sys, pla, mon, sta] = await Promise.all([
+      const [sys, pla, mon, sta, cit, out, term] = await Promise.all([
         uexFetch('star_systems'),
         uexFetch('planets'),
         uexFetch('moons'),
         uexFetch('space_stations'),
+        uexFetch('cities'),
+        uexFetch('outposts'),
+        uexFetch('terminals'),
       ]);
-      setSistemas(sys); setPlanetas(pla); setLuas(mon); setEstações(sta);
+      setSistemas(sys); setPlanetas(pla); setLuas(mon); setEstações(sta); setCidades(cit); setPostos(out);
+
+      // Salva tudo no banco local de localizações — é isso que alimenta os seletores
+      // de local/tipo-de-local em Inventário, Baú de Minério e Mineração em Grupo.
+      const db = saveUexLocationsDB({ systems:sys, planets:pla, moons:mon, stations:sta, cities:cit, outposts:out, terminals:term });
+      setDbStats({ updatedAt: db.updatedAt, counts: {
+        systems:sys.length, planets:pla.length, moons:mon.length, stations:sta.length,
+        cities:cit.length, outposts:out.length, terminals:term.length,
+      }});
+      setBatchProvenance('location', [...pla,...mon,...sta,...cit,...out].map(l => l.name), SOURCES.UEX_API, {
+        endpoint: 'localizações', gameVersion: '4.8.1',
+      });
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -780,6 +811,8 @@ function LocalizaçãosTab() {
     { id:'planets',  label:`Planetas (${planets.length})` },
     { id:'moons',    label:`Luas (${moons.length})` },
     { id:'stations', label:`Estações (${stations.length})` },
+    { id:'cities',   label:`Cidades (${cities.length})` },
+    { id:'outposts', label:`Postos (${outposts.length})` },
   ];
 
   const sysCols = [
@@ -800,12 +833,38 @@ function LocalizaçãosTab() {
     { key:'is_available', label:'Disponível', render:v=><span style={{ color:v?'var(--accent-green)':'var(--text-muted)' }}>{v?'✓':'✗'}</span> },
     { key:'has_trade', label:'Trade', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
   ];
+  const cityCols = [
+    { key:'name', label:'Cidade', render:v=><span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span> },
+    { key:'star_system_name', label:'Sistema', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)' }}>{v||'—'}</span> },
+    { key:'planet_name', label:'Planeta', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
+    { key:'has_trade_terminal', label:'Terminal', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
+  ];
+  const outpostCols = [
+    { key:'name', label:'Posto Avançado', render:v=><span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span> },
+    { key:'star_system_name', label:'Sistema', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)' }}>{v||'—'}</span> },
+    { key:'planet_name', label:'Planeta/Lua', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
+    { key:'has_trade_terminal', label:'Terminal', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
+  ];
 
-  const currentData   = subTab==='systems'?systems:subTab==='planets'?planets:subTab==='moons'?moons:stations;
-  const currentCols   = subTab==='systems'?sysCols:subTab==='stations'?staCols:locCols;
+  const TAB_DATA = { systems, planets, moons, stations, cities, outposts };
+  const TAB_COLS = { systems:sysCols, planets:locCols, moons:locCols, stations:staCols, cities:cityCols, outposts:outpostCols };
+  const currentData = TAB_DATA[subTab];
+  const currentCols  = TAB_COLS[subTab];
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
 
   return (
     <div>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8 }}>
+        <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
+          <strong style={{ color:'var(--accent-green)' }}>Banco local de localizações:</strong>{' '}
+          {dbStats.updatedAt
+            ? `${dbStats.counts.systems} sistemas · ${dbStats.counts.planets} planetas · ${dbStats.counts.moons} luas · ${dbStats.counts.stations} estações · ${dbStats.counts.cities} cidades · ${dbStats.counts.outposts} postos · ${dbStats.counts.terminals} terminais — atualizado em ${ptDate(dbStats.updatedAt)}`
+            : 'ainda não sincronizado'}
+        </div>
+        <div style={{ fontSize:10,color:'var(--text-muted)' }}>Alimenta os seletores de local em Inventário, Baú de Minério e Mineração em Grupo</div>
+      </div>
+
       <div style={{ display:'flex',gap:0,marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden',width:'fit-content' }}>
         {SUBTABS.map(t=>(
           <button key={t.id} onClick={()=>setSubTab(t.id)} style={{ padding:'8px 14px',background:subTab===t.id?'rgba(0,212,255,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:subTab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em' }}>
@@ -818,7 +877,7 @@ function LocalizaçãosTab() {
       </div>
       {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando locais...</div>
+        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando locais e sincronizando banco...</div>
       ) : (
         <DataTable data={currentData} columns={currentCols}/>
       )}
