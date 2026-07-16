@@ -11,7 +11,7 @@ const ORE_LIST = ['Quantainium','Bexalite','Taranite','Laranite','Gold','Diamond
 function ptSCU(v) { return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:3}); }
 function fmtData(iso) { return iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 
-const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none' };
+const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none' };
 const SS = { ...IS,padding:'7px 26px 7px 10px',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center' };
 const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
 
@@ -35,7 +35,7 @@ function AddVaultForm({ knownOwners, onSave, onCancel }) {
   return (
     <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:16,marginBottom:14 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12 }}>
-        <span style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em' }}>ADICIONAR AO COFRE DO CLÃ</span>
+        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em' }}>ADICIONAR AO COFRE DO CLÃ</span>
         <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}>✕</button>
       </div>
       <div style={{ display:'grid',gridTemplateColumns:'1.3fr 1fr 0.8fr 0.7fr 0.7fr',gap:10,marginBottom:10 }}>
@@ -62,13 +62,13 @@ function AddVaultForm({ knownOwners, onSave, onCancel }) {
       </div>
       <input style={{ ...IS,marginBottom:10 }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Observações (opcional)..."/>
       {error&&(
-        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:10 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:10 }}>
           <AlertTriangle size={13}/>{error}
         </div>
       )}
       <div style={{ display:'flex',gap:8,justifyContent:'flex-end' }}>
-        <button onClick={onCancel} style={{ padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
-        <button onClick={handleSave} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:6,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+        <button onClick={onCancel} style={{ padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleSave} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:6,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
           <Plus size={13}/> Adicionar
         </button>
       </div>
@@ -98,18 +98,18 @@ function VaultEntryCard({ entry, onToggleStatus, onDelete, onUseQuantity }) {
   }
 
   return (
-    <div style={{ background:'var(--bg-card)',border:`1px solid ${delivered?'rgba(0,229,160,0.25)':'rgba(255,196,54,0.25)'}`,borderLeft:`3px solid ${delivered?'var(--accent-green)':'var(--accent-gold)'}`,borderRadius:8,padding:'11px 14px',marginBottom:7 }}>
+    <div style={{ background:'var(--bg-card)',border:`1px solid ${delivered?'rgba(52,211,153,0.25)':'rgba(251,191,36,0.25)'}`,borderLeft:`3px solid ${delivered?'var(--accent-green)':'var(--accent-gold)'}`,borderRadius:8,padding:'11px 14px',marginBottom:7 }}>
       <div style={{ display:'flex',alignItems:'center',gap:12 }}>
-        <div style={{ width:34,height:34,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:delivered?'rgba(0,229,160,0.1)':'rgba(255,196,54,0.1)',border:`1px solid ${delivered?'rgba(0,229,160,0.3)':'rgba(255,196,54,0.3)'}` }}>
+        <div style={{ width:34,height:34,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:delivered?'rgba(52,211,153,0.1)':'rgba(251,191,36,0.1)',border:`1px solid ${delivered?'rgba(52,211,153,0.3)':'rgba(251,191,36,0.3)'}` }}>
           <Gem size={15} style={{ color:delivered?'var(--accent-green)':'var(--accent-gold)' }}/>
         </div>
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:2 }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{entry.owner}</span>
+            <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{entry.owner}</span>
             <span style={{ fontSize:11,color:'var(--text-muted)' }}>·</span>
             <span style={{ fontSize:13,fontWeight:700,color:'var(--accent-gold)' }}>{entry.ore_name}</span>
             {entry.quality!==''&&entry.quality!=null&&<span style={{ fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(255,200,0,0.1)',color:'var(--accent-gold)',border:'1px solid rgba(255,200,0,0.25)',fontWeight:700 }}>★ {entry.quality}</span>}
-            <span style={{ fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:3,background:delivered?'rgba(0,229,160,0.12)':'rgba(255,196,54,0.12)',color:delivered?'var(--accent-green)':'var(--accent-gold)',border:`1px solid ${delivered?'rgba(0,229,160,0.3)':'rgba(255,196,54,0.3)'}` }}>{entry.status}</span>
+            <span style={{ fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:3,background:delivered?'rgba(52,211,153,0.12)':'rgba(251,191,36,0.12)',color:delivered?'var(--accent-green)':'var(--accent-gold)',border:`1px solid ${delivered?'rgba(52,211,153,0.3)':'rgba(251,191,36,0.3)'}` }}>{entry.status}</span>
           </div>
           <div style={{ display:'flex',gap:10,fontSize:10,color:'var(--text-muted)',flexWrap:'wrap' }}>
             {entry.session_name&&<span>📋 {entry.session_name}</span>}
@@ -118,12 +118,12 @@ function VaultEntryCard({ entry, onToggleStatus, onDelete, onUseQuantity }) {
           </div>
         </div>
         <div style={{ textAlign:'right',flexShrink:0 }}>
-          <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:delivered?'var(--accent-green)':'var(--accent-gold)' }}>{ptSCU(entry.quantity)}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:delivered?'var(--accent-green)':'var(--accent-gold)' }}>{ptSCU(entry.quantity)}</div>
           <div style={{ fontSize:9,color:'var(--text-muted)',textTransform:'uppercase' }}>{unit}</div>
         </div>
         <div style={{ display:'flex',gap:5,flexShrink:0 }}>
           <button onClick={()=>{ setShowUse(v=>!v); setShowHist(false); }} title="Registrar uso (reduzir quantidade)"
-            style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:showUse?'rgba(0,212,255,0.15)':'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+            style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:showUse?'rgba(56,189,248,0.15)':'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
             <Minus size={12}/> Usar
           </button>
           {history.length>0&&(
@@ -133,16 +133,16 @@ function VaultEntryCard({ entry, onToggleStatus, onDelete, onUseQuantity }) {
             </button>
           )}
           <button onClick={()=>onToggleStatus(entry)} title={delivered?'Marcar como ainda no cofre':'Marcar como entregue'}
-            style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:delivered?'rgba(255,196,54,0.08)':'rgba(0,229,160,0.1)',border:`1px solid ${delivered?'rgba(255,196,54,0.3)':'rgba(0,229,160,0.3)'}`,borderRadius:5,color:delivered?'var(--accent-gold)':'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+            style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 10px',background:delivered?'rgba(251,191,36,0.08)':'rgba(52,211,153,0.1)',border:`1px solid ${delivered?'rgba(251,191,36,0.3)':'rgba(52,211,153,0.3)'}`,borderRadius:5,color:delivered?'var(--accent-gold)':'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
             {delivered?<><RotateCcw size={12}/> Reverter</>:<><CheckCircle2 size={12}/> Entregar</>}
           </button>
           {delConf?(
             <div style={{ display:'flex',gap:4,alignItems:'center' }}>
-              <button onClick={()=>onDelete(entry.id)} style={{ padding:'3px 7px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
+              <button onClick={()=>onDelete(entry.id)} style={{ padding:'3px 7px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
               <button onClick={()=>setDelConf(false)} style={{ padding:'3px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-secondary)',cursor:'pointer',fontSize:11 }}>Não</button>
             </div>
           ):(
-            <button onClick={()=>setDelConf(true)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
+            <button onClick={()=>setDelConf(true)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
           )}
         </div>
       </div>
@@ -159,7 +159,7 @@ function VaultEntryCard({ entry, onToggleStatus, onDelete, onUseQuantity }) {
           <div><label style={LS}>Observação</label>
             <input style={IS} value={useNotes} onChange={e=>setUseNotes(e.target.value)} placeholder="Opcional..."/>
           </div>
-          <button onClick={handleConfirmUse} style={{ padding:'7px 14px',background:'rgba(0,212,255,0.12)',border:'1px solid rgba(0,212,255,0.4)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap' }}>Confirmar</button>
+          <button onClick={handleConfirmUse} style={{ padding:'7px 14px',background:'rgba(56,189,248,0.12)',border:'1px solid rgba(56,189,248,0.4)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',whiteSpace:'nowrap' }}>Confirmar</button>
           {useError&&(
             <div style={{ gridColumn:'1 / -1',display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--accent-red)' }}>
               <AlertTriangle size={12}/>{useError}
@@ -246,7 +246,7 @@ export default function ClanVaultPage() {
           <div className="page-subtitle">{totalNoCofre} guardado{totalNoCofre!==1?'s':''} · {totalEntregue} entregue{totalEntregue!==1?'s':''} · {owners.length} participante{owners.length!==1?'s':''}</div>
         </div>
         {!showAdd&&(
-          <button onClick={()=>setShowAdd(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer' }}>
+          <button onClick={()=>setShowAdd(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer' }}>
             <Plus size={14}/> Adicionar ao Cofre
           </button>
         )}
@@ -255,14 +255,14 @@ export default function ClanVaultPage() {
       <div style={{ flex:1,display:'grid',gridTemplateColumns:'230px 1fr',overflow:'hidden' }}>
         {/* Painel esquerdo: resumo por participante */}
         <div style={{ borderRight:'1px solid var(--border-subtle)',overflowY:'auto',padding:12 }}>
-          <div style={{ fontFamily:'Orbitron,monospace',fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:6 }}>
+          <div style={{ fontFamily:'Michroma,sans-serif',fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:6 }}>
             <Users size={11}/> No Cofre por Jogador
           </div>
           {summary.length===0?(
             <div style={{ fontSize:11,color:'var(--text-muted)',textAlign:'center',padding:'20px 0' }}>Nada guardado no momento</div>
           ):(
             summary.map(s=>(
-              <button key={s.owner} onClick={()=>setOwnerFilter(s.owner)} style={{ width:'100%',textAlign:'left',display:'block',padding:'8px 10px',marginBottom:5,background:ownerFilter===s.owner?'rgba(255,196,54,0.12)':'var(--bg-card)',border:`1px solid ${ownerFilter===s.owner?'rgba(255,196,54,0.35)':'var(--border-subtle)'}`,borderRadius:7,cursor:'pointer' }}>
+              <button key={s.owner} onClick={()=>setOwnerFilter(s.owner)} style={{ width:'100%',textAlign:'left',display:'block',padding:'8px 10px',marginBottom:5,background:ownerFilter===s.owner?'rgba(251,191,36,0.12)':'var(--bg-card)',border:`1px solid ${ownerFilter===s.owner?'rgba(251,191,36,0.35)':'var(--border-subtle)'}`,borderRadius:7,cursor:'pointer' }}>
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3 }}>
                   <span style={{ fontSize:12,fontWeight:700,color:'var(--accent-gold)' }}>{s.owner}</span>
                   <span style={{ fontSize:10,color:'var(--text-muted)' }}>{s.count} item{s.count!==1?'s':''}</span>
@@ -306,7 +306,7 @@ export default function ClanVaultPage() {
           {filtered.length===0?(
             <div style={{ textAlign:'center',padding:'50px 0',color:'var(--text-muted)' }}>
               <Lock size={44} style={{ display:'block',margin:'0 auto 12px',opacity:0.15 }}/>
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,marginBottom:6 }}>COFRE VAZIO</div>
+              <div style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,marginBottom:6 }}>COFRE VAZIO</div>
               <div style={{ fontSize:11 }}>
                 {entries.length===0
                   ? 'Marque "Enviar ao Cofre do Clã" ao finalizar uma sessão de mineração, ou adicione manualmente.'

@@ -1,7 +1,7 @@
 {
-  "name": "sc-armor-tracker",
+  "name": "companheiro-emoto",
   "version": "1.0.0",
-  "description": "Star Citizen Armor Tracker",
+  "description": "Companheiro Emoto — Star Citizen Companion App",
   "main": "electron/main.js",
   "scripts": {
     "react-start": "cross-env BROWSER=none react-scripts start",
@@ -30,7 +30,7 @@
   },
   "build": {
     "appId": "com.sctracker.armor",
-    "productName": "SC Armor Tracker",
+    "productName": "Companheiro Emoto",
     "files": ["build/**/*", "electron/**/*", "node_modules/**/*"],
     "directories": { "output": "dist" }
   },

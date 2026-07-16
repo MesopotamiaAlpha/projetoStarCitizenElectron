@@ -50,11 +50,11 @@ async function uexFetch(endpoint, params = {}, token = '') {
 
 // ── Tabs config ───────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'commodities', label: 'Commodities', icon: TrendingUp,  color: '#ffc436', desc: 'Preços de commodities em tempo real — minérios, combustíveis, mercadorias' },
-  { id: 'itens',       label: 'Itens',       icon: Package,     color: '#00d4ff', desc: 'Armaduras, armas, componentes, gadgets e todos os itens do jogo' },
-  { id: 'veículos',    label: 'Veículos',    icon: Zap,         color: '#ff8c00', desc: 'Todas as naves e veículos com especificações completas' },
-  { id: 'mining',      label: 'Mining',   icon: Pickaxe,     color: '#00e5a0', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
-  { id: 'locations',   label: 'Locais',      icon: Globe,       color: '#b44cff', desc: 'Sistemas, planetas, luas, estações e terminais de comércio' },
+  { id: 'commodities', label: 'Commodities', icon: TrendingUp,  color: '#fbbf24', desc: 'Preços de commodities em tempo real — minérios, combustíveis, mercadorias' },
+  { id: 'itens',       label: 'Itens',       icon: Package,     color: '#38bdf8', desc: 'Armaduras, armas, componentes, gadgets e todos os itens do jogo' },
+  { id: 'veículos',    label: 'Veículos',    icon: Zap,         color: '#fb923c', desc: 'Todas as naves e veículos com especificações completas' },
+  { id: 'mining',      label: 'Mining',   icon: Pickaxe,     color: '#34d399', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
+  { id: 'locations',   label: 'Locais',      icon: Globe,       color: '#a78bfa', desc: 'Sistemas, planetas, luas, estações e terminais de comércio' },
   { id: 'terminais',   label: 'Terminais',   icon: Database,    color: '#74b9ff', desc: 'Terminais de trade com preços de compra/venda por localização' },
 ];
 
@@ -123,8 +123,8 @@ function TokenConfigPanel({ onTokenChange }) {
 
   return (
     <div style={{
-      background: hasToken ? 'rgba(0,229,160,0.04)' : 'rgba(255,196,54,0.04)',
-      border: `1px solid ${hasToken ? 'rgba(0,229,160,0.25)' : 'rgba(255,196,54,0.25)'}`,
+      background: hasToken ? 'rgba(52,211,153,0.04)' : 'rgba(251,191,36,0.04)',
+      border: `1px solid ${hasToken ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.25)'}`,
       borderRadius: 8, marginBottom: 14, overflow: 'hidden',
     }}>
       {/* Header toggle */}
@@ -135,15 +135,15 @@ function TokenConfigPanel({ onTokenChange }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Key size={14} style={{ color: hasToken ? 'var(--accent-green)' : 'var(--accent-gold)', flexShrink: 0 }}/>
-          <span style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span style={{ fontFamily: '"Exo 2",sans-serif', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Token API UEX Corp
           </span>
           {hasToken ? (
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-green)', background: 'rgba(0,229,160,0.1)', border: '1px solid rgba(0,229,160,0.3)', padding: '1px 7px', borderRadius: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-green)', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', padding: '1px 7px', borderRadius: 10 }}>
               ✓ CONFIGURADO
             </span>
           ) : (
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-gold)', background: 'rgba(255,196,54,0.1)', border: '1px solid rgba(255,196,54,0.3)', padding: '1px 7px', borderRadius: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-gold)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', padding: '1px 7px', borderRadius: 10 }}>
               SEM TOKEN
             </span>
           )}
@@ -213,9 +213,9 @@ function TokenConfigPanel({ onTokenChange }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={handleSave} disabled={!token.trim()} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-              background: 'rgba(0,229,160,0.1)', border: '1px solid rgba(0,229,160,0.35)',
+              background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.35)',
               borderRadius: 6, color: 'var(--accent-green)',
-              fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+              fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
               cursor: token.trim() ? 'pointer' : 'not-allowed', textTransform: 'uppercase',
               opacity: token.trim() ? 1 : 0.5, letterSpacing: '0.06em',
             }}>
@@ -225,9 +225,9 @@ function TokenConfigPanel({ onTokenChange }) {
 
             <button onClick={handleTest} disabled={!token.trim() || testStatus === 'testing'} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-              background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)',
+              background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.3)',
               borderRadius: 6, color: 'var(--accent-primary)',
-              fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+              fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
               cursor: (token.trim() && testStatus !== 'testing') ? 'pointer' : 'not-allowed',
               textTransform: 'uppercase', letterSpacing: '0.06em',
               opacity: (token.trim() && testStatus !== 'testing') ? 1 : 0.5,
@@ -240,9 +240,9 @@ function TokenConfigPanel({ onTokenChange }) {
             {hasToken && (
               <button onClick={handleLimpar} style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                background: 'rgba(255,68,102,0.08)', border: '1px solid rgba(255,68,102,0.2)',
+                background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.2)',
                 borderRadius: 6, color: 'var(--accent-red)',
-                fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+                fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
                 cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
                 <X size={13}/> Remover Token
@@ -254,8 +254,8 @@ function TokenConfigPanel({ onTokenChange }) {
           {testStatus && testStatus !== 'testing' && (
             <div style={{
               marginTop: 10, padding: '9px 14px',
-              background: testStatus === 'ok' ? 'rgba(0,229,160,0.08)' : 'rgba(255,68,102,0.08)',
-              border: `1px solid ${testStatus === 'ok' ? 'rgba(0,229,160,0.3)' : 'rgba(255,68,102,0.3)'}`,
+              background: testStatus === 'ok' ? 'rgba(52,211,153,0.08)' : 'rgba(251,113,133,0.08)',
+              border: `1px solid ${testStatus === 'ok' ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.3)'}`,
               borderRadius: 6, fontSize: 12, fontWeight: 600,
               color: testStatus === 'ok' ? 'var(--accent-green)' : 'var(--accent-red)',
               display: 'flex', alignItems: 'center', gap: 8,
@@ -277,8 +277,8 @@ function StatusBadge({ ok }) {
   return (
     <span style={{ display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,
       padding:'2px 7px',borderRadius:10,
-      background: ok ? 'rgba(0,229,160,0.12)' : 'rgba(255,68,102,0.1)',
-      border: `1px solid ${ok ? 'rgba(0,229,160,0.3)' : 'rgba(255,68,102,0.3)'}`,
+      background: ok ? 'rgba(52,211,153,0.12)' : 'rgba(251,113,133,0.1)',
+      border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.3)'}`,
       color: ok ? 'var(--accent-green)' : 'var(--accent-red)',
     }}>
       {ok ? <CheckCircle2 size={10}/> : <AlertTriangle size={10}/>}
@@ -300,7 +300,7 @@ function DataTable({ data, columns, onRowClick, selectedId }) {
             {columns.map(col => (
               <th key={col.key} style={{ padding:'8px 12px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',
                 color:'var(--accent-primary)',fontWeight:700,whiteSpace:'nowrap',
-                fontFamily:'Rajdhani,sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>
+                fontFamily:'"Exo 2",sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>
                 {col.label}
               </th>
             ))}
@@ -313,12 +313,12 @@ function DataTable({ data, columns, onRowClick, selectedId }) {
               style={{
                 borderBottom:'1px solid var(--border-subtle)',
                 background: selectedId && (row.id === selectedId || row.uuid === selectedId)
-                  ? 'rgba(0,212,255,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                  ? 'rgba(56,189,248,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)',
                 cursor: onRowClick ? 'pointer' : 'default',
                 transition:'background 0.15s',
               }}
-              onMouseEnter={e => onRowClick && (e.currentTarget.style.background='rgba(0,212,255,0.05)')}
-              onMouseLeave={e => onRowClick && (e.currentTarget.style.background = selectedId && (row.id === selectedId || row.uuid === selectedId) ? 'rgba(0,212,255,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)')}
+              onMouseEnter={e => onRowClick && (e.currentTarget.style.background='rgba(56,189,248,0.05)')}
+              onMouseLeave={e => onRowClick && (e.currentTarget.style.background = selectedId && (row.id === selectedId || row.uuid === selectedId) ? 'rgba(56,189,248,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)')}
             >
               {columns.map(col => (
                 <td key={col.key} style={{ padding:'7px 12px',color:'var(--text-secondary)',verticalAlign:'middle' }}>
@@ -352,7 +352,7 @@ function DetailPanel({ item, onClose, tab }) {
     <div style={{ position:'fixed',top:0,right:0,width:380,height:'100vh',background:'var(--bg-card)',
       borderLeft:'1px solid var(--border-normal)',zIndex:100,overflowY:'auto',boxShadow:'-4px 0 24px rgba(0,0,0,0.4)' }}>
       <div style={{ padding:'16px 18px',borderBottom:'1px solid var(--border-subtle)',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--bg-panel)',position:'sticky',top:0,zIndex:1 }}>
-        <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
+        <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
           {item.name || item.code || '—'}
         </div>
         <button onClick={onClose} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px',fontSize:14 }}>✕</button>
@@ -383,7 +383,7 @@ function DetailPanel({ item, onClose, tab }) {
           ))}
         </div>
         {item.wiki && (
-          <a href={item.wiki} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:6,marginTop:12,padding:'8px 12px',background:'rgba(0,212,255,0.06)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,textDecoration:'none' }}>
+          <a href={item.wiki} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:6,marginTop:12,padding:'8px 12px',background:'rgba(56,189,248,0.06)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,textDecoration:'none' }}>
             <ExternalLink size={13}/> Ver no Wiki
           </a>
         )}
@@ -459,7 +459,7 @@ function CommoditiesTab() {
           <RefreshCw size={12}/> Atualizar
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} commodities · Dados da UEX Corp API (community crowdsourced)</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando da UEX API...</div>
@@ -528,7 +528,7 @@ function ItensTab() {
     );
   }, [data, search]);
 
-  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
+  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
 
   const cols = [
     { key:'name', label:'Nome', render:(v,r)=>(
@@ -538,7 +538,7 @@ function ItensTab() {
       </div>
     )},
     { key:'company_name', label:'Fabricante', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
-    { key:'category_name', label:'Categoria', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
+    { key:'category_name', label:'Categoria', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'size', label:'Tamanho', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'price_buy',  label:'Compra', render:v=><Preço value={v} unit='un' color='var(--accent-red)'/> },
     { key:'price_sell', label:'Venda',  render:v=><Preço value={v} unit='un' color='var(--accent-green)'/> },
@@ -550,7 +550,7 @@ function ItensTab() {
       {/* Seletor de categoria — obrigatório pois a API requer id_category */}
       <div style={{ display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center' }}>
         <select
-          style={{ padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',minWidth:240 }}
+          style={{ padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',minWidth:240 }}
           value={selCat} onChange={e=>handleCatChange(e.target.value)}>
           <option value="">— Selecione uma categoria de itens —</option>
           {cats.map(c=><option key={c.id} value={String(c.id)}>{c.name_v2||c.name} {c.section?`(${c.section})`:''}</option>)}
@@ -562,12 +562,12 @@ function ItensTab() {
               placeholder="Buscar por nome ou fabricante..." value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
         )}
-        <button onClick={loadCats} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+        <button onClick={loadCats} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           <RefreshCw size={11}/> Recarregar
         </button>
       </div>
 
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
 
       {/* Empty states */}
       {loading && (
@@ -640,7 +640,7 @@ function VeículosTab() {
 
   const roles = useMemo(() => [...new Set(data.map(v=>v.role).filter(Boolean))].sort(), [data]);
 
-  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
+  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
 
   const cols = [
     { key:'name', label:'Nome', render:(v,r)=>(
@@ -650,7 +650,7 @@ function VeículosTab() {
       </div>
     )},
     { key:'company_name', label:'Fabricante', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v}</span> },
-    { key:'role', label:'Papel', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
+    { key:'role', label:'Papel', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'size', label:'Tamanho', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'crew', label:'Tripulação', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'cargo', label:'Carga (SCU)', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)' }}>{v||0}</span> },
@@ -673,7 +673,7 @@ function VeículosTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} veículos</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando veículos...</div>
@@ -721,8 +721,8 @@ function MiningTab() {
       <div style={{ display:'flex',alignItems:'center',gap:6,flexWrap:'wrap' }}>
         <span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span>
         <ProvenanceBadge category="mining_ore" name={v}/>
-        {r.is_volatile_time && <span style={{ fontSize:9,color:'var(--accent-red)',fontWeight:700,background:'rgba(255,68,102,0.1)',border:'1px solid rgba(255,68,102,0.2)',padding:'1px 5px',borderRadius:3 }}>VOLÁTIL</span>}
-        {r.is_explosive    && <span style={{ fontSize:9,color:'var(--accent-orange)',fontWeight:700,background:'rgba(255,140,0,0.1)',border:'1px solid rgba(255,140,0,0.2)',padding:'1px 5px',borderRadius:3 }}>EXPLOSIVO</span>}
+        {r.is_volatile_time && <span style={{ fontSize:9,color:'var(--accent-red)',fontWeight:700,background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.2)',padding:'1px 5px',borderRadius:3 }}>VOLÁTIL</span>}
+        {r.is_explosive    && <span style={{ fontSize:9,color:'var(--accent-orange)',fontWeight:700,background:'rgba(251,146,60,0.1)',border:'1px solid rgba(251,146,60,0.2)',padding:'1px 5px',borderRadius:3 }}>EXPLOSIVO</span>}
       </div>
     )},
     { key:'code', label:'Código', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-primary)' }}>{v}</span> },
@@ -736,7 +736,7 @@ function MiningTab() {
 
   return (
     <div>
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8 }}>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8 }}>
         <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
           <strong style={{ color:'var(--accent-green)' }}>Banco local de minérios:</strong>{' '}
           {dbStats.updatedAt ? `${dbStats.count} minérios/recursos — atualizado em ${ptDate(dbStats.updatedAt)}` : 'ainda não sincronizado'}
@@ -752,7 +752,7 @@ function MiningTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} minérios/recursos · Dados crowdsourced UEX</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando e sincronizando banco...</div>
@@ -855,7 +855,7 @@ function LocalizaçãosTab() {
 
   return (
     <div>
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8 }}>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8 }}>
         <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
           <strong style={{ color:'var(--accent-green)' }}>Banco local de localizações:</strong>{' '}
           {dbStats.updatedAt
@@ -867,7 +867,7 @@ function LocalizaçãosTab() {
 
       <div style={{ display:'flex',gap:0,marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden',width:'fit-content' }}>
         {SUBTABS.map(t=>(
-          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{ padding:'8px 14px',background:subTab===t.id?'rgba(0,212,255,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:subTab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em' }}>
+          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{ padding:'8px 14px',background:subTab===t.id?'rgba(56,189,248,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:subTab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em' }}>
             {t.label}
           </button>
         ))}
@@ -875,7 +875,7 @@ function LocalizaçãosTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando locais e sincronizando banco...</div>
       ) : (
@@ -924,7 +924,7 @@ function TerminaisTab() {
     { key:'type', label:'Tipo', render:v=><span style={{ fontSize:10,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'has_commodity', label:'Commodity', render:v=><span style={{ color:v?'var(--accent-gold)':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
     { key:'has_item',      label:'Itens',     render:v=><span style={{ color:v?'var(--accent-primary)':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
-    { key:'has_vehicle',   label:'Veículos',  render:v=><span style={{ color:v?'#ff8c00':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
+    { key:'has_vehicle',   label:'Veículos',  render:v=><span style={{ color:v?'#fb923c':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
     { key:'is_available',  label:'Online',    render:v=><StatusBadge ok={v}/> },
   ];
 
@@ -942,7 +942,7 @@ function TerminaisTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} terminais</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando terminais...</div>
@@ -1011,18 +1011,20 @@ function ItemDBSyncButton() {
         if (i % 5 === 4) await new Promise(r => setTimeout(r, 200));
       }
 
-      setPhase(`Buscando preços de ${allItems.length} itens...`);
+      setPhase(`Buscando preços de mercado (todos os terminais)...`);
 
-      // 3. Buscar items_prices para enriquecer com preços de mercado (marketplace)
+      // 3. Buscar items_prices_all para enriquecer com preços reais de mercado.
+      // (items_prices exige id_item/id_terminal por chamada e por isso falhava silenciosamente
+      // sem preencher nada; items_prices_all traz tudo de uma vez, sem parâmetros.)
       try {
-        const prices = await uexFetch('items_prices');
+        const prices = await uexFetch('items_prices_all');
         if (prices && Array.isArray(prices)) {
-          // Agrupar por id_item e calcular média/max/min
+          // Agrupar por id_item e calcular média/max/min entre todos os terminais
           prices.forEach(p => {
             const id = p.id_item;
             if (!id) return;
             if (!priceMap[id]) priceMap[id] = { total: 0, count: 0, max: 0, min: Infinity };
-            const val = p.price_buy || p.price_sell || 0;
+            const val = p.price_sell || p.price_buy || 0;
             if (val > 0) {
               priceMap[id].total += val;
               priceMap[id].count++;
@@ -1031,7 +1033,7 @@ function ItemDBSyncButton() {
             }
           });
         }
-      } catch { /* prices podem não estar disponíveis */ }
+      } catch { /* preços podem não estar disponíveis */ }
 
       // 4. Enriquecer itens com preços
       const enriched = allItems.map(item => {
@@ -1060,10 +1062,10 @@ function ItemDBSyncButton() {
     <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4 }}>
       <button onClick={handleSync} disabled={syncing} style={{
         display:'flex',alignItems:'center',gap:6,padding:'8px 14px',
-        background:syncing?'rgba(255,200,0,0.08)':'rgba(0,229,160,0.08)',
-        border:`1px solid ${syncing?'rgba(255,200,0,0.3)':'rgba(0,229,160,0.3)'}`,
+        background:syncing?'rgba(255,200,0,0.08)':'rgba(52,211,153,0.08)',
+        border:`1px solid ${syncing?'rgba(255,200,0,0.3)':'rgba(52,211,153,0.3)'}`,
         borderRadius:6,color:syncing?'var(--accent-gold)':'var(--accent-green)',
-        fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',
+        fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',
         cursor:syncing?'not-allowed':'pointer',letterSpacing:'0.06em',opacity:syncing?0.8:1,
       }}>
         <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
@@ -1106,14 +1108,14 @@ export default function UexApiPage() {
         <div style={{ display:'flex',gap:8,alignItems:'center' }}>
           <ItemDBSyncButton/>
           <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
-            style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
+            style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
             <ExternalLink size={13}/> Documentação
           </a>
         </div>
       </div>
 
       {/* Info banner */}
-      <div style={{ padding:'8px 32px',borderBottom:'1px solid var(--border-subtle)',background:'rgba(0,119,255,0.04)',flexShrink:0,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap' }}>
+      <div style={{ padding:'8px 32px',borderBottom:'1px solid var(--border-subtle)',background:'rgba(99,102,241,0.04)',flexShrink:0,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap' }}>
         <Info size={13} style={{ color:'var(--accent-primary)',flexShrink:0 }}/>
         <span style={{ fontSize:11,color:'var(--text-secondary)' }}>
           Dados crowdsourced pela comunidade Star Citizen. Preços são médias dos últimos 15 dias reportados por jogadminérios.
@@ -1136,10 +1138,10 @@ export default function UexApiPage() {
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{
             display:'flex',alignItems:'center',gap:7,padding:'12px 16px',
-            background:activeTab===t.id?'rgba(0,212,255,0.08)':'transparent',
+            background:activeTab===t.id?'rgba(56,189,248,0.08)':'transparent',
             border:'none',borderBottom:`2px solid ${activeTab===t.id?t.color:'transparent'}`,
             color:activeTab===t.id?t.color:'var(--text-secondary)',
-            fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,
+            fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,
             letterSpacing:'0.05em',textTransform:'uppercase',cursor:'pointer',
             transition:'all 0.2s',whiteSpace:'nowrap',
           }}>

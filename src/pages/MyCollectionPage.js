@@ -22,7 +22,7 @@ function QuantityControl({ pieceId, quantity, owned, onUpdate }) {
         disabled={qty <= 1}
         style={{
           width:20, height:20, borderRadius:4, border:'1px solid var(--border-normal)',
-          background:'rgba(255,68,102,0.07)', color: qty <= 1 ? 'var(--text-muted)' : 'var(--accent-red)',
+          background:'rgba(251,113,133,0.07)', color: qty <= 1 ? 'var(--text-muted)' : 'var(--accent-red)',
           cursor: qty <= 1 ? 'default' : 'pointer', display:'flex', alignItems:'center',
           justifyContent:'center', opacity: qty <= 1 ? 0.4 : 1,
         }}>
@@ -30,7 +30,7 @@ function QuantityControl({ pieceId, quantity, owned, onUpdate }) {
       </button>
       <div style={{
         minWidth:26, height:20, display:'flex', alignItems:'center', justifyContent:'center',
-        fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:800,
+        fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:800,
         color: qty > 1 ? 'var(--accent-gold)' : 'var(--text-secondary)',
         background: qty > 1 ? 'rgba(255,200,0,0.1)' : 'transparent',
         border: qty > 1 ? '1px solid rgba(255,200,0,0.3)' : '1px solid var(--border-subtle)',
@@ -42,7 +42,7 @@ function QuantityControl({ pieceId, quantity, owned, onUpdate }) {
         onClick={() => onUpdate(pieceId, qty + 1)}
         style={{
           width:20, height:20, borderRadius:4, border:'1px solid var(--border-normal)',
-          background:'rgba(0,229,160,0.07)', color:'var(--accent-green)',
+          background:'rgba(52,211,153,0.07)', color:'var(--accent-green)',
           cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
         }}>
         <Plus size={9}/>
@@ -62,8 +62,8 @@ function PieceRow({ piece, setNome, setTipo, variantNome, onToggle, onWishlist, 
   return (
     <div style={{
       display:'flex', alignItems:'center', gap:10, padding:'8px 12px',
-      background: piece.owned ? 'rgba(0,229,160,0.04)' : 'var(--bg-card)',
-      border:`1px solid ${piece.owned ? 'rgba(0,229,160,0.2)' : 'var(--border-subtle)'}`,
+      background: piece.owned ? 'rgba(52,211,153,0.04)' : 'var(--bg-card)',
+      border:`1px solid ${piece.owned ? 'rgba(52,211,153,0.2)' : 'var(--border-subtle)'}`,
       borderRadius:6, transition:'all 0.2s',
     }}>
       <div style={{ width:28, height:28, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', background:`${TYPE_COLORS[setTipo]}18`, color:TYPE_COLORS[setTipo], flexShrink:0 }}>
@@ -76,15 +76,15 @@ function PieceRow({ piece, setNome, setTipo, variantNome, onToggle, onWishlist, 
         <div style={{ fontSize:10, color:'var(--text-muted)' }}>{piece.piece_name}</div>
       </div>
       {piece.is_lootable && !piece.is_purchasable && (
-        <span style={{ fontSize:9, color:'var(--accent-purple)', fontWeight:700, background:'rgba(180,76,255,0.1)', border:'1px solid rgba(180,76,255,0.2)', padding:'1px 5px', borderRadius:3, flexShrink:0 }}>LOOT</span>
+        <span style={{ fontSize:9, color:'var(--accent-purple)', fontWeight:700, background:'rgba(167,139,250,0.1)', border:'1px solid rgba(167,139,250,0.2)', padding:'1px 5px', borderRadius:3, flexShrink:0 }}>LOOT</span>
       )}
       {/* Controle de quantidade */}
       <QuantityControl
         pieceId={piece.id} quantity={qty} owned={piece.owned}
         onUpdate={onUpdateQuantity}/>
       <div style={{ display:'flex', gap:5, flexShrink:0 }}>
-        <button onClick={() => onToggle(piece.id)} style={{ width:28, height:28, borderRadius:5, border:`1px solid ${piece.owned ? 'rgba(0,229,160,0.4)' : 'var(--border-subtle)'}`, background: piece.owned ? 'rgba(0,229,160,0.15)' : 'transparent', color: piece.owned ? 'var(--accent-green)' : 'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, transition:'all 0.2s' }}>✓</button>
-        <button onClick={() => onWishlist(piece.id)} style={{ width:28, height:28, borderRadius:5, border:`1px solid ${piece.wishlist ? 'rgba(255,196,54,0.4)' : 'var(--border-subtle)'}`, background: piece.wishlist ? 'rgba(255,196,54,0.12)' : 'transparent', color: piece.wishlist ? 'var(--accent-gold)' : 'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, transition:'all 0.2s' }}>★</button>
+        <button onClick={() => onToggle(piece.id)} style={{ width:28, height:28, borderRadius:5, border:`1px solid ${piece.owned ? 'rgba(52,211,153,0.4)' : 'var(--border-subtle)'}`, background: piece.owned ? 'rgba(52,211,153,0.15)' : 'transparent', color: piece.owned ? 'var(--accent-green)' : 'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, transition:'all 0.2s' }}>✓</button>
+        <button onClick={() => onWishlist(piece.id)} style={{ width:28, height:28, borderRadius:5, border:`1px solid ${piece.wishlist ? 'rgba(251,191,36,0.4)' : 'var(--border-subtle)'}`, background: piece.wishlist ? 'rgba(251,191,36,0.12)' : 'transparent', color: piece.wishlist ? 'var(--accent-gold)' : 'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, transition:'all 0.2s' }}>★</button>
       </div>
     </div>
   );
@@ -173,7 +173,7 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
         <div style={{ display:'flex', alignItems:'center', gap:10, background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 16px' }}>
           <Trophy size={18} style={{ color:'var(--accent-gold)' }}/>
           <div>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:20, fontWeight:800, color:'var(--accent-gold)', lineHeight:1 }}>{pct}%</div>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-gold)', lineHeight:1 }}>{pct}%</div>
             <div style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.08em' }}>Peças</div>
           </div>
         </div>
@@ -189,7 +189,7 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
             { label:'Wishlist',         value:stats?.wishlistPieces||0, color:'var(--accent-gold)' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'14px 16px', textAlign:'center' }}>
-              <div style={{ fontFamily:'Orbitron,monospace', fontSize:24, fontWeight:800, color }}>{value}</div>
+              <div style={{ fontFamily:'Michroma,sans-serif', fontSize:24, fontWeight:800, color }}>{value}</div>
               <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:2, fontWeight:600 }}>{label}</div>
             </div>
           ))}
@@ -224,15 +224,15 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
               display:'flex', alignItems:'center', gap:7, padding:'9px 18px',
-              background: activeTab===tab.id ? 'rgba(0,212,255,0.1)' : 'transparent',
+              background: activeTab===tab.id ? 'rgba(56,189,248,0.1)' : 'transparent',
               border:'none', borderRight:'1px solid var(--border-subtle)',
               color: activeTab===tab.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
-              fontFamily:'Rajdhani,sans-serif', fontSize:13, fontWeight:700,
+              fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700,
               letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s',
             }}>
               <tab.icon size={14}/>
               {tab.label}
-              <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:11, padding:'1px 6px', background:activeTab===tab.id?'rgba(0,212,255,0.15)':'rgba(255,255,255,0.05)', borderRadius:4 }}>
+              <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:11, padding:'1px 6px', background:activeTab===tab.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:4 }}>
                 {tab.count}
               </span>
             </button>
@@ -271,20 +271,20 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
                 return (
                   <div key={s.id} style={{
                     background:'var(--bg-card)',
-                    border:`1px solid ${isComplete ? 'rgba(0,229,160,0.25)' : 'var(--border-subtle)'}`,
+                    border:`1px solid ${isComplete ? 'rgba(52,211,153,0.25)' : 'var(--border-subtle)'}`,
                     borderRadius:8, padding:'12px 16px', cursor:'pointer', transition:'all 0.2s',
                   }}
                   onClick={() => setSelectedSet(s)}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = isComplete ? 'rgba(0,229,160,0.4)' : 'var(--border-normal)'}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = isComplete ? 'rgba(0,229,160,0.25)' : 'var(--border-subtle)'}>
+                  onMouseEnter={e => e.currentTarget.style.borderColor = isComplete ? 'rgba(52,211,153,0.4)' : 'var(--border-normal)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = isComplete ? 'rgba(52,211,153,0.25)' : 'var(--border-subtle)'}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                        <span style={{ fontFamily:'Orbitron,monospace', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{s.base_name}</span>
+                        <span style={{ fontFamily:'Michroma,sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{s.base_name}</span>
                         {s.variant_name && s.variant_name !== 'Base' && (
                           <span style={{ fontSize:11, fontWeight:700, color:`var(--type-${s.type?.toLowerCase()})` }}>{s.variant_name}</span>
                         )}
                         <span style={{ fontSize:11, color:'var(--text-muted)' }}>{s.manufacturer}</span>
-                        {isComplete && <span style={{ fontSize:9, fontWeight:700, color:'var(--accent-green)', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:3, padding:'1px 6px', letterSpacing:'0.1em' }}>COMPLETO</span>}
+                        {isComplete && <span style={{ fontSize:9, fontWeight:700, color:'var(--accent-green)', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:3, padding:'1px 6px', letterSpacing:'0.1em' }}>COMPLETO</span>}
                       </div>
                       <div style={{ textAlign:'right', flexShrink:0 }}>
                         <div style={{ fontFamily:'Share Tech Mono,monospace', fontSize:12, color:isComplete?'var(--accent-green)':'var(--accent-primary)' }}>{owned}/{total} peças</div>
@@ -300,8 +300,8 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
                         return (
                           <div key={p.id} style={{
                             display:'flex', alignItems:'center', gap:3, padding:'2px 7px', borderRadius:4,
-                            background: p.owned ? (hasExtra?'rgba(255,200,0,0.1)':'rgba(0,229,160,0.1)') : 'rgba(255,255,255,0.03)',
-                            border:`1px solid ${p.owned ? (hasExtra?'rgba(255,200,0,0.4)':'rgba(0,229,160,0.3)') : 'var(--border-subtle)'}`,
+                            background: p.owned ? (hasExtra?'rgba(255,200,0,0.1)':'rgba(52,211,153,0.1)') : 'rgba(255,255,255,0.03)',
+                            border:`1px solid ${p.owned ? (hasExtra?'rgba(255,200,0,0.4)':'rgba(52,211,153,0.3)') : 'var(--border-subtle)'}`,
                             fontSize:10, fontWeight:700,
                             color: p.owned ? (hasExtra?'var(--accent-gold)':'var(--accent-green)') : 'var(--text-muted)',
                           }}>
@@ -310,14 +310,14 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
                             {/* Botões +/- no chip */}
                             {p.owned && (
                               <>
-                                {hasExtra && <span style={{ fontFamily:'Orbitron,monospace', fontSize:10, fontWeight:800 }}>×{qty}</span>}
+                                {hasExtra && <span style={{ fontFamily:'Michroma,sans-serif', fontSize:10, fontWeight:800 }}>×{qty}</span>}
                                 <button onClick={e=>{e.stopPropagation();onUpdatePieceQuantity&&onUpdatePieceQuantity(p.id, Math.max(1,qty-1));}}
                                   disabled={qty<=1}
-                                  style={{ width:14,height:14,borderRadius:2,border:'none',background:'rgba(255,68,102,0.2)',color:qty<=1?'transparent':'var(--accent-red)',cursor:qty<=1?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,padding:0 }}>
+                                  style={{ width:14,height:14,borderRadius:2,border:'none',background:'rgba(251,113,133,0.2)',color:qty<=1?'transparent':'var(--accent-red)',cursor:qty<=1?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,padding:0 }}>
                                   −
                                 </button>
                                 <button onClick={e=>{e.stopPropagation();onUpdatePieceQuantity&&onUpdatePieceQuantity(p.id, qty+1);}}
-                                  style={{ width:14,height:14,borderRadius:2,border:'none',background:'rgba(0,229,160,0.2)',color:'var(--accent-green)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,padding:0 }}>
+                                  style={{ width:14,height:14,borderRadius:2,border:'none',background:'rgba(52,211,153,0.2)',color:'var(--accent-green)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,padding:0 }}>
                                   +
                                 </button>
                               </>

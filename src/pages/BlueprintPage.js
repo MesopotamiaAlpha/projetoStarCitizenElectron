@@ -34,21 +34,21 @@ function fmtSCU(qty, unit) {
 }
 
 const CAT_COLORS = {
-  'FPS Weapon':'#ff4466','Ship Weapon':'#ff7744','FPS Armor':'#00d4ff',
-  'Ship Component':'#0077ff','Ammo':'#ffc436','Consumable':'#00e5a0',
-  'Flight Suit':'#b44cff','Utilitário':'#7a90b0','Outro':'#3d5070',
+  'FPS Weapon':'#fb7185','Ship Weapon':'#ff7744','FPS Armor':'#38bdf8',
+  'Ship Component':'#6366f1','Ammo':'#fbbf24','Consumable':'#34d399',
+  'Flight Suit':'#a78bfa','Utilitário':'#7a90b0','Outro':'#3d5070',
 };
 const FACTION_COLORS = {
-  'Starter':'#00e5a0','Foxwell Enforcement':'#ff8c00','Headhunters':'#ff4466',
-  'Covalex':'#0077ff','Ling Family':'#b44cff','Shubin Interstellar':'#ffc436',
-  'InterSec':'#00d4ff','Rayari':'#e91e63','Mile Eckhart':'#9b59b6',
+  'Starter':'#34d399','Foxwell Enforcement':'#fb923c','Headhunters':'#fb7185',
+  'Covalex':'#6366f1','Ling Family':'#a78bfa','Shubin Interstellar':'#fbbf24',
+  'InterSec':'#38bdf8','Rayari':'#e91e63','Mile Eckhart':'#9b59b6',
   'Pyro Factions':'#e74c3c','Pyro Gangs':'#c0392b','General Mission Drop':'#7a90b0','Outro':'#3d5070',
 };
 const MATERIAL_COLORS = {
   'Titanium':'#74b9ff','Copper':'#fdcb6e','Orotite':'#a29bfe',
   'Caranite':'#fd79a8','Steel':'#b2bec3','Polymer':'#00cec9',
-  'Industrial Polymer':'#55efc4','Medical Grade Polymer':'#00e5a0',
-  'Inert Material':'#7a90b0','Reactive Material':'#ff4466','Tungsten':'#dfe6e9',
+  'Industrial Polymer':'#55efc4','Medical Grade Polymer':'#34d399',
+  'Inert Material':'#7a90b0','Reactive Material':'#fb7185','Tungsten':'#dfe6e9',
 };
 
 // ── Mock API ──────────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ function BpForm({ initial, onSave, onCancelar }) {
   const [error,setError]= useState('');
   const setF = (k,v) => setBp(p=>({...p,[k]:v}));
 
-  const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none' };
+  const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none' };
   const SS = { ...IS,padding:'7px 24px 7px 10px',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center' };
   const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
 
@@ -175,7 +175,7 @@ function BpForm({ initial, onSave, onCancelar }) {
   return (
     <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'20px',marginBottom:20 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16 }}>
-        <h3 style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em' }}>
+        <h3 style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em' }}>
           {initial ? 'EDITAR BLUEPRINT' : 'NOVO BLUEPRINT'}
         </h3>
         <button onClick={onCancelar} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px',display:'flex',alignItems:'center' }}><X size={13}/></button>
@@ -219,7 +219,7 @@ function BpForm({ initial, onSave, onCancelar }) {
       <div style={{ marginBottom:16 }}>
         <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10 }}>
           <div className="modal-section-title" style={{ marginBottom:0 }}><FlaskConical size={11}/> Materiais ({ings.length})</div>
-          <button onClick={addIng} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:12,fontWeight:700 }}>
+          <button onClick={addIng} style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:12,fontWeight:700 }}>
             <Plus size={12}/> Material
           </button>
         </div>
@@ -243,7 +243,7 @@ function BpForm({ initial, onSave, onCancelar }) {
                 {UNITS.map(u=><option key={u}>{u}</option>)}
               </select>
             </div>
-            <button onClick={()=>removeIng(i)} disabled={ings.length===1} style={{ width:30,height:30,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:ings.length>1?'var(--accent-red)':'var(--text-muted)',cursor:ings.length>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',marginTop:i===0?16:0 }}>
+            <button onClick={()=>removeIng(i)} disabled={ings.length===1} style={{ width:30,height:30,borderRadius:5,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:ings.length>1?'var(--accent-red)':'var(--text-muted)',cursor:ings.length>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',marginTop:i===0?16:0 }}>
               <Trash2 size={12}/>
             </button>
           </div>
@@ -253,8 +253,8 @@ function BpForm({ initial, onSave, onCancelar }) {
       {error&&<div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,display:'flex',alignItems:'center',gap:6 }}><AlertTriangle size={13}/>{error}</div>}
 
       <div style={{ display:'flex',gap:8,justifyContent:'flex-end' }}>
-        <button onClick={onCancelar} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.06em' }}>Cancelar</button>
-        <button onClick={handleSave} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.06em' }}>
+        <button onClick={onCancelar} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.06em' }}>Cancelar</button>
+        <button onClick={handleSave} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.06em' }}>
           <Save size={13}/>{initial?'Salvar Alterações':'Adicionar Blueprint'}
         </button>
       </div>
@@ -273,27 +273,27 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onSelect, isSelected, onE
 
   return (
     <div style={{
-      background: bp.owned?'rgba(0,229,160,0.04)':'var(--bg-card)',
-      border:`1px solid ${bp.owned?'rgba(0,229,160,0.3)':isSelected?'var(--border-bright)':'var(--border-subtle)'}`,
+      background: bp.owned?'rgba(52,211,153,0.04)':'var(--bg-card)',
+      border:`1px solid ${bp.owned?'rgba(52,211,153,0.3)':isSelected?'var(--border-bright)':'var(--border-subtle)'}`,
       borderRadius:8,overflow:'hidden',transition:'all 0.2s',
     }}>
       {/* Main row */}
       <div style={{ display:'flex',alignItems:'center',gap:10,padding:'11px 14px',cursor:'pointer' }} onClick={onSelect}
-        onMouseEnter={e=>e.currentTarget.parentElement.style.borderColor=bp.owned?'rgba(0,229,160,0.5)':'var(--border-normal)'}
-        onMouseLeave={e=>e.currentTarget.parentElement.style.borderColor=bp.owned?'rgba(0,229,160,0.3)':isSelected?'var(--border-bright)':'var(--border-subtle)'}>
+        onMouseEnter={e=>e.currentTarget.parentElement.style.borderColor=bp.owned?'rgba(52,211,153,0.5)':'var(--border-normal)'}
+        onMouseLeave={e=>e.currentTarget.parentElement.style.borderColor=bp.owned?'rgba(52,211,153,0.3)':isSelected?'var(--border-bright)':'var(--border-subtle)'}>
         {/* Status icon */}
-        <div style={{ width:34,height:34,borderRadius:7,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:bp.owned?'rgba(0,229,160,0.12)':`${catColor}18`,border:`1px solid ${bp.owned?'rgba(0,229,160,0.4)':`${catColor}44`}`,color:bp.owned?'var(--accent-green)':catColor }}>
+        <div style={{ width:34,height:34,borderRadius:7,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:bp.owned?'rgba(52,211,153,0.12)':`${catColor}18`,border:`1px solid ${bp.owned?'rgba(52,211,153,0.4)':`${catColor}44`}`,color:bp.owned?'var(--accent-green)':catColor }}>
           {bp.owned?<CheckCircle2 size={17}/>:<Cpu size={17}/>}
         </div>
         {/* Info */}
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:3 }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{bp.name}</span>
+            <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{bp.name}</span>
             <ProvenanceBadge category="blueprint" name={bp.name}/>
-            {bp.is_default?<span style={{ fontSize:9,color:'var(--accent-green)',fontWeight:700,background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.25)',padding:'1px 6px',borderRadius:3 }}>PADRÃO</span>:null}
+            {bp.is_default?<span style={{ fontSize:9,color:'var(--accent-green)',fontWeight:700,background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.25)',padding:'1px 6px',borderRadius:3 }}>PADRÃO</span>:null}
             {bp.grade&&<span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>Grade {bp.grade}</span>}
             {bp.item_size&&bp.item_size!=='Personal'&&<span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>S{bp.item_size}</span>}
-            {isQueued&&<span style={{ fontSize:9,color:'var(--accent-gold)',fontWeight:700,background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.3)',padding:'1px 6px',borderRadius:3 }}>🛒 NA FILA</span>}
+            {isQueued&&<span style={{ fontSize:9,color:'var(--accent-gold)',fontWeight:700,background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',padding:'1px 6px',borderRadius:3 }}>🛒 NA FILA</span>}
           </div>
           <div style={{ display:'flex',gap:10,alignItems:'center',flexWrap:'wrap' }}>
             <span style={{ fontSize:11,color:catColor,fontWeight:600 }}>{bp.category}</span>
@@ -304,22 +304,22 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onSelect, isSelected, onE
         </div>
         {/* Actions */}
         <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:5,flexShrink:0 }}>
-          {bp.crafted_count>0&&<span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 7px',borderRadius:10 }}>🔨×{bp.crafted_count}</span>}
+          {bp.crafted_count>0&&<span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 7px',borderRadius:10 }}>🔨×{bp.crafted_count}</span>}
           <div style={{ display:'flex',gap:4 }} onClick={e=>e.stopPropagation()}>
             {/* Queue btn */}
-            <button onClick={()=>onQueue(bp)} title={isQueued?'Remover da fila de craft':'Adicionar à fila de craft'} style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 8px',borderRadius:5,border:`1px solid ${isQueued?'rgba(255,196,54,0.4)':'rgba(255,196,54,0.2)'}`,background:isQueued?'rgba(255,196,54,0.15)':'rgba(255,196,54,0.06)',color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700 }}>
+            <button onClick={()=>onQueue(bp)} title={isQueued?'Remover da fila de craft':'Adicionar à fila de craft'} style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 8px',borderRadius:5,border:`1px solid ${isQueued?'rgba(251,191,36,0.4)':'rgba(251,191,36,0.2)'}`,background:isQueued?'rgba(251,191,36,0.15)':'rgba(251,191,36,0.06)',color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700 }}>
               <ShoppingCart size={11}/>{isQueued?'Na Fila':'Quero Craftar'}
             </button>
-            <button onClick={()=>onToggleOwned(bp.id)} title={bp.owned?'Remover da coleção':'Marcar como obtida'} style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.owned?'rgba(0,229,160,0.4)':'var(--border-subtle)'}`,background:bp.owned?'rgba(0,229,160,0.15)':'transparent',color:bp.owned?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>✓</button>
-            <button onClick={()=>onToggleWishlist(bp.id)} title="wishlist" style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.wishlist?'rgba(255,196,54,0.4)':'var(--border-subtle)'}`,background:bp.wishlist?'rgba(255,196,54,0.12)':'transparent',color:bp.wishlist?'var(--accent-gold)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>★</button>
-            <button onClick={()=>onEdit(bp)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Edit3 size={12}/></button>
+            <button onClick={()=>onToggleOwned(bp.id)} title={bp.owned?'Remover da coleção':'Marcar como obtida'} style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.owned?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`,background:bp.owned?'rgba(52,211,153,0.15)':'transparent',color:bp.owned?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>✓</button>
+            <button onClick={()=>onToggleWishlist(bp.id)} title="wishlist" style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.wishlist?'rgba(251,191,36,0.4)':'var(--border-subtle)'}`,background:bp.wishlist?'rgba(251,191,36,0.12)':'transparent',color:bp.wishlist?'var(--accent-gold)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>★</button>
+            <button onClick={()=>onEdit(bp)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Edit3 size={12}/></button>
             {!bp.is_default&&(deleteConfirm?(
               <div style={{ display:'flex',gap:4,alignItems:'center' }}>
-                <button onClick={()=>onDelete(bp.id)} style={{ padding:'4px 8px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
+                <button onClick={()=>onDelete(bp.id)} style={{ padding:'4px 8px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
                 <button onClick={()=>setDeleteConfirm(false)} style={{ padding:'4px 8px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-secondary)',cursor:'pointer',fontSize:11 }}>Não</button>
               </div>
             ):(
-              <button onClick={()=>setDeleteConfirm(true)} style={{ width:28,height:28,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Trash2 size={12}/></button>
+              <button onClick={()=>setDeleteConfirm(true)} style={{ width:28,height:28,borderRadius:5,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Trash2 size={12}/></button>
             ))}
           </div>
         </div>
@@ -330,7 +330,7 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onSelect, isSelected, onE
         <div style={{ padding:'12px 14px 14px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.12)' }}>
           {bp.description&&<p style={{ fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,marginBottom:10 }}>{bp.description}</p>}
           {bp.how_to_get&&(
-            <div style={{ background:'rgba(0,119,255,0.06)',border:'1px solid rgba(0,119,255,0.15)',borderRadius:6,padding:'10px 12px',marginBottom:10 }}>
+            <div style={{ background:'rgba(99,102,241,0.06)',border:'1px solid rgba(99,102,241,0.15)',borderRadius:6,padding:'10px 12px',marginBottom:10 }}>
               <div style={{ display:'flex',alignItems:'center',gap:5,marginBottom:5 }}>
                 <MapPin size={11} style={{ color:'var(--accent-primary)' }}/>
                 <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Como obter</span>
@@ -455,7 +455,7 @@ export default function BlueprintPage() {
   const ownedCount  = bps.filter(b=>b.owned).length;
   const pct = bps.length>0?Math.round((ownedCount/bps.length)*100):0;
 
-  const SS = { padding:'7px 24px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center' };
+  const SS = { padding:'7px 24px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center' };
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -467,7 +467,7 @@ export default function BlueprintPage() {
         <div style={{ display:'flex',gap:8 }}>
           <button onClick={loadData} style={{ padding:'8px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',gap:5,fontSize:12 }}><RefreshCw size={12}/></button>
           {!showForm&&!editingBp&&(
-            <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(0,212,255,0.1)',border:'1px solid var(--border-normal)',borderRadius:8,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
+            <button onClick={()=>setShowForm(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(56,189,248,0.1)',border:'1px solid var(--border-normal)',borderRadius:8,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
               <Plus size={14}/> Novo Blueprint
             </button>
           )}
@@ -485,20 +485,20 @@ export default function BlueprintPage() {
     
               {l:'🛒 Na Fila',v:queuedCount,c:queuedCount>0?'var(--accent-gold)':'var(--text-muted)'},
             ].map(({l,v,c})=>(
-              <div key={l} style={{ background:'var(--bg-card)',border:`1px solid ${l.includes('Fila')&&v>0?'rgba(255,196,54,0.25)':'var(--border-subtle)'}`,borderRadius:8,padding:'8px 14px',minWidth:100,flexShrink:0,textAlign:'center' }}>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:c }}>{v}</div>
+              <div key={l} style={{ background:'var(--bg-card)',border:`1px solid ${l.includes('Fila')&&v>0?'rgba(251,191,36,0.25)':'var(--border-subtle)'}`,borderRadius:8,padding:'8px 14px',minWidth:100,flexShrink:0,textAlign:'center' }}>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:c }}>{v}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600,marginTop:2 }}>{l}</div>
               </div>
             ))}
             {(stats?.byCat||[]).slice(0,4).map(({category,total,owned:o})=>(
               <div key={category} style={{ background:'var(--bg-card)',border:`1px solid ${CAT_COLORS[category]||'var(--border-subtle)'}33`,borderRadius:8,padding:'8px 14px',minWidth:120,flexShrink:0 }}>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:CAT_COLORS[category]||'var(--text-primary)' }}>{o||0}/{total}</div>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:CAT_COLORS[category]||'var(--text-primary)' }}>{o||0}/{total}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:2 }}>{category}</div>
               </div>
             ))}
           </div>
           <div style={{ height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden' }}>
-            <div style={{ height:'100%',width:`${pct}%`,background:'linear-gradient(to right,var(--accent-secondary),var(--accent-primary))',borderRadius:2,transition:'width 0.8s',boxShadow:'0 0 8px rgba(0,212,255,0.3)' }}/>
+            <div style={{ height:'100%',width:`${pct}%`,background:'linear-gradient(to right,var(--accent-secondary),var(--accent-primary))',borderRadius:2,transition:'width 0.8s',boxShadow:'0 0 8px rgba(56,189,248,0.3)' }}/>
           </div>
         </div>
       )}

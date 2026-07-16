@@ -42,7 +42,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
     }}>
       <Archive size={16} style={{color:'var(--accent-gold)',flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:12,fontWeight:700,color:'var(--accent-gold)',marginBottom:3,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+        <div style={{fontSize:12,fontWeight:700,color:'var(--accent-gold)',marginBottom:3,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',letterSpacing:'0.06em'}}>
           🎁 Baú de Minério — {matches.length} material{matches.length!==1?'is':''} disponíveis!
         </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
@@ -138,7 +138,7 @@ function VaultUsePanel({ materialName, needed, onUseFromVault }) {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
                   <span style={{fontSize:12,fontWeight:700,color:'var(--text-primary)'}}>{entry.ore_name}</span>
-                  {entry.refined && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(0,229,160,0.1)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.2)',fontWeight:700}}>REFINADO</span>}
+                  {entry.refined && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.2)',fontWeight:700}}>REFINADO</span>}
                   {entry.quality && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(255,200,0,0.1)',color:'var(--accent-gold)',border:'1px solid rgba(255,200,0,0.2)',fontWeight:700}}>★ {entry.quality}</span>}
                   {entry.location && <span style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:2}}><MapPin size={8}/>{entry.location}</span>}
                 </div>
@@ -173,10 +173,10 @@ function VaultUsePanel({ materialName, needed, onUseFromVault }) {
             Usar <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-gold)',fontWeight:700}}>{totalPending}</span> do baú
             {needed > 0 && <span style={{color:'var(--text-muted)'}}> (precisa de {needed})</span>}
           </span>
-          <button onClick={() => setPending({})} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+          <button onClick={() => setPending({})} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
             Cancelar
           </button>
-          <button onClick={handleConfirm} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+          <button onClick={handleConfirm} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
             <CheckCircle2 size={11}/> Confirmar Uso
           </button>
         </div>
@@ -242,10 +242,10 @@ const MATERIAL_MINING_TIPS = {
 const MATERIAL_COLORS = {
   'Titanium':'#74b9ff','Copper':'#fdcb6e','Orotite':'#a29bfe',
   'Caranite':'#fd79a8','Steel':'#b2bec3','Polymer':'#00cec9',
-  'Industrial Polymer':'#55efc4','Medical Grade Polymer':'#00e5a0',
-  'Inert Material':'#7a90b0','Reactive Material':'#ff4466','Tungsten':'#dfe6e9',
+  'Industrial Polymer':'#55efc4','Medical Grade Polymer':'#34d399',
+  'Inert Material':'#7a90b0','Reactive Material':'#fb7185','Tungsten':'#dfe6e9',
   'Bexalite':'#a29bfe','Laranite':'#fd79a8','Taranite':'#74b9ff',
-  'Gold':'#ffc436','Diamond':'#dfe6e9','Quantainium':'#00e5a0',
+  'Gold':'#fbbf24','Diamond':'#dfe6e9','Quantainium':'#34d399',
 };
 
 function getMaterialColor(name) {
@@ -264,7 +264,7 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
         strokeDasharray={circ} strokeDashoffset={defset}
         strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`}
         style={{ transition:'stroke-dashdefset 0.5s ease' }}/>
-      <text x={size/2} y={size/2+4} textAnchor="middle" fill="var(--text-primary)" fontSize={11} fontWeight={700} fontFamily="Orbitron,monospace">
+      <text x={size/2} y={size/2+4} textAnchor="middle" fill="var(--text-primary)" fontSize={11} fontWeight={700} fontFamily="Michroma,sans-serif">
         {Math.round(pct)}%
       </text>
     </svg>
@@ -288,10 +288,10 @@ function CollectInput({ material, unit, onCollect, onUncollect }) {
     <div style={{ display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end' }}>
       {/* Toggle add/remove */}
       <div style={{ display:'flex',borderRadius:5,overflow:'hidden',border:'1px solid var(--border-subtle)' }}>
-        <button onClick={()=>setMode('add')} style={{ padding:'3px 8px',background:mode==='add'?'rgba(0,229,160,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:mode==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+        <button onClick={()=>setMode('add')} style={{ padding:'3px 8px',background:mode==='add'?'rgba(52,211,153,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:mode==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           + Coletei
         </button>
-        <button onClick={()=>setMode('remove')} style={{ padding:'3px 8px',background:mode==='remove'?'rgba(255,68,102,0.12)':'transparent',border:'none',color:mode==='remove'?'var(--accent-red)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+        <button onClick={()=>setMode('remove')} style={{ padding:'3px 8px',background:mode==='remove'?'rgba(251,113,133,0.12)':'transparent',border:'none',color:mode==='remove'?'var(--accent-red)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           − Remover
         </button>
       </div>
@@ -301,9 +301,9 @@ function CollectInput({ material, unit, onCollect, onUncollect }) {
           onChange={e => setQuantidade(e.target.value)}
           onKeyDown={e => e.key==='Enter' && submit()}
           placeholder={`Qtd (${unit||'un'})...`}
-          style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:`1px solid ${mode==='remove'?'rgba(255,68,102,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
+          style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:`1px solid ${mode==='remove'?'rgba(251,113,133,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
         />
-        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:4,padding:'5px 10px',background:mode==='add'?'rgba(0,229,160,0.1)':'rgba(255,68,102,0.1)',border:`1px solid ${mode==='add'?'rgba(0,229,160,0.3)':'rgba(255,68,102,0.3)'}`,borderRadius:5,color:mode==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:4,padding:'5px 10px',background:mode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)',border:`1px solid ${mode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`,borderRadius:5,color:mode==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
           {mode==='add'?<><CheckCircle2 size={11}/> OK</>:<><Minus size={11}/> OK</>}
         </button>
       </div>
@@ -324,8 +324,8 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
 
   return (
     <div style={{
-      background: isDone ? 'rgba(0,229,160,0.05)' : 'var(--bg-card)',
-      border: `1px solid ${isDone ? 'rgba(0,229,160,0.3)' : color+'33'}`,
+      background: isDone ? 'rgba(52,211,153,0.05)' : 'var(--bg-card)',
+      border: `1px solid ${isDone ? 'rgba(52,211,153,0.3)' : color+'33'}`,
       borderLeft: `3px solid ${isDone ? 'var(--accent-green)' : color}`,
       borderRadius:8,overflow:'hidden',transition:'all 0.2s',
     }}>
@@ -334,13 +334,13 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
         <ProgressoRing pct={pct} color={isDone?'var(--accent-green)':color}/>
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap' }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:isDone?'var(--accent-green)':color }}>
+            <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:isDone?'var(--accent-green)':color }}>
               {item.material_name}
             </span>
-            {isDone && <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-green)',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',padding:'1px 6px',borderRadius:3 }}>✓ COMPLETO</span>}
+            {isDone && <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-green)',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',padding:'1px 6px',borderRadius:3 }}>✓ COMPLETO</span>}
             {isMinable && !isDone && <span style={{ fontSize:10,color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:3 }}><Pickaxe size={10}/>Minerável</span>}
             {item.quality_min > 0 && <span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>Q≥{item.quality_min}</span>}
-            {isManual && <span style={{ fontSize:9,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.2)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>MANUAL</span>}
+            {isManual && <span style={{ fontSize:9,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.2)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>MANUAL</span>}
           </div>
           {/* Progresso bar */}
           <div style={{ height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden',marginBottom:5 }}>
@@ -364,7 +364,7 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
           </button>
         )}
         {isManual && onRemoveManual && (
-          <button onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
+          <button onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
             <Trash2 size={11}/>
           </button>
         )}
@@ -383,7 +383,7 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
                 </div>
                 <div style={{ display:'flex',gap:5,flexWrap:'wrap',marginBottom:8 }}>
                   {tips.locations.map(loc => (
-                    <span key={loc} style={{ fontSize:11,padding:'3px 8px',borderRadius:5,background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.2)',color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:4 }}>
+                    <span key={loc} style={{ fontSize:11,padding:'3px 8px',borderRadius:5,background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:4 }}>
                       <MapPin size={9}/>{loc}
                     </span>
                   ))}
@@ -445,17 +445,17 @@ function AddManualMaterialForm({ onAdd }) {
     setName(''); setQty(''); setQmin(''); setError(''); setOpen(false);
   }
 
-  const IS = { padding:'6px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' };
+  const IS = { padding:'6px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center', paddingRight:22 };
 
   return (
     <div style={{ marginBottom:12 }}>
       {!open ? (
-        <button onClick={()=>setOpen(true)} style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(0,212,255,0.06)',border:'1px dashed rgba(0,212,255,0.25)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+        <button onClick={()=>setOpen(true)} style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.06)',border:'1px dashed rgba(56,189,248,0.25)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           <Plus size={11}/> Adicionar Minério Manual
         </button>
       ) : (
-        <div style={{ padding:'10px 12px',background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.2)',borderRadius:8 }}>
+        <div style={{ padding:'10px 12px',background:'rgba(56,189,248,0.04)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:8 }}>
           <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>+ Adicionar Minério à Lista</div>
           <div style={{ display:'grid',gridTemplateColumns:'2fr 90px 80px 80px auto',gap:6,alignItems:'center' }}>
             <input style={{...IS,width:'100%'}} list="mat-names" placeholder="Nome do minério..." value={name} onChange={e=>setName(e.target.value)}/>
@@ -466,7 +466,7 @@ function AddManualMaterialForm({ onAdd }) {
             </select>
             <input style={{...IS,textAlign:'center',width:60}} type="number" min="0" placeholder="Q min" value={qmin} onChange={e=>setQmin(e.target.value)}/>
             <div style={{ display:'flex',gap:5 }}>
-              <button onClick={handleAdd} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
+              <button onClick={handleAdd} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
                 <Plus size={10}/> Adicionar
               </button>
               <button onClick={()=>{setOpen(false);setError('');}} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer' }}><X size={11}/></button>
@@ -495,8 +495,8 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove }) {
   return (
     <div style={{
       display:'flex',alignItems:'center',gap:10,padding:'9px 12px',
-      background: isComplete ? 'rgba(0,229,160,0.07)' : 'var(--bg-card)',
-      border: `1px solid ${isComplete ? 'rgba(0,229,160,0.4)' : 'rgba(255,196,54,0.2)'}`,
+      background: isComplete ? 'rgba(52,211,153,0.07)' : 'var(--bg-card)',
+      border: `1px solid ${isComplete ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.2)'}`,
       borderRadius:7, transition:'all 0.2s',
     }}>
       {/* Ícone / status */}
@@ -507,7 +507,7 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove }) {
       <div style={{ flex:1,minWidth:0 }}>
         <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:2 }}>
           <div style={{ fontSize:13,fontWeight:700,color:isComplete?'var(--accent-green)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1 }}>{bp.bpName}</div>
-          {isComplete && <span style={{ fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(0,229,160,0.15)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.4)',fontWeight:700,flexShrink:0 }}>✓ PRONTO</span>}
+          {isComplete && <span style={{ fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(52,211,153,0.15)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.4)',fontWeight:700,flexShrink:0 }}>✓ PRONTO</span>}
         </div>
         {/* Mini progress bar */}
         <div style={{ display:'flex',alignItems:'center',gap:6 }}>
@@ -521,10 +521,10 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove }) {
       {/* Qty */}
       <div style={{ display:'flex',alignItems:'center',gap:4,flexShrink:0 }}>
         <button onClick={()=>onQtyChange(bp.bpId,bp.quantity-1)} disabled={bp.quantity<=1} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:bp.quantity>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',opacity:bp.quantity<=1?0.4:1 }}><Minus size={9}/></button>
-        <span style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-gold)',minWidth:20,textAlign:'center' }}>{bp.quantity}</span>
+        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-gold)',minWidth:20,textAlign:'center' }}>{bp.quantity}</span>
         <button onClick={()=>onQtyChange(bp.bpId,bp.quantity+1)} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Plus size={9}/></button>
       </div>
-      <button onClick={()=>onRemove(bp.bpId)} style={{ width:24,height:24,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><X size={11}/></button>
+      <button onClick={()=>onRemove(bp.bpId)} style={{ width:24,height:24,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><X size={11}/></button>
     </div>
   );
 }
@@ -631,7 +631,7 @@ export default function MaterialTrackerPage() {
 
         {/* ── LEFT: Queue panel ── */}
         <div style={{ borderRight:'1px solid var(--border-subtle)',overflowY:'auto',padding:'14px' }}>
-          <div style={{ fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:7 }}>
+          <div style={{ fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:7 }}>
             <ShoppingCart size={12}/> Fila de Craft ({queue.queuedBlueprints.length})
           </div>
           <QueuePanel queue={queue} onAtualizar={refresh} shoppingList={shoppingList}/>
@@ -644,11 +644,11 @@ export default function MaterialTrackerPage() {
                 <div style={{ flex:1,height:8,background:'var(--border-subtle)',borderRadius:4,overflow:'hidden' }}>
                   <div style={{ height:'100%',width:`${overallPct}%`,background:'linear-gradient(to right,var(--accent-secondary),var(--accent-green))',borderRadius:4,transition:'width 0.5s' }}/>
                 </div>
-                <span style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--accent-green)',flexShrink:0 }}>{overallPct}%</span>
+                <span style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-green)',flexShrink:0 }}>{overallPct}%</span>
               </div>
               <div style={{ fontSize:11,color:'var(--text-muted)' }}>{doneMats}/{totalMats} materiais coletados</div>
               {doneMats > 0 && (
-                <button onClick={handleLimparConcluída} style={{ display:'flex',alignItems:'center',gap:5,marginTop:8,padding:'5px 10px',background:'rgba(0,229,160,0.08)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+                <button onClick={handleLimparConcluída} style={{ display:'flex',alignItems:'center',gap:5,marginTop:8,padding:'5px 10px',background:'rgba(52,211,153,0.08)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
                   <CheckCircle2 size={11}/> Limpar Concluídos
                 </button>
               )}
@@ -656,7 +656,7 @@ export default function MaterialTrackerPage() {
           )}
 
           {/* Legend */}
-          <div style={{ marginTop:14,padding:'10px 12px',background:'rgba(0,119,255,0.05)',border:'1px solid rgba(0,119,255,0.12)',borderRadius:7 }}>
+          <div style={{ marginTop:14,padding:'10px 12px',background:'rgba(99,102,241,0.05)',border:'1px solid rgba(99,102,241,0.12)',borderRadius:7 }}>
             <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6 }}>Como usar</div>
             <div style={{ fontSize:11,color:'var(--text-secondary)',lineHeight:1.6 }}>
               1. Vá para <strong>Blueprints</strong> e clique em <strong>🛒 Quero Craftar</strong><br/>
@@ -678,7 +678,7 @@ export default function MaterialTrackerPage() {
 
           {/* Controls */}
           <div style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
-            <span style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:7 }}>
+            <span style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:7 }}>
               <FlaskConical size={14} style={{ color:'var(--accent-primary)' }}/> Lista de Materiais
             </span>
             <button className={`filter-chip ${filterMinable?'active':''}`} onClick={()=>setFilterMinable(!filterMinable)} style={{ display:'flex',alignItems:'center',gap:5 }}>
@@ -695,7 +695,7 @@ export default function MaterialTrackerPage() {
           {queue.queuedBlueprints.length === 0 && (queue.manualMaterials||[]).length === 0 ? (
             <div style={{ textAlign:'center',padding:'60px 20px',color:'var(--text-muted)' }}>
               <FlaskConical size={48} style={{ display:'block',margin:'0 auto 14px',opacity:0.2 }}/>
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,letterSpacing:'0.06em',marginBottom:8 }}>NENHUM BLUEPRINT NA FILA</div>
+              <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',marginBottom:8 }}>NENHUM BLUEPRINT NA FILA</div>
               <div style={{ fontSize:12,lineHeight:1.6 }}>
                 Vá para a aba <strong style={{ color:'var(--accent-primary)' }}>Blueprints</strong> e clique em<br/>
                 <strong style={{ color:'var(--accent-gold)' }}>🛒 Quero Craftar</strong> nos blueprints que deseja criar.<br/>
@@ -706,7 +706,7 @@ export default function MaterialTrackerPage() {
           ) : display.length === 0 ? (
             <div style={{ textAlign:'center',padding:'40px 20px',color:'var(--text-muted)' }}>
               <CheckCircle2 size={40} style={{ display:'block',margin:'0 auto 12px',color:'var(--accent-green)',opacity:0.6 }}/>
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-green)',marginBottom:6 }}>
+              <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--accent-green)',marginBottom:6 }}>
                 {filterMinable ? 'NENHUM MINÉRIO PENDENTE!' : 'TODOS OS MATERIAIS COLETADOS!'}
               </div>
               <div style={{ fontSize:12 }}>

@@ -127,7 +127,7 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
   const [source,   setSource]   = useState(listing.source || 'looted');
   const [notes,    setNotes]    = useState('');
 
-  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' };
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
@@ -142,10 +142,10 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:16 }}>
-      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:560, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:560, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
           <CheckCircle2 size={16} style={{ color:'var(--accent-primary)' }}/>
-          <span style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.06em' }}>CONFIRMAR LISTAGEM</span>
+          <span style={{ fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.06em' }}>CONFIRMAR LISTAGEM</span>
         </div>
         <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16, paddingLeft:26 }}>
           Revise e edite os dados antes de adicionar ao seu histórico.
@@ -194,10 +194,10 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
         </div>
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             Pular
           </button>
-          <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <CheckCircle2 size={12}/> Confirmar e Adicionar
           </button>
         </div>
@@ -218,7 +218,7 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const [notes,      setNotes]     = useState('');
   const [error,      setError]     = useState('');
 
-  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' };
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
@@ -240,9 +240,9 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:16 }}>
-      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-green)', letterSpacing:'0.06em', display:'flex', alignItems:'center', gap:7 }}>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, color:'var(--accent-green)', letterSpacing:'0.06em', display:'flex', alignItems:'center', gap:7 }}>
             <Plus size={14}/> REGISTRAR VENDA / OCORRÊNCIA MANUAL
           </div>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)' }}><X size={14}/></button>
@@ -292,17 +292,17 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
         </div>
 
         {total > 0 && type === 'sold' && (
-          <div style={{ marginBottom:12, padding:'8px 12px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:6, display:'flex', gap:16, alignItems:'center' }}>
+          <div style={{ marginBottom:12, padding:'8px 12px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6, display:'flex', gap:16, alignItems:'center' }}>
             <span style={{ fontSize:11, color:'var(--text-muted)' }}>Total:</span>
-            <span style={{ fontFamily:'Orbitron,monospace', fontSize:16, fontWeight:800, color:'var(--accent-green)' }}>{ptMoney(total)} aUEC</span>
+            <span style={{ fontFamily:'Michroma,sans-serif', fontSize:16, fontWeight:800, color:'var(--accent-green)' }}>{ptMoney(total)} aUEC</span>
           </div>
         )}
 
         {error && <div style={{ color:'var(--accent-red)', fontSize:12, marginBottom:9 }}><AlertTriangle size={12} style={{ display:'inline', marginRight:4 }}/>{error}</div>}
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onClose} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
-          <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onClose} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
+          <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <Save size={12}/> Registrar
           </button>
         </div>
@@ -341,7 +341,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
   return (
     <div style={{
       background:'var(--bg-card)',
-      border:`1px solid ${isExpiringSoon ? 'rgba(255,68,102,0.4)' : 'var(--border-subtle)'}`,
+      border:`1px solid ${isExpiringSoon ? 'rgba(251,113,133,0.4)' : 'var(--border-subtle)'}`,
       borderRadius:8, overflow:'hidden', marginBottom:6,
     }}>
       {/* Header row */}
@@ -349,12 +349,12 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
         <Package size={14} style={{ color:'var(--accent-primary)', flexShrink:0 }}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:2 }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
+            <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
             {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
             {suggestedQ && !item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.06)', color:'rgba(255,200,0,0.7)', border:'1px solid rgba(255,200,0,0.2)', fontStyle:'italic' }}>Q sugerida: {suggestedQ}</span>}
-            {item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,68,102,0.1)', color:'var(--accent-red)', border:'1px solid rgba(255,68,102,0.3)', fontWeight:700 }}>ESGOTADO</span>
-              : <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(0,229,160,0.1)', color:'var(--accent-green)', border:'1px solid rgba(0,229,160,0.3)', fontWeight:700 }}>ATIVO</span>}
-            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,68,102,0.15)', color:'var(--accent-red)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
+            {item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
+              : <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', border:'1px solid rgba(52,211,153,0.3)', fontWeight:700 }}>ATIVO</span>}
+            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
           </div>
           <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
             {item.location && <span>📍 {item.location}</span>}
@@ -366,7 +366,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
 
         {/* Preço + estoque */}
         <div style={{ textAlign:'right', flexShrink:0, marginRight:6 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:15, fontWeight:800, color:'var(--accent-gold)' }}>{ptMoney(item.price)} <span style={{ fontSize:10, color:'var(--text-muted)' }}>aUEC</span></div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:15, fontWeight:800, color:'var(--accent-gold)' }}>{ptMoney(item.price)} <span style={{ fontSize:10, color:'var(--text-muted)' }}>aUEC</span></div>
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end', fontSize:10, color:'var(--text-muted)', marginTop:2 }}>
             <span>Listado: {qtyListed}</span>
             <span style={{ color:'var(--accent-primary)' }}>Estoque: {item.internal_stock || 0}</span>
@@ -377,11 +377,11 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
         <div style={{ display:'flex', gap:4, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
           {delConf ? (
             <>
-              <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+              <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
               <button onClick={() => setDelConf(false)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
             </>
           ) : (
-            <button onClick={() => setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <button onClick={() => setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Trash2 size={10}/>
             </button>
           )}
@@ -415,24 +415,24 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
               </div>
 
               {/* Controle de estoque interno */}
-              <div style={{ marginTop:10, padding:'10px 12px', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:7 }}>
+              <div style={{ marginTop:10, padding:'10px 12px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:7 }}>
                 <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>📦 Estoque Interno</div>
                 {editStock ? (
                   <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                     <input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)}
-                      style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/>
+                      style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/>
                     <button onClick={()=>{onEditStock(item.id, parseInt(stockVal)||0); setEditStock(false);}}
-                      style={{ padding:'5px 10px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif' }}>
+                      style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>
                       <Save size={10}/> Salvar
                     </button>
                     <button onClick={()=>setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button>
                   </div>
                 ) : (
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontFamily:'Orbitron,monospace', fontSize:20, fontWeight:800, color:'var(--accent-primary)' }}>{item.internal_stock || 0}</span>
+                    <span style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-primary)' }}>{item.internal_stock || 0}</span>
                     <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidades no inventário</span>
                     <button onClick={()=>{setStockVal(String(item.internal_stock||0)); setEditStock(true);}}
-                      style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, padding:'4px 9px', background:'rgba(0,212,255,0.08)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+                      style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, padding:'4px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>
                       <Edit3 size={9}/> Editar
                     </button>
                   </div>
@@ -465,7 +465,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
 
                   {/* Variação de preço */}
                   {priceVariation !== null && (
-                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background: priceVariation >= 0 ? 'rgba(0,229,160,0.06)' : 'rgba(255,68,102,0.06)', border:`1px solid ${priceVariation>=0?'rgba(0,229,160,0.2)':'rgba(255,68,102,0.2)'}`, borderRadius:6, marginBottom:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background: priceVariation >= 0 ? 'rgba(52,211,153,0.06)' : 'rgba(251,113,133,0.06)', border:`1px solid ${priceVariation>=0?'rgba(52,211,153,0.2)':'rgba(251,113,133,0.2)'}`, borderRadius:6, marginBottom:8 }}>
                       {priceVariation >= 0 ? <TrendingUp size={12} style={{ color:'var(--accent-green)' }}/> : <TrendingDown size={12} style={{ color:'var(--accent-red)' }}/>}
                       <span style={{ fontSize:11, color: priceVariation >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight:700 }}>
                         {priceVariation >= 0 ? '+' : ''}{ptDecimal(priceVariation)}% vs média 30 dias
@@ -477,7 +477,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
                   {trend.price_avg_sell > 0 && (
                     <div style={{ padding:'8px 10px', background:'rgba(255,200,0,0.06)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6 }}>
                       <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:3 }}>💡 Preço Recomendado</div>
-                      <div style={{ fontFamily:'Orbitron,monospace', fontSize:14, fontWeight:800, color:'var(--accent-gold)' }}>
+                      <div style={{ fontFamily:'Michroma,sans-serif', fontSize:14, fontWeight:800, color:'var(--accent-gold)' }}>
                         {ptMoney(Math.round(trend.price_avg_sell * 0.95))} aUEC
                       </div>
                       <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:2 }}>
@@ -548,7 +548,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
     return list;
   }, [catalog, search, filterStatus, sortBy]);
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   return (
     <div>
@@ -561,7 +561,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
           { label:'Estoque Total', value:catalog.reduce((a,i)=>a+(i.internal_stock||0),0), color:'var(--accent-gold)', sub:'no inventário' },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:18, fontWeight:800, color }}>{value}</div>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:18, fontWeight:800, color }}>{value}</div>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
             <div style={{ fontSize:10, color:'var(--text-muted)', fontStyle:'italic' }}>{sub}</div>
           </div>
@@ -572,7 +572,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ position:'relative', flex:1, minWidth:160 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Buscar item ou local..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select style={SS} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
@@ -588,7 +588,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
           <option value="price_asc">Menor preço</option>
           <option value="stock">Maior estoque</option>
         </select>
-        <button onClick={onAddEsgotado} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+        <button onClick={onAddEsgotado} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.25)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', whiteSpace:'nowrap' }}>
           <Plus size={11}/> Esgotado Manual
         </button>
         <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} item{filtered.length!==1?'s':''}</span>
@@ -597,7 +597,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       {filtered.length === 0 ? (
         <div style={{ textAlign:'center', padding:'50px 0', color:'var(--text-muted)' }}>
           <ShoppingBag size={40} style={{ display:'block', margin:'0 auto 12px', opacity:0.15 }}/>
-          <div style={{ fontSize:13, fontFamily:'Orbitron,monospace', fontWeight:700 }}>
+          <div style={{ fontSize:13, fontFamily:'Michroma,sans-serif', fontWeight:700 }}>
             {catalog.length === 0 ? 'NENHUM ITEM' : 'NENHUM RESULTADO'}
           </div>
           <div style={{ fontSize:12, marginTop:6 }}>
@@ -641,7 +641,7 @@ function SalesTab({ sales, onDelete }) {
   const totalFailed  = sales.filter(s=>s.type==='failed').length;
   const totalExpired = sales.filter(s=>s.type==='expired').length;
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   // Dados para gráfico: receita por dia (últimos 14 dias)
   const chartData = useMemo(() => {
@@ -668,7 +668,7 @@ function SalesTab({ sales, onDelete }) {
           { label:'Expiradas', value:totalExpired, color:'var(--text-muted)' },
         ].map(({label,value,color}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:16, fontWeight:800, color }}>{value}</div>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:16, fontWeight:800, color }}>{value}</div>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
           </div>
         ))}
@@ -688,7 +688,7 @@ function SalesTab({ sales, onDelete }) {
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ position:'relative', flex:1, minWidth:140 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select style={SS} value={filterType} onChange={e=>setFilterType(e.target.value)}>
@@ -727,11 +727,11 @@ function SalesTab({ sales, onDelete }) {
                 )}
                 {delConf===s.id ? (
                   <div style={{ display:'flex', gap:4 }}>
-                    <button onClick={()=>{onDelete(s.id);setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+                    <button onClick={()=>{onDelete(s.id);setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
                     <button onClick={()=>setDelConf(null)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
                   </div>
                 ) : (
-                  <button onClick={()=>setDelConf(s.id)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <button onClick={()=>setDelConf(s.id)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <Trash2 size={10}/>
                   </button>
                 )}
@@ -766,10 +766,10 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
       <div style={{ display:'flex', gap:8, marginBottom:12, alignItems:'center' }}>
         <div style={{ position:'relative', flex:1 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Filtrar por item..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
-        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', background:'rgba(0,212,255,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase', opacity:loading?0.5:1 }}>
+        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', background:'rgba(56,189,248,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', opacity:loading?0.5:1 }}>
           <RefreshCw size={11} style={{ animation:loading?'spin 1s linear infinite':'none' }}/> Atualizar
         </button>
         <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} com dados</span>
@@ -796,7 +796,7 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
                 <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4, flexWrap:'wrap' }}>
-                      <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
+                      <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
                       {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
                       {variation !== null && (
                         <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color: variation>=0?'var(--accent-green)':'var(--accent-red)', fontWeight:700 }}>
@@ -822,7 +822,7 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
                   </div>
                   <div style={{ textAlign:'right', flexShrink:0 }}>
                     <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:3 }}>Seu preço:</div>
-                    <div style={{ fontFamily:'Orbitron,monospace', fontSize:14, fontWeight:800, color:'var(--accent-primary)' }}>{ptMoney(item.price)}</div>
+                    <div style={{ fontFamily:'Michroma,sans-serif', fontSize:14, fontWeight:800, color:'var(--accent-primary)' }}>{ptMoney(item.price)}</div>
                     {priceDiff !== null && (
                       <div style={{ fontSize:10, marginTop:2, color: priceDiff > 0 ? 'var(--accent-red)' : priceDiff < 0 ? 'var(--accent-green)' : 'var(--text-muted)' }}>
                         {priceDiff > 0 ? `Abaixo do recomendado por ${ptMoney(priceDiff)}` : priceDiff < 0 ? `Acima do recomendado por ${ptMoney(-priceDiff)}` : 'No preço ideal'}
@@ -1052,7 +1052,7 @@ export default function UexSalesPage() {
           {/* Username */}
           <div style={{ display:'flex', gap:5, alignItems:'center' }}>
             <input
-              style={{ width:140, padding:'6px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' }}
+              style={{ width:140, padding:'6px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' }}
               placeholder="Seu IGN na UEX..."
               value={usernameInput}
               onChange={e=>setUsernameInput(e.target.value)}
@@ -1060,10 +1060,10 @@ export default function UexSalesPage() {
               onKeyDown={e=>{ if(e.key==='Enter'){ setUsername(usernameInput.trim()); saveUsername(usernameInput.trim()); }}}
             />
           </div>
-          <button onClick={syncFromUEX} disabled={loading || !username.trim()} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.35)', borderRadius:7, color:'var(--accent-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer', opacity: loading || !username.trim() ? 0.5 : 1 }}>
+          <button onClick={syncFromUEX} disabled={loading || !username.trim()} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:7, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer', opacity: loading || !username.trim() ? 0.5 : 1 }}>
             <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}/> Sincronizar UEX
           </button>
-          <button onClick={()=>setShowManualSale(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:7, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
+          <button onClick={()=>setShowManualSale(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:7, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
             <Plus size={13}/> Venda Manual
           </button>
         </div>
@@ -1071,7 +1071,7 @@ export default function UexSalesPage() {
 
       {/* Msg de sync */}
       {syncMsg && (
-        <div style={{ margin:'0 24px 0', padding:'7px 14px', background: syncMsg.startsWith('❌')?'rgba(255,68,102,0.08)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.08)':'rgba(0,229,160,0.06)', border:`1px solid ${syncMsg.startsWith('❌')?'rgba(255,68,102,0.25)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.25)':'rgba(0,229,160,0.2)'}`, borderRadius:7, fontSize:11, color:'var(--text-secondary)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ margin:'0 24px 0', padding:'7px 14px', background: syncMsg.startsWith('❌')?'rgba(251,113,133,0.08)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.08)':'rgba(52,211,153,0.06)', border:`1px solid ${syncMsg.startsWith('❌')?'rgba(251,113,133,0.25)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.25)':'rgba(52,211,153,0.2)'}`, borderRadius:7, fontSize:11, color:'var(--text-secondary)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <span>{syncMsg}</span>
           <button onClick={()=>setSyncMsg('')} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)' }}><X size={12}/></button>
         </div>
@@ -1080,9 +1080,9 @@ export default function UexSalesPage() {
       {/* Tabs */}
       <div style={{ padding:'0 24px', borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-panel)', display:'flex', flexShrink:0, marginTop:syncMsg?8:0 }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
+          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
             <t.icon size={12}/>{t.label}
-            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(0,212,255,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
+            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
           </button>
         ))}
       </div>

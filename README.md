@@ -1,4 +1,4 @@
-# SC Armor Tracker v4.3.0
+# Companheiro Emoto
 **Star Citizen Toolbox — Armor, Blueprints, Missions, Mining & More**
 
 ## Instalação

@@ -136,7 +136,7 @@ const ITEM_TYPES = [
 ];
 
 const LOC_TYPE_COLORS = { City:'var(--accent-primary)', Station:'var(--accent-secondary)', 'Outlaw Station':'var(--accent-red)' };
-const SYSTEM_COLORS = { Stanton:'var(--accent-primary)', Pyro:'#ff8c00', Nyx:'var(--accent-purple)' };
+const SYSTEM_COLORS = { Stanton:'var(--accent-primary)', Pyro:'#fb923c', Nyx:'var(--accent-purple)' };
 
 export default function MarketFinderPage() {
   const { data: LOCATIONS_DATA } = useDataset(DATASETS.MARKET_LOCATIONS.key, DEFAULT_MARKET_LOCATIONS);
@@ -184,7 +184,7 @@ export default function MarketFinderPage() {
     );
   }, [searchItem, selectedLoc]);
 
-  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center' };
+  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center' };
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -254,13 +254,13 @@ export default function MarketFinderPage() {
                   : loc.shops;
                 return (
                   <div key={loc.name} style={{
-                    background:selectedLoc===loc.name?'rgba(0,212,255,0.06)':'var(--bg-card)',
+                    background:selectedLoc===loc.name?'rgba(56,189,248,0.06)':'var(--bg-card)',
                     border:`1px solid ${selectedLoc===loc.name?'var(--border-bright)':'var(--border-subtle)'}`,
                     borderRadius:8,padding:'12px 14px',marginBottom:8,cursor:'pointer',transition:'all 0.2s',
                   }} onClick={()=>setSelectedLoc(selectedLoc===loc.name?null:loc.name)}>
                     <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6 }}>
                       <div>
-                        <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc.name}</div>
+                        <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc.name}</div>
                         <div style={{ fontSize:11,color:'var(--text-muted)',marginTop:2 }}>{loc.planet} · {loc.system}</div>
                       </div>
                       <div style={{ display:'flex',gap:5,alignItems:'center' }}>
@@ -271,7 +271,7 @@ export default function MarketFinderPage() {
                     {/* Matching shops preview */}
                     <div style={{ display:'flex',gap:5,flexWrap:'wrap' }}>
                       {relevantShops.slice(0,4).map(shop=>(
-                        <span key={shop.name} style={{ fontSize:10,padding:'2px 7px',borderRadius:5,background:'rgba(0,119,255,0.08)',border:'1px solid rgba(0,119,255,0.2)',color:'var(--accent-secondary)' }}>{shop.name}</span>
+                        <span key={shop.name} style={{ fontSize:10,padding:'2px 7px',borderRadius:5,background:'rgba(99,102,241,0.08)',border:'1px solid rgba(99,102,241,0.2)',color:'var(--accent-secondary)' }}>{shop.name}</span>
                       ))}
                       {relevantShops.length>4&&<span style={{ fontSize:10,color:'var(--text-muted)' }}>+{relevantShops.length-4} mais</span>}
                     </div>
@@ -295,21 +295,21 @@ export default function MarketFinderPage() {
                 return (
                   <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:8,padding:'16px',position:'sticky',top:0 }}>
                     <div style={{ marginBottom:12 }}>
-                      <div style={{ fontFamily:'Orbitron,monospace',fontSize:15,fontWeight:700,color:'var(--text-primary)',marginBottom:4 }}>{loc.name}</div>
+                      <div style={{ fontFamily:'Michroma,sans-serif',fontSize:15,fontWeight:700,color:'var(--text-primary)',marginBottom:4 }}>{loc.name}</div>
                       <div style={{ fontSize:12,color:'var(--text-muted)' }}>{loc.planet} · {loc.system} · {loc.type}</div>
                     </div>
                     <div className="modal-section-title">Lojas ({loc.shops.length})</div>
                     {loc.shops.map(shop=>{
                       const matches = searchItem && shop.sells.some(s=>s.toLowerCase().includes(searchItem.toLowerCase()));
                       return (
-                        <div key={shop.name} style={{ background:matches?'rgba(0,229,160,0.04)':'var(--bg-panel)',border:`1px solid ${matches?'rgba(0,229,160,0.2)':'var(--border-subtle)'}`,borderRadius:6,padding:'10px 12px',marginBottom:8 }}>
+                        <div key={shop.name} style={{ background:matches?'rgba(52,211,153,0.04)':'var(--bg-panel)',border:`1px solid ${matches?'rgba(52,211,153,0.2)':'var(--border-subtle)'}`,borderRadius:6,padding:'10px 12px',marginBottom:8 }}>
                           <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6 }}>
                             <span style={{ fontSize:13,fontWeight:700,color:matches?'var(--accent-green)':'var(--text-primary)' }}>{shop.name}</span>
                             <span style={{ fontSize:10,color:'var(--text-muted)',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{shop.type}</span>
                           </div>
                           <div style={{ display:'flex',gap:4,flexWrap:'wrap' }}>
                             {shop.sells.map(item=>(
-                              <span key={item} style={{ fontSize:10,padding:'2px 6px',borderRadius:4,background:searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'rgba(0,229,160,0.12)':'rgba(255,255,255,0.04)',border:`1px solid ${searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'rgba(0,229,160,0.3)':'var(--border-subtle)'}`,color:searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'var(--accent-green)':'var(--text-muted)' }}>
+                              <span key={item} style={{ fontSize:10,padding:'2px 6px',borderRadius:4,background:searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'rgba(52,211,153,0.12)':'rgba(255,255,255,0.04)',border:`1px solid ${searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'rgba(52,211,153,0.3)':'var(--border-subtle)'}`,color:searchItem&&item.toLowerCase().includes(searchItem.toLowerCase())?'var(--accent-green)':'var(--text-muted)' }}>
                                 {item}
                               </span>
                             ))}
@@ -346,7 +346,7 @@ export default function MarketFinderPage() {
                 onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
                 <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10 }}>
                   <div>
-                    <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc.name}</div>
+                    <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc.name}</div>
                     <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{loc.planet} · <span style={{ color:SYSTEM_COLORS[loc.system] }}>{loc.system}</span></div>
                   </div>
                   <span style={{ fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:3,background:`${LOC_TYPE_COLORS[loc.type]}18`,color:LOC_TYPE_COLORS[loc.type],border:`1px solid ${LOC_TYPE_COLORS[loc.type]}33` }}>{loc.type}</span>

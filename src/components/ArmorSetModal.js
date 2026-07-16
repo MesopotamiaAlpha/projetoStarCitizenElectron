@@ -42,9 +42,9 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
 
   return (
     <div style={{
-      border:`1px solid ${piece.owned?'rgba(0,229,160,0.35)':isExpanded?'var(--border-bright)':'var(--border-subtle)'}`,
+      border:`1px solid ${piece.owned?'rgba(52,211,153,0.35)':isExpanded?'var(--border-bright)':'var(--border-subtle)'}`,
       borderRadius:8, overflow:'hidden',
-      background:piece.owned?'rgba(0,229,160,0.04)':'var(--bg-panel)',
+      background:piece.owned?'rgba(52,211,153,0.04)':'var(--bg-panel)',
       transition:'all 0.2s',
     }}>
       {/* Row header */}
@@ -53,14 +53,14 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
         <div style={{
           width:34,height:34,borderRadius:7,flexShrink:0,
           display:'flex',alignItems:'center',justifyContent:'center',
-          background:piece.owned?'rgba(0,229,160,0.12)':'rgba(255,255,255,0.04)',
-          border:`1px solid ${piece.owned?'rgba(0,229,160,0.3)':'var(--border-subtle)'}`,
+          background:piece.owned?'rgba(52,211,153,0.12)':'rgba(255,255,255,0.04)',
+          border:`1px solid ${piece.owned?'rgba(52,211,153,0.3)':'var(--border-subtle)'}`,
           color:piece.owned?'var(--accent-green)':'var(--text-secondary)',
         }}>
           {piece.owned ? <CheckCircle2 size={17} /> : <Icon size={17} />}
         </div>
         <div style={{ flex:1,minWidth:0 }}>
-          <div style={{ fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
+          <div style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
             {PIECE_PT[piece.piece_type]||piece.piece_type}
           </div>
           <div style={{ fontSize:10,color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
@@ -74,7 +74,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
             </span>
           )}
           {piece.is_lootable && !piece.is_purchasable && (
-            <span style={{ fontSize:9,color:'var(--accent-purple)',fontWeight:700,background:'rgba(180,76,255,0.1)',border:'1px solid rgba(180,76,255,0.25)',padding:'1px 5px',borderRadius:3 }}>LOOT</span>
+            <span style={{ fontSize:9,color:'var(--accent-purple)',fontWeight:700,background:'rgba(167,139,250,0.1)',border:'1px solid rgba(167,139,250,0.25)',padding:'1px 5px',borderRadius:3 }}>LOOT</span>
           )}
           <div style={{ width:6,height:6,borderRadius:'50%',background:piece.owned?'var(--accent-green)':piece.wishlist?'var(--accent-gold)':'var(--text-muted)' }} />
         </div>
@@ -88,12 +88,12 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
           {piece.piece_type !== 'Backpack' && (
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8 }}>Resistências</div>
-              <ResBar label="Física"       value={piece.resistance_physical}    color="linear-gradient(to right,#ff6b6b,#ff4466)" Icon={Shield} />
-              <ResBar label="Energia"      value={piece.resistance_energy}      color="linear-gradient(to right,#4ecdc4,#00d4ff)" Icon={Zap} />
-              <ResBar label="Térmica"      value={piece.resistance_thermal}     color="linear-gradient(to right,#f7dc6f,#ffc436)" Icon={Thermometer} />
-              <ResBar label="Distorção"    value={piece.resistance_distortion}  color="linear-gradient(to right,#a29bfe,#b44cff)" Icon={Activity} />
-              <ResBar label="Bioquímica"   value={piece.resistance_biochemical} color="linear-gradient(to right,#55efc4,#00e5a0)" Icon={FlaskConical} />
-              <ResBar label="Atordoamento" value={piece.resistance_stun}        color="linear-gradient(to right,#74b9ff,#0077ff)" Icon={Eye} />
+              <ResBar label="Física"       value={piece.resistance_physical}    color="linear-gradient(to right,#ff6b6b,#fb7185)" Icon={Shield} />
+              <ResBar label="Energia"      value={piece.resistance_energy}      color="linear-gradient(to right,#4ecdc4,#38bdf8)" Icon={Zap} />
+              <ResBar label="Térmica"      value={piece.resistance_thermal}     color="linear-gradient(to right,#f7dc6f,#fbbf24)" Icon={Thermometer} />
+              <ResBar label="Distorção"    value={piece.resistance_distortion}  color="linear-gradient(to right,#a29bfe,#a78bfa)" Icon={Activity} />
+              <ResBar label="Bioquímica"   value={piece.resistance_biochemical} color="linear-gradient(to right,#55efc4,#34d399)" Icon={FlaskConical} />
+              <ResBar label="Atordoamento" value={piece.resistance_stun}        color="linear-gradient(to right,#74b9ff,#6366f1)" Icon={Eye} />
               <div style={{ marginTop:6,fontSize:11,color:'var(--text-muted)' }}>
                 Penalidade Mobilidade: <span style={{ color:piece.mobility_penalty>20?'var(--accent-red)':'var(--text-secondary)' }}>-{piece.mobility_penalty||0}%</span>
                 {piece.slots>0 && <span style={{ marginLeft:12 }}>Slots: {piece.slots}</span>}
@@ -107,7 +107,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
           )}
 
           {/* How to get */}
-          <div style={{ background:'rgba(0,119,255,0.06)',border:'1px solid rgba(0,119,255,0.15)',borderRadius:6,padding:'10px 12px',marginBottom:12 }}>
+          <div style={{ background:'rgba(99,102,241,0.06)',border:'1px solid rgba(99,102,241,0.15)',borderRadius:6,padding:'10px 12px',marginBottom:12 }}>
             <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:6 }}>
               <MapPin size={12} style={{ color:'var(--accent-primary)',flexShrink:0 }} />
               <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Como obter</span>
@@ -196,7 +196,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                 <h2 className="modal-title">{liveSet.base_name}</h2>
                 {isVariante && (
                   <span style={{
-                    fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,
+                    fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,
                     color:`var(--type-${liveSet.type?.toLowerCase()})`,
                     background:`rgba(var(--type-${liveSet.type?.toLowerCase()}),0.08)`,
                     border:`1px solid rgba(var(--type-${liveSet.type?.toLowerCase()}),0.25)`,
@@ -206,7 +206,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                 <span className={`armor-type-badge ${badgeClass}`}>{TYPE_LABELS[liveSet.type]||liveSet.type}</span>
                 <span className={`rarity-badge rarity-${liveSet.rarity}`}>{liveSet.rarity}</span>
                 {isComplete && (
-                  <span style={{ background:'rgba(0,229,160,0.15)',border:'1px solid rgba(0,229,160,0.4)',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700,color:'var(--accent-green)',letterSpacing:'0.12em' }}>
+                  <span style={{ background:'rgba(52,211,153,0.15)',border:'1px solid rgba(52,211,153,0.4)',borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:700,color:'var(--accent-green)',letterSpacing:'0.12em' }}>
                     ✓ COMPLETO
                   </span>
                 )}
@@ -232,7 +232,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
             <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px',marginBottom:14 }}>
               <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8 }}>
                 <span style={{ fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em' }}>Progresso</span>
-                <span style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:isComplete?'var(--accent-green)':'var(--accent-primary)' }}>
+                <span style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:isComplete?'var(--accent-green)':'var(--accent-primary)' }}>
                   {owned}/{total}
                 </span>
               </div>
@@ -241,7 +241,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                   height:'100%',width:`${pct}%`,
                   background:isComplete?'linear-gradient(to right,#00b37d,var(--accent-green))':'linear-gradient(to right,var(--accent-secondary),var(--accent-primary))',
                   borderRadius:3,transition:'width 0.6s ease',
-                  boxShadow:isComplete?'0 0 10px rgba(0,229,160,0.4)':'none',
+                  boxShadow:isComplete?'0 0 10px rgba(52,211,153,0.4)':'none',
                 }} />
               </div>
             </div>

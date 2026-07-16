@@ -24,10 +24,10 @@ function isScriptItem(name) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAF Items — missão de satélites
 // ─────────────────────────────────────────────────────────────────────────────
-const PAF_COLOR = '#00d4ff';
+const PAF_COLOR = '#38bdf8';
 const PAF_ITEMS = {
-  'Cartão de Alinhamento':  { ratio:3,  unit:'cartões', yields:'satélite (alinhamento)',  icon:'📡', description:'3 conjuntos = 1 satélite alinhado' },
-  'Bateria PAF':            { ratio:3,  unit:'conjuntos',yields:'satélite (energia)',      icon:'🔋', description:'3 conjuntos = 1 satélite ligado' },
+  'Alignment Blade':  { ratio:3,  unit:'cartões', yields:'satélite (alinhamento)',  icon:'📡', description:'3 conjuntos = 1 satélite alinhado' },
+  'GP-XP Industrial Battery':            { ratio:3,  unit:'conjuntos',yields:'satélite (energia)',      icon:'🔋', description:'3 conjuntos = 1 satélite ligado' },
   'Cartão de Ativação do Lazer': { ratio:1, unit:'cartão', yields:'lazer ativado',        icon:'🔫', description:'1 cartão = 1 lazer ativado' },
 };
 const PAF_ITEM_NAMES = Object.keys(PAF_ITEMS);
@@ -44,8 +44,8 @@ export function calcPafSummary(inventoryItems) {
     const item = itens.find(i => i.name?.toLowerCase() === name.toLowerCase());
     return item?.quantity || 0;
   };
-  const alinhamento = get('Cartão de Alinhamento');
-  const bateria     = get('Bateria PAF');
+  const alinhamento = get('Alignment Blade');
+  const bateria     = get('GP-XP Industrial Battery');
   const lazer       = get('Cartão de Ativação do Lazer');
   const satsAlign   = Math.floor(alinhamento / 3);
   const satsEnergy  = Math.floor(bateria     / 3);
@@ -102,7 +102,7 @@ function ScriptPanel({ item, onUpdate }) {
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:12 }}>
         <Star size={13} style={{ color:WIKELO_COLOR }}/>
-        <span style={{ fontFamily:'Orbitron,monospace', fontSize:11, fontWeight:700, color:WIKELO_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+        <span style={{ fontFamily:'Michroma,sans-serif', fontSize:11, fontWeight:700, color:WIKELO_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Conversor Wikelo Favor
         </span>
         <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:4 }}>· {SCRIPT_RATIO} {item.name} = 1 Wikelo Favor</span>
@@ -111,15 +111,15 @@ function ScriptPanel({ item, onUpdate }) {
       {/* Contadores */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:12 }}>
         <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Scripts totais</div>
         </div>
         <div style={{ textAlign:'center', padding:'8px', background:`rgba(162,155,254,0.08)`, border:`1px solid rgba(162,155,254,0.3)`, borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:WIKELO_COLOR, lineHeight:1 }}>{favors}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color:WIKELO_COLOR, lineHeight:1 }}>{favors}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Wikelo Favors</div>
         </div>
         <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color: resto > 0 ? 'var(--accent-gold)' : 'var(--accent-green)', lineHeight:1 }}>{resto}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color: resto > 0 ? 'var(--accent-gold)' : 'var(--accent-green)', lineHeight:1 }}>{resto}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Resto (sobra)</div>
         </div>
       </div>
@@ -137,7 +137,7 @@ function ScriptPanel({ item, onUpdate }) {
         </div>
       )}
       {resto === 0 && qty > 0 && (
-        <div style={{ marginBottom:12, padding:'5px 10px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:5, fontSize:11, color:'var(--accent-green)', textAlign:'center' }}>
+        <div style={{ marginBottom:12, padding:'5px 10px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:5, fontSize:11, color:'var(--accent-green)', textAlign:'center' }}>
           ✓ Quantidade exata — sem scripts sobrando!
         </div>
       )}
@@ -145,33 +145,33 @@ function ScriptPanel({ item, onUpdate }) {
       {/* Controles de soma/subtração */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
         {/* Adicionar */}
-        <div style={{ padding:'10px', background:'rgba(0,229,160,0.04)', border:'1px solid rgba(0,229,160,0.15)', borderRadius:7 }}>
+        <div style={{ padding:'10px', background:'rgba(52,211,153,0.04)', border:'1px solid rgba(52,211,153,0.15)', borderRadius:7 }}>
           <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-green)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>+ Adicionar Scripts</div>
           <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
             <input style={IS} type="number" min="1" placeholder="Qtd" value={adding} onChange={e=>setAdding(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdd()}/>
-            <button onClick={handleAdd} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:5, color:'var(--accent-green)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+            <button onClick={handleAdd} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:5, color:'var(--accent-green)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>
               <Plus size={11}/> Somar
             </button>
           </div>
           {/* Atalhos rápidos */}
           <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
             {[10, 25, 50, 100].map(n => (
-              <button key={n} onClick={()=>onUpdate(item.id, qty+n)} style={{ padding:'2px 7px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.15)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace' }}>+{n}</button>
+              <button key={n} onClick={()=>onUpdate(item.id, qty+n)} style={{ padding:'2px 7px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.15)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace' }}>+{n}</button>
             ))}
           </div>
         </div>
         {/* Remover */}
-        <div style={{ padding:'10px', background:'rgba(255,68,102,0.04)', border:'1px solid rgba(255,68,102,0.15)', borderRadius:7 }}>
+        <div style={{ padding:'10px', background:'rgba(251,113,133,0.04)', border:'1px solid rgba(251,113,133,0.15)', borderRadius:7 }}>
           <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-red)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>− Remover Scripts</div>
           <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6 }}>
             <input style={IS} type="number" min="1" placeholder="Qtd" value={removing} onChange={e=>setRemoving(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleRemove()}/>
-            <button onClick={handleRemove} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(255,68,102,0.1)', border:'1px solid rgba(255,68,102,0.3)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+            <button onClick={handleRemove} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 10px', background:'rgba(251,113,133,0.1)', border:'1px solid rgba(251,113,133,0.3)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>
               <Minus size={11}/> Subtrair
             </button>
           </div>
           <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
             {[10, 25, 50, 100].map(n => (
-              <button key={n} onClick={()=>onUpdate(item.id, Math.max(0,qty-n))} disabled={qty<n} style={{ padding:'2px 7px', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.15)', borderRadius:4, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace', opacity:qty<n?0.4:1 }}>-{n}</button>
+              <button key={n} onClick={()=>onUpdate(item.id, Math.max(0,qty-n))} disabled={qty<n} style={{ padding:'2px 7px', background:'rgba(251,113,133,0.06)', border:'1px solid rgba(251,113,133,0.15)', borderRadius:4, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace', opacity:qty<n?0.4:1 }}>-{n}</button>
             ))}
           </div>
         </div>
@@ -267,13 +267,13 @@ const GRADES      = ['','S','A','B','C','D','Military','Industrial','Civ','Steal
 const SIZES       = ['','0','1','2','3','4','5','6','7','8','Handheld','Personal'];
 
 const CATEGORY_COLORS = {
-  'Arma Pessoal':      '#ff4466',
+  'Arma Pessoal':      '#fb7185',
   'Acessório de Arma': '#ff7755',
-  'Armadura FPS':      '#00d4ff',
-  'Roupa':             '#b44cff',
-  'Componente de Nave':'#0077ff',
-  'Utilitário':        '#00e5a0',
-  'Recurso / Minério': '#ffc436',
+  'Armadura FPS':      '#38bdf8',
+  'Roupa':             '#a78bfa',
+  'Componente de Nave':'#6366f1',
+  'Utilitário':        '#34d399',
+  'Recurso / Minério': '#fbbf24',
   'Commodity':         '#f39c12',
   'Blueprint':         '#9b59b6',
   'Decoração / Flair': '#e91e63',
@@ -283,7 +283,7 @@ const CATEGORY_COLORS = {
 };
 
 const SYSTEM_COLORS = {
-  Stanton:'#00d4ff', Pyro:'#ff8c00', Nyx:'#b44cff', Terra:'#00e5a0', Odin:'#ffc436',
+  Stanton:'#38bdf8', Pyro:'#fb923c', Nyx:'#a78bfa', Terra:'#34d399', Odin:'#fbbf24',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -453,14 +453,14 @@ function ItemForm({ initial, onSave, onCancelar }) {
     onSave({ ...data, quantity:Number(data.quantity) >= 0 ? Number(data.quantity) : 1, value_auec:Number(data.value_auec)||0, is_contraband:data.is_contraband?1:0 });
   }
 
-  const IS = { width:'100%',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:14,outline:'none' };
+  const IS = { width:'100%',padding:'8px 12px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:14,outline:'none' };
   const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
   const SS = { ...IS, padding:'8px 28px 8px 12px', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 8px center' };
 
   return (
     <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'24px',marginBottom:24 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20 }}>
-        <h3 style={{ fontFamily:'Orbitron,monospace',fontSize:15,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.08em' }}>
+        <h3 style={{ fontFamily:'Michroma,sans-serif',fontSize:15,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.08em' }}>
           {initial?.id ? 'EDITAR ITEM' : 'REGISTRAR ITEM'}
         </h3>
         <button onClick={onCancelar} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'5px 8px',display:'flex',alignItems:'center' }}>
@@ -471,10 +471,10 @@ function ItemForm({ initial, onSave, onCancelar }) {
       {/* Modal de importação UEX */}
       {importModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000,padding:16}} onClick={()=>setImportModal(null)}>
-          <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,212,255,0.4)',borderRadius:10,padding:20,width:'100%',maxWidth:480,boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
+          <div style={{background:'var(--bg-card)',border:'1px solid rgba(56,189,248,0.4)',borderRadius:10,padding:20,width:'100%',maxWidth:480,boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
               <span style={{fontSize:16}}>💡</span>
-              <span style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>DADOS DA UEX ENCONTRADOS</span>
+              <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>DADOS DA UEX ENCONTRADOS</span>
             </div>
             <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:14,lineHeight:1.6}}>
               <strong style={{color:'var(--text-primary)'}}>{importModal.name}</strong> foi encontrado no banco da UEX.<br/>
@@ -486,7 +486,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
               <div style={{marginBottom:12,padding:'10px 14px',background:'rgba(255,200,0,0.08)',border:'1px solid rgba(255,200,0,0.3)',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
                   <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>💰 Preço Médio UEX</div>
-                  <div style={{fontFamily:'Orbitron,monospace',fontSize:20,fontWeight:800,color:'var(--accent-gold)'}}>
+                  <div style={{fontFamily:'Michroma,sans-serif',fontSize:20,fontWeight:800,color:'var(--accent-gold)'}}>
                     {(importModal.price_avg||importModal.price_buy||importModal.price_sell||0).toLocaleString('pt-BR')} aUEC
                   </div>
                 </div>
@@ -507,7 +507,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
                 ['Tamanho',    importModal.size ? `S${importModal.size}` : null],
                 ['Cor/Grade',  importModal.color],
               ].filter(([,v]) => v).map(([label, val]) => (
-                <div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 10px',background:'rgba(0,212,255,0.05)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:5,fontSize:11}}>
+                <div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 10px',background:'rgba(56,189,248,0.05)',border:'1px solid rgba(56,189,248,0.15)',borderRadius:5,fontSize:11}}>
                   <span style={{color:'var(--text-muted)'}}>{label}</span>
                   <strong style={{color:'var(--text-primary)'}}>{val}</strong>
                 </div>
@@ -521,13 +521,13 @@ function ItemForm({ initial, onSave, onCancelar }) {
             )}
 
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>setImportModal(null)} style={{padding:'7px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+              <button onClick={()=>setImportModal(null)} style={{padding:'7px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
                 Só o Nome
               </button>
-              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade'])} style={{padding:'7px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:5,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade'])} style={{padding:'7px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:5,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
                 Sem Preço
               </button>
-              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade','price'])} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+              <button onClick={()=>applyUexData(importModal,['category','size','manufacturer','grade','price'])} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 14px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
                 <Save size={11}/> Importar com Preço
               </button>
             </div>
@@ -571,7 +571,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
                     borderBottom:'1px solid var(--border-subtle)',
                     cursor:'pointer',fontSize:12,textAlign:'left',gap:10,
                   }}
-                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,212,255,0.07)'}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(56,189,248,0.07)'}
                   onMouseLeave={e=>e.currentTarget.style.background='none'}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
@@ -708,14 +708,14 @@ function ItemForm({ initial, onSave, onCancelar }) {
       </div>
 
       {error && (
-        <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,marginBottom:12,color:'var(--accent-red)',fontSize:13 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:6,marginBottom:12,color:'var(--accent-red)',fontSize:13 }}>
           <AlertTriangle size={14}/> {error}
         </div>
       )}
 
       <div style={{ display:'flex',gap:10,justifyContent:'flex-end' }}>
-        <button onClick={onCancelar} style={{ padding:'10px 20px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.08em' }}>Cancelar</button>
-        <button onClick={handleSubmit} style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 24px',background:'rgba(0,212,255,0.1)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',letterSpacing:'0.08em',textTransform:'uppercase' }}>
+        <button onClick={onCancelar} style={{ padding:'10px 20px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',letterSpacing:'0.08em' }}>Cancelar</button>
+        <button onClick={handleSubmit} style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 24px',background:'rgba(56,189,248,0.1)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',letterSpacing:'0.08em',textTransform:'uppercase' }}>
           <Save size={14}/>{initial?.id?'Salvar Alterações':'Registrar Item'}
         </button>
       </div>
@@ -737,10 +737,10 @@ function PafPanel({ item, allItems }) {
   const summary = calcPafSummary(allItems);
 
   return (
-    <div style={{ gridColumn:'1/-1', marginTop:4, padding:'13px 14px', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:8 }}>
+    <div style={{ gridColumn:'1/-1', marginTop:4, padding:'13px 14px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:8 }}>
       <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:12 }}>
         <span style={{ fontSize:16 }}>{pafInfo.icon}</span>
-        <span style={{ fontFamily:'Orbitron,monospace', fontSize:11, fontWeight:700, color:PAF_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+        <span style={{ fontFamily:'Michroma,sans-serif', fontSize:11, fontWeight:700, color:PAF_COLOR, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Missão PAF — {item.name}
         </span>
         <span style={{ fontSize:10, color:'var(--text-muted)', marginLeft:4 }}>· {pafInfo.description}</span>
@@ -749,15 +749,15 @@ function PafPanel({ item, allItems }) {
       {/* Contadores deste item */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:12 }}>
         <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color:'var(--text-primary)', lineHeight:1 }}>{qty}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>{pafInfo.unit}</div>
         </div>
-        <div style={{ textAlign:'center', padding:'8px', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:PAF_COLOR, lineHeight:1 }}>{yields}</div>
+        <div style={{ textAlign:'center', padding:'8px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:7 }}>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color:PAF_COLOR, lineHeight:1 }}>{yields}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>{pafInfo.yields}</div>
         </div>
         <div style={{ textAlign:'center', padding:'8px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:22, fontWeight:800, color:resto>0?'var(--accent-gold)':'var(--accent-green)', lineHeight:1 }}>{resto}</div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:22, fontWeight:800, color:resto>0?'var(--accent-gold)':'var(--accent-green)', lineHeight:1 }}>{resto}</div>
           <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginTop:4 }}>Sobra</div>
         </div>
       </div>
@@ -779,7 +779,7 @@ function PafPanel({ item, allItems }) {
       )}
 
       {/* Resumo geral PAF com todos os itens */}
-      <div style={{ padding:'10px 12px', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:7 }}>
+      <div style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:7 }}>
         <div style={{ fontSize:10, fontWeight:700, color:PAF_COLOR, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>📡 Capacidade Total de Missão PAF</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
           {[
@@ -790,7 +790,7 @@ function PafPanel({ item, allItems }) {
           ].map(({label,value,icon,color,sub})=>(
             <div key={label} style={{ textAlign:'center', padding:'8px 4px', background:'rgba(255,255,255,0.03)', border:`1px solid ${color}22`, borderRadius:6 }}>
               <div style={{ fontSize:16, marginBottom:3 }}>{icon}</div>
-              <div style={{ fontFamily:'Orbitron,monospace', fontSize:17, fontWeight:800, color, lineHeight:1, marginBottom:2 }}>{value}</div>
+              <div style={{ fontFamily:'Michroma,sans-serif', fontSize:17, fontWeight:800, color, lineHeight:1, marginBottom:2 }}>{value}</div>
               <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>{label}</div>
               <div style={{ fontSize:9, color:'var(--text-muted)', fontStyle:'italic', marginTop:2 }}>{sub}</div>
             </div>
@@ -831,11 +831,11 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
 
         {/* Linha 1: nome + badges */}
         <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
-          <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
+          <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
           {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {isScript && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700,flexShrink:0}}>★ WIKELO</span>}
-          {isPaf && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(0,212,255,0.15)',color:PAF_COLOR,border:'1px solid rgba(0,212,255,0.3)',fontWeight:700,flexShrink:0}}>📡 PAF</span>}
+          {isPaf && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(56,189,248,0.15)',color:PAF_COLOR,border:'1px solid rgba(56,189,248,0.3)',fontWeight:700,flexShrink:0}}>📡 PAF</span>}
         </div>
 
         {/* Linha 2: categoria + sistema */}
@@ -877,7 +877,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}>
-                  <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:17,fontWeight:700,color:'var(--text-primary)'}}>{item.name}</span>
+                  <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:17,fontWeight:700,color:'var(--text-primary)'}}>{item.name}</span>
                   {item.is_contraband && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700}}>⚠ CONTRABAND</span>}
                   {isScript && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700}}>★ WIKELO FAVOR</span>}
                 </div>
@@ -891,7 +891,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
                 </div>
               </div>
               <div style={{display:'flex',gap:6,flexShrink:0}}>
-                <button onClick={()=>{onEdit(item);setShowDetail(false);}} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={13}/></button>
+                <button onClick={()=>{onEdit(item);setShowDetail(false);}} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={13}/></button>
                 <button onClick={()=>setShowDetail(false)} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={13}/></button>
               </div>
             </div>
@@ -941,11 +941,11 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
               {delConf ? (
                 <>
                   <span style={{fontSize:12,color:'var(--accent-red)',alignSelf:'center'}}>Confirmar exclusão?</span>
-                  <button onClick={()=>{onDelete(item.id);setShowDetail(false);}} style={{padding:'6px 14px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif'}}>Sim, Apagar</button>
+                  <button onClick={()=>{onDelete(item.id);setShowDetail(false);}} style={{padding:'6px 14px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif'}}>Sim, Apagar</button>
                   <button onClick={()=>setDelConf(false)} style={{padding:'6px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11}}>Cancelar</button>
                 </>
               ) : (
-                <button onClick={()=>setDelConf(true)} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 14px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+                <button onClick={()=>setDelConf(true)} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 14px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
                   <Trash2 size={11}/> Apagar Item
                 </button>
               )}
@@ -1071,7 +1071,7 @@ export default function InventoryPage() {
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const catList        = [...new Set(displayItems.map(i=>i.category))].sort();
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)',fontSize:14}}>
@@ -1090,7 +1090,7 @@ export default function InventoryPage() {
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
+          <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
             <Plus size={14}/> Novo Item
           </button>
         </div>
@@ -1105,13 +1105,13 @@ export default function InventoryPage() {
 
       {/* ── Breadcrumb de navegação ── */}
       <div style={{padding:'8px 24px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
-        <button onClick={()=>{setSelSystem(null);setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selSystem?'pointer':'default',color:selSystem?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,padding:0}}>
+        <button onClick={()=>{setSelSystem(null);setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selSystem?'pointer':'default',color:selSystem?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,padding:0}}>
           🌌 Todos os Sistemas
         </button>
         {selSystem && (
           <>
             <span style={{color:'var(--text-muted)'}}>›</span>
-            <button onClick={()=>{setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selLocation?'pointer':'default',color:selLocation?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,padding:0,display:'flex',alignItems:'center',gap:4}}>
+            <button onClick={()=>{setSelLocation(null);setSearch('');}} style={{background:'none',border:'none',cursor:selLocation?'pointer':'default',color:selLocation?'var(--accent-primary)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,padding:0,display:'flex',alignItems:'center',gap:4}}>
               <span style={{width:8,height:8,borderRadius:'50%',background:SYSTEM_COLORS[selSystem],display:'inline-block'}}/>
               {selSystem}
             </button>
@@ -1120,7 +1120,7 @@ export default function InventoryPage() {
         {selLocation && (
           <>
             <span style={{color:'var(--text-muted)'}}>›</span>
-            <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:4}}>
               <MapPin size={10} style={{color:SYSTEM_COLORS[selSystem]}}/>{selLocation}
             </span>
           </>
@@ -1137,7 +1137,7 @@ export default function InventoryPage() {
         {/* NÍVEL 1 — Seleção de sistema */}
         {!selSystem && !search.trim() && (
           <div>
-            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
               Selecione um Sistema Espacial
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12,marginBottom:24}}>
@@ -1157,7 +1157,7 @@ export default function InventoryPage() {
                   onMouseEnter={e=>{if(count>0){e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow=`0 8px 25px ${color}22, 0 0 0 1px ${color}66`;}}}
                   onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
                     <div style={{width:12,height:12,borderRadius:'50%',background:color,boxShadow:`0 0 10px ${color}88`,marginBottom:10}}/>
-                    <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color,marginBottom:6,letterSpacing:'0.04em'}}>{name}</div>
+                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,marginBottom:6,letterSpacing:'0.04em'}}>{name}</div>
                     <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:3}}>{count}</div>
                     <div style={{fontSize:10,color:'var(--text-muted)'}}>item{count!==1?'s':''} em {locs} local{locs!==1?'is':''}</div>
                     {val>0&&<div style={{fontSize:10,color:'var(--accent-gold)',marginTop:4,fontFamily:'Share Tech Mono,monospace'}}>{val.toLocaleString('pt-BR')} aUEC</div>}
@@ -1171,10 +1171,10 @@ export default function InventoryPage() {
                 border:'1px dashed var(--border-normal)',
                 borderRadius:10,cursor:'pointer',transition:'all 0.2s',
               }}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--accent-primary)';e.currentTarget.style.background='rgba(0,212,255,0.05)';}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--accent-primary)';e.currentTarget.style.background='rgba(56,189,248,0.05)';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-normal)';e.currentTarget.style.background='rgba(255,255,255,0.03)';}}>
                 <BarChart3 size={16} style={{color:'var(--text-muted)',marginBottom:10}}/>
-                <div style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-muted)',marginBottom:6}}>VER TUDO</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-muted)',marginBottom:6}}>VER TUDO</div>
                 <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:3}}>{itens.length}</div>
                 <div style={{fontSize:10,color:'var(--text-muted)'}}>todos os sistemas</div>
               </button>
@@ -1185,7 +1185,7 @@ export default function InventoryPage() {
         {/* NÍVEL 2 — Locais dentro do sistema */}
         {selSystem && selSystem!=='__all' && !selLocation && !search.trim() && (
           <div>
-            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
               <span style={{width:8,height:8,borderRadius:'50%',background:SYSTEM_COLORS[selSystem]}}/>
               Locais em {selSystem}
             </div>
@@ -1199,13 +1199,13 @@ export default function InventoryPage() {
                     background:'var(--bg-card)',border:`1px solid var(--border-subtle)`,borderLeft:`3px solid ${sysColor}`,
                     borderRadius:8,cursor:'pointer',transition:'all 0.15s',
                   }}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=sysColor;e.currentTarget.style.background=`rgba(${sysColor==='#00d4ff'?'0,212,255':sysColor==='#ff8c00'?'255,140,0':sysColor==='#b44cff'?'180,76,255':sysColor==='#00e5a0'?'0,229,160':'255,196,54'},0.05)`;}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=sysColor;e.currentTarget.style.background=`rgba(${sysColor==='#38bdf8'?'56,189,248':sysColor==='#fb923c'?'251,146,60':sysColor==='#a78bfa'?'167,139,250':sysColor==='#34d399'?'52,211,153':'251,191,36'},0.05)`;}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.background='var(--bg-card)';}}>
                     <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:5}}>
                       <MapPin size={10} style={{color:sysColor,flexShrink:0}}/>
-                      <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span>
+                      <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{name}</span>
                     </div>
-                    <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:16,fontWeight:800,color:sysColor,marginBottom:3}}>{count} <span style={{fontSize:11,color:'var(--text-muted)',fontFamily:'Rajdhani,sans-serif'}}>item{count!==1?'s':''}</span></div>
+                    <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:16,fontWeight:800,color:sysColor,marginBottom:3}}>{count} <span style={{fontSize:11,color:'var(--text-muted)',fontFamily:'"Exo 2",sans-serif'}}>item{count!==1?'s':''}</span></div>
                     <div style={{display:'flex',flexWrap:'wrap',gap:3,marginBottom:4}}>
                       {cats.map(c=>(
                         <span key={c} style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:`${CATEGORY_COLORS[c]||'#7a90b0'}18`,color:CATEGORY_COLORS[c]||'#7a90b0',border:`1px solid ${CATEGORY_COLORS[c]||'#7a90b0'}33`}}>{c}</span>
@@ -1224,7 +1224,7 @@ export default function InventoryPage() {
               onMouseEnter={e=>{e.currentTarget.style.borderColor=SYSTEM_COLORS[selSystem];e.currentTarget.style.background='rgba(255,255,255,0.04)';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-normal)';e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
                 <Package size={14} style={{color:'var(--text-muted)',marginBottom:8}}/>
-                <div style={{fontSize:12,fontWeight:700,color:'var(--text-muted)',fontFamily:'Orbitron,monospace',marginBottom:4}}>TODOS</div>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--text-muted)',fontFamily:'Michroma,sans-serif',marginBottom:4}}>TODOS</div>
                 <div style={{fontSize:11,color:'var(--text-muted)'}}>Ver todos os {itens.filter(i=>i.system===selSystem).length} itens de {selSystem}</div>
               </button>
             </div>
@@ -1238,7 +1238,7 @@ export default function InventoryPage() {
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <div style={{position:'relative',flex:1,minWidth:160}}>
                 <Search size={11} style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none'}}/>
-                <input style={{width:'100%',padding:'6px 10px 6px 26px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                <input style={{width:'100%',padding:'6px 10px 6px 26px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',boxSizing:'border-box'}}
                   placeholder="Buscar item..." value={search} onChange={e=>setSearch(e.target.value)}/>
               </div>
               <select style={SS} value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
@@ -1253,10 +1253,10 @@ export default function InventoryPage() {
               </select>
               {/* Toggle grid/lista */}
               <div style={{display:'flex',gap:3}}>
-                <button onClick={()=>setViewMode('grid')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='grid'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='grid'?'rgba(0,212,255,0.1)':'transparent',color:viewMode==='grid'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <button onClick={()=>setViewMode('grid')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='grid'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='grid'?'rgba(56,189,248,0.1)':'transparent',color:viewMode==='grid'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
                   <Box size={12}/>
                 </button>
-                <button onClick={()=>setViewMode('list')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='list'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='list'?'rgba(0,212,255,0.1)':'transparent',color:viewMode==='list'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <button onClick={()=>setViewMode('list')} style={{width:28,height:28,borderRadius:4,border:`1px solid ${viewMode==='list'?'var(--accent-primary)':'var(--border-subtle)'}`,background:viewMode==='list'?'rgba(56,189,248,0.1)':'transparent',color:viewMode==='list'?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
                   <Filter size={12}/>
                 </button>
               </div>
@@ -1265,7 +1265,7 @@ export default function InventoryPage() {
             {displayItems.length === 0 ? (
               <div style={{textAlign:'center',padding:'50px 0',color:'var(--text-muted)'}}>
                 <Package size={44} style={{display:'block',margin:'0 auto 12px',opacity:0.15}}/>
-                <div style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,marginBottom:8}}>NENHUM ITEM</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,marginBottom:8}}>NENHUM ITEM</div>
                 <div style={{fontSize:12}}>{search.trim()?'Nenhum item encontrado para a busca.':'Nenhum item registrado aqui ainda.'}</div>
               </div>
             ) : viewMode === 'grid' ? (
@@ -1300,7 +1300,7 @@ export default function InventoryPage() {
         {/* Busca global — mesmo sem sistema selecionado */}
         {!selSystem && search.trim() && (
           <div>
-            <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
               Resultados para "{search}"
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>

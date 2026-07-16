@@ -25,7 +25,7 @@ const STATUSES      = ['Active','Completed','Failed','Abandoned','Pending','Bugg
 const MONTHS_PT     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 const STATUS_COLORS = { Active:'var(--accent-primary)',Completed:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055' };
-const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)',Hard:'var(--accent-gold)','Very Hard':'#ff8c00',Elite:'var(--accent-red)' };
+const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)',Hard:'var(--accent-gold)','Very Hard':'#fb923c',Elite:'var(--accent-red)' };
 const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mining':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -115,8 +115,8 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
     [{ id: Date.now(), name: '', type: 'auec', qty: 0, qtyDisplay: '', assignMode: 'split', assignments: {}, hasQuality: false, quality: '' }]
   );
 
-  const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
-  const BTN = {display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:'5px 10px',borderRadius:5,cursor:'pointer',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase'};
+  const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
+  const BTN = {display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:'5px 10px',borderRadius:5,cursor:'pointer',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase'};
 
   // ── Tripulantes ──
   function addMember() {
@@ -200,13 +200,13 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}}>
-      <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:12,padding:22,width:'100%',maxWidth:620,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:12,padding:22,width:'100%',maxWidth:620,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
 
         {/* Header */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <Gift size={17} style={{color:'var(--accent-green)'}}/>
-            <span style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-green)',letterSpacing:'0.06em'}}>
+            <span style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--accent-green)',letterSpacing:'0.06em'}}>
               {initialLoot ? 'EDITAR DISTRIBUIÇÃO' : 'DISTRIBUIÇÃO DE LOOT'}
             </span>
           </div>
@@ -226,7 +226,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
             <input style={{...IS,flex:1}} placeholder="Nome do tripulante..." value={memberInput}
               onChange={e=>setMemberInput(e.target.value)}
               onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addMember();}}}/>
-            <button onClick={addMember} style={{...BTN,background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',color:'var(--accent-primary)',padding:'8px 14px'}}>
+            <button onClick={addMember} style={{...BTN,background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',color:'var(--accent-primary)',padding:'8px 14px'}}>
               <Plus size={12}/> Adicionar
             </button>
           </div>
@@ -237,7 +237,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
           )}
           <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
             {members.map(m => (
-              <div key={m.id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 10px',background:'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.2)',borderRadius:20}}>
+              <div key={m.id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 10px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:20}}>
                 <span style={{fontSize:12,fontWeight:700,color:'var(--accent-primary)'}}>{m.name}</span>
                 <button onClick={()=>removeMember(m.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:0,display:'flex',alignItems:'center'}}>
                   <X size={10}/>
@@ -269,7 +269,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                   value={item.qtyDisplay}
                   onChange={e=>updateItem(item.id,'qty',e.target.value)}
                   onBlur={()=>blurQty(item.id)}/>
-                <button onClick={()=>removeItem(item.id)} style={{width:28,height:36,borderRadius:5,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <button onClick={()=>removeItem(item.id)} style={{width:28,height:36,borderRadius:5,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
                   <X size={11}/>
                 </button>
               </div>
@@ -287,11 +287,11 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                   }}>
                     {item.hasQuality&&<div style={{width:6,height:6,borderRadius:1,background:'var(--accent-gold)'}}/>}
                   </div>
-                  <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>Qualidade</span>
+                  <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>Qualidade</span>
                 </button>
                 {item.hasQuality && (
                   <input
-                    style={{flex:1,padding:'5px 9px',background:'rgba(255,200,0,0.06)',border:'1px solid rgba(255,200,0,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',fontWeight:600}}
+                    style={{flex:1,padding:'5px 9px',background:'rgba(255,200,0,0.06)',border:'1px solid rgba(255,200,0,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',fontWeight:600}}
                     placeholder="ex: Grade A, Pristine, High, 94%..."
                     value={item.quality||''}
                     onChange={e=>updateItem(item.id,'quality',e.target.value)}
@@ -304,11 +304,11 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                 <div>
                   <div style={{display:'flex',gap:6,marginBottom:8}}>
                     <button onClick={()=>setAssignMode(item.id,'split')}
-                      style={{...BTN, background:item.assignMode==='split'?'rgba(0,229,160,0.12)':'transparent', border:`1px solid ${item.assignMode==='split'?'rgba(0,229,160,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='split'?'var(--accent-green)':'var(--text-muted)'}}>
+                      style={{...BTN, background:item.assignMode==='split'?'rgba(52,211,153,0.12)':'transparent', border:`1px solid ${item.assignMode==='split'?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='split'?'var(--accent-green)':'var(--text-muted)'}}>
                       <Divide size={10}/> Divisão Automática
                     </button>
                     <button onClick={()=>setAssignMode(item.id,'manual')}
-                      style={{...BTN, background:item.assignMode==='manual'?'rgba(0,212,255,0.12)':'transparent', border:`1px solid ${item.assignMode==='manual'?'rgba(0,212,255,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='manual'?'var(--accent-primary)':'var(--text-muted)'}}>
+                      style={{...BTN, background:item.assignMode==='manual'?'rgba(56,189,248,0.12)':'transparent', border:`1px solid ${item.assignMode==='manual'?'rgba(56,189,248,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='manual'?'var(--accent-primary)':'var(--text-muted)'}}>
                       <Edit3 size={10}/> Manual por Pessoa
                     </button>
                   </div>
@@ -316,7 +316,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                   {item.assignMode === 'split' ? (
                     <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                       {members.map(m => (
-                        <div key={m.id} style={{padding:'4px 10px',background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.15)',borderRadius:6,fontSize:11}}>
+                        <div key={m.id} style={{padding:'4px 10px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.15)',borderRadius:6,fontSize:11}}>
                           <span style={{color:'var(--text-secondary)'}}>{m.name}: </span>
                           <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-green)',fontWeight:700}}>
                             {item.type==='auec' ? `${ptMoney(splitPerPerson(item))} aUEC` : `${splitPerPerson(item)} un.`}
@@ -355,28 +355,28 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
             </div>
           ))}
 
-          <button onClick={addItem} style={{...BTN,background:'rgba(0,212,255,0.06)',border:'1px solid var(--border-subtle)',color:'var(--accent-primary)',padding:'7px 14px',marginTop:2}}>
+          <button onClick={addItem} style={{...BTN,background:'rgba(56,189,248,0.06)',border:'1px solid var(--border-subtle)',color:'var(--accent-primary)',padding:'7px 14px',marginTop:2}}>
             <Plus size={11}/> Adicionar Item
           </button>
         </div>
 
         {/* ── RESUMO ── */}
         {members.length > 0 && totalAuec > 0 && (
-          <div style={{background:'rgba(0,229,160,0.05)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8,padding:'10px 14px',marginBottom:14}}>
+          <div style={{background:'rgba(52,211,153,0.05)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8,padding:'10px 14px',marginBottom:14}}>
             <div style={{fontSize:10,fontWeight:700,color:'var(--accent-green)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
               <Divide size={10}/> Resumo aUEC
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,textAlign:'center'}}>
               <div>
-                <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--accent-gold)'}}>{ptMoney(totalAuec)}</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-gold)'}}>{ptMoney(totalAuec)}</div>
                 <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>Total aUEC</div>
               </div>
               <div style={{borderLeft:'1px solid var(--border-subtle)',borderRight:'1px solid var(--border-subtle)'}}>
-                <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--text-primary)'}}>{members.length}</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--text-primary)'}}>{members.length}</div>
                 <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>Tripulantes</div>
               </div>
               <div>
-                <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--accent-green)'}}>{ptMoney(perPersonAuec)}</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-green)'}}>{ptMoney(perPersonAuec)}</div>
                 <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>Por Pessoa</div>
               </div>
             </div>
@@ -390,7 +390,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
               Sem Loot
             </button>
           )}
-          <button onClick={handleSave} disabled={!hasContent} style={{...BTN,padding:'8px 18px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',color:'var(--accent-green)',opacity:hasContent?1:0.5}}>
+          <button onClick={handleSave} disabled={!hasContent} style={{...BTN,padding:'8px 18px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',color:'var(--accent-green)',opacity:hasContent?1:0.5}}>
             <Save size={13}/> Salvar Distribuição
           </button>
         </div>
@@ -436,14 +436,14 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
     onSave(saved);
   }
 
-  const IS={width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
+  const IS={width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
   const SS={...IS,padding:'8px 26px 8px 10px',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center'};
   const LS={fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4};
 
   return (
     <div style={{background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'18px',marginBottom:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-        <div style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em'}}>{initial?.id?'EDITAR MISSÃO':'NOVA MISSÃO'}</div>
+        <div style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em'}}>{initial?.id?'EDITAR MISSÃO':'NOVA MISSÃO'}</div>
         <button onClick={onCancelar} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px'}}><X size={13}/></button>
       </div>
 
@@ -503,7 +503,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
               onFocus={()=>setShowSug(true)}
               placeholder="Adicionar objetivo... (Enter para confirmar)"
             />
-            <button onClick={()=>addObj()} style={{padding:'7px 12px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontWeight:700}}><Plus size={13}/></button>
+            <button onClick={()=>addObj()} style={{padding:'7px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontWeight:700}}><Plus size={13}/></button>
           </div>
           {showSug&&suggestions.length>0&&(
             <div style={{position:'absolute',top:'100%',left:0,right:40,background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:6,boxShadow:'0 8px 20px rgba(0,0,0,0.4)',zIndex:100,overflow:'hidden'}}>
@@ -513,7 +513,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
               {suggestions.map((s,i)=>(
                 <button key={i} onClick={()=>addObj(s.text)}
                   style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',padding:'7px 12px',background:'none',border:'none',borderBottom:'1px solid var(--border-subtle)',color:'var(--text-secondary)',cursor:'pointer',fontSize:12,textAlign:'left'}}
-                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,212,255,0.06)'}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(56,189,248,0.06)'}
                   onMouseLeave={e=>e.currentTarget.style.background='none'}>
                   <span>{s.text}</span>
                   <span style={{fontSize:10,color:'var(--text-muted)'}}>×{s.usedCount||1}</span>
@@ -523,7 +523,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
           )}
         </div>
         {data.objectives.map((obj,i)=>(
-          <div key={i} style={{display:'flex',alignItems:'center',gap:7,padding:'5px 9px',marginBottom:3,background:obj.done?'rgba(0,229,160,0.05)':'rgba(255,255,255,0.03)',borderRadius:5,border:`1px solid ${obj.done?'rgba(0,229,160,0.2)':'var(--border-subtle)'}`}}>
+          <div key={i} style={{display:'flex',alignItems:'center',gap:7,padding:'5px 9px',marginBottom:3,background:obj.done?'rgba(52,211,153,0.05)':'rgba(255,255,255,0.03)',borderRadius:5,border:`1px solid ${obj.done?'rgba(52,211,153,0.2)':'var(--border-subtle)'}`}}>
             <button onClick={()=>toggleObj(i)} style={{background:'none',border:'none',cursor:'pointer',color:obj.done?'var(--accent-green)':'var(--text-muted)',padding:0,flexShrink:0}}>
               {obj.done?<CheckCircle2 size={14}/>:<div style={{width:14,height:14,borderRadius:'50%',border:'1px solid var(--text-muted)'}}/>}
             </button>
@@ -541,8 +541,8 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
       {error&&<div style={{color:'var(--accent-red)',fontSize:12,marginBottom:9,display:'flex',alignItems:'center',gap:6}}><AlertTriangle size={13}/>{error}</div>}
 
       <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-        <button onClick={onCancelar} style={{padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>Cancelar</button>
-        <button onClick={handleSave} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:6,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
+        <button onClick={onCancelar} style={{padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>Cancelar</button>
+        <button onClick={handleSave} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:6,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase'}}>
           <Save size={13}/>{initial?.id?'Salvar':'Registrar'}
         </button>
       </div>
@@ -598,28 +598,28 @@ function LootPanel({ loot, mission, onUpdate }) {
   const hasWarnings     = unassignedItems.length > 0 || partialItems.length > 0;
 
   return (
-    <div style={{marginBottom:8,background:'rgba(0,229,160,0.04)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8,overflow:'hidden'}}>
+    <div style={{marginBottom:8,background:'rgba(52,211,153,0.04)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8,overflow:'hidden'}}>
 
       {/* ── Header ── */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:'1px solid rgba(0,229,160,0.1)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:'1px solid rgba(52,211,153,0.1)'}}>
         <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
           <Gift size={11} style={{color:'var(--accent-green)'}}/>
           <span style={{fontSize:10,fontWeight:700,color:'var(--accent-green)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Distribuição de Loot</span>
           {memberCount > 0 && deliveredCount === memberCount && (
-            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(0,229,160,0.15)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.3)',fontWeight:700}}>✓ Tudo entregue</span>
+            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(52,211,153,0.15)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.3)',fontWeight:700}}>✓ Tudo entregue</span>
           )}
           {pendingCount > 0 && (
-            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(255,140,0,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(255,140,0,0.35)',fontWeight:700}}>
+            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(251,146,60,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,146,60,0.35)',fontWeight:700}}>
               ⏳ {pendingCount} pendente{pendingCount!==1?'s':''}
             </span>
           )}
           {hasWarnings && (
-            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(255,68,102,0.12)',color:'var(--accent-red)',border:'1px solid rgba(255,68,102,0.3)',fontWeight:700}}>
+            <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(251,113,133,0.12)',color:'var(--accent-red)',border:'1px solid rgba(251,113,133,0.3)',fontWeight:700}}>
               ⚠ {unassignedItems.length + partialItems.length} item{(unassignedItems.length+partialItems.length)!==1?'s':''} sem atribuição
             </span>
           )}
         </div>
-        <button onClick={()=>setEditing(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--accent-primary)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',flexShrink:0}}>
+        <button onClick={()=>setEditing(true)} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--accent-primary)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',flexShrink:0}}>
           <Edit3 size={9}/> Editar
         </button>
       </div>
@@ -652,14 +652,14 @@ function LootPanel({ loot, mission, onUpdate }) {
                 const hasIssue     = isUnassigned || isPartial;
 
                 // Cor e estilo baseado no status de atribuição
-                const borderColor  = isUnassigned ? 'rgba(255,68,102,0.5)'
-                                   : isPartial    ? 'rgba(255,140,0,0.5)'
+                const borderColor  = isUnassigned ? 'rgba(251,113,133,0.5)'
+                                   : isPartial    ? 'rgba(251,146,60,0.5)'
                                    : 'var(--border-subtle)';
-                const bgColor      = isUnassigned ? 'rgba(255,68,102,0.06)'
-                                   : isPartial    ? 'rgba(255,140,0,0.06)'
+                const bgColor      = isUnassigned ? 'rgba(251,113,133,0.06)'
+                                   : isPartial    ? 'rgba(251,146,60,0.06)'
                                    : 'rgba(255,255,255,0.02)';
-                const badgeColor   = isUnassigned ? {bg:'rgba(255,68,102,0.12)',text:'var(--accent-red)',  border:'rgba(255,68,102,0.35)', label:'Não atribuído'}
-                                   : isPartial    ? {bg:'rgba(255,140,0,0.12)', text:'var(--accent-gold)', border:'rgba(255,140,0,0.35)',  label:'Parcial'}
+                const badgeColor   = isUnassigned ? {bg:'rgba(251,113,133,0.12)',text:'var(--accent-red)',  border:'rgba(251,113,133,0.35)', label:'Não atribuído'}
+                                   : isPartial    ? {bg:'rgba(251,146,60,0.12)', text:'var(--accent-gold)', border:'rgba(251,146,60,0.35)',  label:'Parcial'}
                                    : null;
 
                 // Calcular atribuição manual total para mostrar resto
@@ -697,13 +697,13 @@ function LootPanel({ loot, mission, onUpdate }) {
                           {(loot.members||[]).map(m => {
                             const val = (item.assignments||{})[m.id] || 0;
                             return val > 0 ? (
-                              <span key={m.id} style={{fontSize:10,padding:'1px 6px',borderRadius:4,background:'rgba(0,212,255,0.08)',border:'1px solid rgba(0,212,255,0.15)',color:'var(--text-secondary)'}}>
+                              <span key={m.id} style={{fontSize:10,padding:'1px 6px',borderRadius:4,background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.15)',color:'var(--text-secondary)'}}>
                                 {m.name}: <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-primary)'}}>{item.type==='auec'?`${ptMoney(val)} aUEC`:`${val} un.`}</span>
                               </span>
                             ) : null;
                           })}
                           {isPartial && resto > 0 && (
-                            <span style={{fontSize:10,padding:'1px 6px',borderRadius:4,background:'rgba(255,140,0,0.08)',border:'1px solid rgba(255,140,0,0.2)',color:'var(--accent-gold)'}}>
+                            <span style={{fontSize:10,padding:'1px 6px',borderRadius:4,background:'rgba(251,146,60,0.08)',border:'1px solid rgba(251,146,60,0.2)',color:'var(--accent-gold)'}}>
                               sem dono: {item.type==='auec'?`${ptMoney(resto)} aUEC`:`${resto} un.`}
                             </span>
                           )}
@@ -757,14 +757,14 @@ function LootPanel({ loot, mission, onUpdate }) {
                     display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,
                     padding:'7px 10px',borderRadius:6,
                     background: isDelivered
-                      ? 'rgba(0,229,160,0.05)'
+                      ? 'rgba(52,211,153,0.05)'
                       : nothingToDeliver
                       ? 'rgba(255,255,255,0.02)'
-                      : 'rgba(255,140,0,0.05)',
+                      : 'rgba(251,146,60,0.05)',
                     border: `1px solid ${
-                      isDelivered       ? 'rgba(0,229,160,0.25)'
+                      isDelivered       ? 'rgba(52,211,153,0.25)'
                       : nothingToDeliver? 'var(--border-subtle)'
-                      : 'rgba(255,140,0,0.4)'}`,
+                      : 'rgba(251,146,60,0.4)'}`,
                     transition:'all 0.2s',
                   }}>
                     <div style={{flex:1,minWidth:0}}>
@@ -785,7 +785,7 @@ function LootPanel({ loot, mission, onUpdate }) {
                           {m.name}
                         </span>
                         {!isDelivered && !nothingToDeliver && (
-                          <span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'rgba(255,140,0,0.12)',color:'var(--accent-gold)',border:'1px solid rgba(255,140,0,0.3)',fontWeight:700}}>PENDENTE</span>
+                          <span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'rgba(251,146,60,0.12)',color:'var(--accent-gold)',border:'1px solid rgba(251,146,60,0.3)',fontWeight:700}}>PENDENTE</span>
                         )}
                       </div>
                       {recebeItems.length > 0 && (
@@ -793,8 +793,8 @@ function LootPanel({ loot, mission, onUpdate }) {
                           {recebeItems.map((r,ri) => (
                             <span key={ri} style={{
                               padding:'1px 6px',borderRadius:4,
-                              background: isDelivered ? 'rgba(0,229,160,0.06)' : 'rgba(255,255,255,0.05)',
-                              border: `1px solid ${isDelivered?'rgba(0,229,160,0.15)':'var(--border-subtle)'}`,
+                              background: isDelivered ? 'rgba(52,211,153,0.06)' : 'rgba(255,255,255,0.05)',
+                              border: `1px solid ${isDelivered?'rgba(52,211,153,0.15)':'var(--border-subtle)'}`,
                               color: isDelivered ? 'var(--text-muted)' : 'var(--text-secondary)',
                               fontFamily:'Share Tech Mono,monospace',
                               textDecoration: isDelivered ? 'line-through' : 'none',
@@ -811,9 +811,9 @@ function LootPanel({ loot, mission, onUpdate }) {
                       <button onClick={()=>toggleDelivered(m.id)} style={{
                         display:'flex',alignItems:'center',gap:4,
                         padding:'5px 10px',borderRadius:5,cursor:'pointer',
-                        fontFamily:'Rajdhani,sans-serif',fontSize:10,fontWeight:700,textTransform:'uppercase',
-                        background: isDelivered ? 'rgba(0,229,160,0.1)' : 'rgba(255,140,0,0.1)',
-                        border: `1px solid ${isDelivered ? 'rgba(0,229,160,0.3)' : 'rgba(255,140,0,0.4)'}`,
+                        fontFamily:'"Exo 2",sans-serif',fontSize:10,fontWeight:700,textTransform:'uppercase',
+                        background: isDelivered ? 'rgba(52,211,153,0.1)' : 'rgba(251,146,60,0.1)',
+                        border: `1px solid ${isDelivered ? 'rgba(52,211,153,0.3)' : 'rgba(251,146,60,0.4)'}`,
                         color: isDelivered ? 'var(--accent-green)' : 'var(--accent-gold)',
                         flexShrink:0,
                       }}>
@@ -829,7 +829,7 @@ function LootPanel({ loot, mission, onUpdate }) {
             </div>
 
             {deliveredCount === memberCount && memberCount > 0 && (
-              <div style={{marginTop:8,fontSize:11,color:'var(--accent-green)',textAlign:'center',padding:'5px',background:'rgba(0,229,160,0.06)',borderRadius:5,border:'1px solid rgba(0,229,160,0.15)',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
+              <div style={{marginTop:8,fontSize:11,color:'var(--accent-green)',textAlign:'center',padding:'5px',background:'rgba(52,211,153,0.06)',borderRadius:5,border:'1px solid rgba(52,211,153,0.15)',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
                 <CheckCircle2 size={12}/> Tudo entregue para todos os tripulantes
               </div>
             )}
@@ -859,20 +859,20 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
 
   return (
     <div style={{
-      background:mission.status==='Completed'?'rgba(0,229,160,0.04)':mission.status==='Failed'?'rgba(255,68,102,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':'var(--bg-card)',
-      border:`1px solid ${mission.status==='Completed'?'rgba(0,229,160,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':'var(--border-subtle)'}`,
+      background:mission.status==='Completed'?'rgba(52,211,153,0.04)':mission.status==='Failed'?'rgba(251,113,133,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':'var(--bg-card)',
+      border:`1px solid ${mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':'var(--border-subtle)'}`,
       borderRadius:8,overflow:'hidden',marginBottom:6,
     }}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 13px',cursor:'pointer'}} onClick={()=>setExpandired(!expanded)}>
         <TipoIcon size={15} style={{color:DIFF_COLORS[mission.difficulty]||'var(--text-muted)',flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:2}}>
-            <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)'}}>{mission.title}</span>
+            <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)'}}>{mission.title}</span>
             <span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:3,background:`${STATUS_COLORS[mission.status]||'var(--text-muted)'}18`,color:STATUS_COLORS[mission.status]||'var(--text-muted)',border:`1px solid ${STATUS_COLORS[mission.status]||'var(--text-muted)'}33`}}>
               {mission.status==='Bugged'?'🐛 BUGGED':mission.status}
             </span>
             <span style={{fontSize:10,color:DIFF_COLORS[mission.difficulty],fontWeight:600}}>{mission.difficulty}</span>
-            {mission.loot&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(0,229,160,0.1)',color:'var(--accent-green)',border:'1px solid rgba(0,229,160,0.25)'}}>🎁 Loot</span>}
+            {mission.loot&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)'}}>🎁 Loot</span>}
           </div>
           <div style={{display:'flex',gap:10,fontSize:10,color:'var(--text-muted)',flexWrap:'wrap'}}>
             <span>{mission.type}</span>
@@ -891,22 +891,22 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
           )}
           <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
             {mission.status==='Active'&&(
-              <button onClick={running?stopClock:startClock} style={{display:'flex',alignItems:'center',gap:3,padding:'3px 7px',borderRadius:4,border:`1px solid ${running?'rgba(255,68,102,0.4)':'rgba(0,229,160,0.3)'}`,background:running?'rgba(255,68,102,0.08)':'rgba(0,229,160,0.08)',color:running?'var(--accent-red)':'var(--accent-green)',cursor:'pointer',fontSize:10,fontWeight:700}}>
+              <button onClick={running?stopClock:startClock} style={{display:'flex',alignItems:'center',gap:3,padding:'3px 7px',borderRadius:4,border:`1px solid ${running?'rgba(251,113,133,0.4)':'rgba(52,211,153,0.3)'}`,background:running?'rgba(251,113,133,0.08)':'rgba(52,211,153,0.08)',color:running?'var(--accent-red)':'var(--accent-green)',cursor:'pointer',fontSize:10,fontWeight:700}}>
                 {running?<><Square size={9}/>STOP</>:<><Play size={9}/>START</>}
               </button>
             )}
-            <select style={{padding:'2px 18px 2px 5px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:STATUS_COLORS[mission.status]||'var(--text-muted)',fontFamily:'Rajdhani,sans-serif',fontSize:10,outline:'none',cursor:'pointer',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 3px center'}}
+            <select style={{padding:'2px 18px 2px 5px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:STATUS_COLORS[mission.status]||'var(--text-muted)',fontFamily:'"Exo 2",sans-serif',fontSize:10,outline:'none',cursor:'pointer',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 3px center'}}
               value={mission.status} onChange={e=>{e.stopPropagation();onStatusChange(mission.id,e.target.value);}}>
               {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
-            <button onClick={e=>{e.stopPropagation();onEdit(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid var(--border-normal)',background:'rgba(0,212,255,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={10}/></button>
+            <button onClick={e=>{e.stopPropagation();onEdit(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={10}/></button>
             {delConf?(
               <div style={{display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
-                <button onClick={()=>onDelete(mission.id)} style={{padding:'2px 6px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
+                <button onClick={()=>onDelete(mission.id)} style={{padding:'2px 6px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
                 <button onClick={()=>setDelConf(false)} style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>Não</button>
               </div>
             ):(
-              <button onClick={e=>{e.stopPropagation();setDelConf(true);}} style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Trash2 size={10}/></button>
+              <button onClick={e=>{e.stopPropagation();setDelConf(true);}} style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Trash2 size={10}/></button>
             )}
             {expanded?<ChevronUp size={13} style={{color:'var(--text-muted)'}}/>:<ChevronDown size={13} style={{color:'var(--text-muted)'}}/>}
           </div>
@@ -957,7 +957,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
   if (compact) return (
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'var(--bg-panel)',borderRadius:7,border:'1px solid var(--border-subtle)',marginBottom:10}}>
       <div style={{flex:1}}>
-        <div style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.04em'}}>{ptData(date)}</div>
+        <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.04em'}}>{ptData(date)}</div>
         <div style={{fontSize:10,color:'var(--text-muted)',marginTop:1}}>{total} missões · {done} concluídas{active>0?` · ${active} ativas`:''}</div>
       </div>
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -965,7 +965,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
         {failed>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>❌ {ptMoney(failed)}</span>}
         {bugged>0&&<span style={{fontSize:11,color:'#e17055',fontFamily:'Share Tech Mono,monospace'}}>🐛 {ptMoney(bugged)}</span>}
         {lost>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💸 -{ptMoney(lost)}</span>}
-        <span style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)'}}>
+        <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)'}}>
           NET {isGood?'+':''}{ptMoney(net)}
         </span>
       </div>
@@ -977,7 +977,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <Calendar size={13} style={{color:'var(--accent-primary)'}}/>
-          <span style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.04em'}}>{ptData(date)}</span>
+          <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.04em'}}>{ptData(date)}</span>
         </div>
         <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
           <span style={{fontSize:11,color:'var(--text-muted)'}}>{total} missão(ões)</span>
@@ -985,7 +985,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
           {failed>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>❌ -{ptMoney(failed)}</span>}
           {bugged>0&&<span style={{fontSize:11,color:'#e17055',fontFamily:'Share Tech Mono,monospace'}}>🐛 -{ptMoney(bugged)}</span>}
           {lost>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💸 -{ptMoney(lost)}</span>}
-          <span style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)',marginLeft:4}}>
+          <span style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)',marginLeft:4}}>
             NET: {isGood?'+':''}{ptMoney(net)} aUEC
           </span>
         </div>
@@ -1007,7 +1007,7 @@ function BarChart({ data, valueKey, labelKey, color='var(--accent-primary)', hei
         const isNeg=v<0;
         return (
           <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
-            <div title={`${prefix}${ptMoney(Math.abs(v))}${suffix}`} style={{width:'100%',height:barH,borderRadius:'3px 3px 0 0',background:isNeg?'var(--accent-red)':color,transition:'height 0.3s',minHeight:2,boxShadow:isNeg?'0 0 5px rgba(255,68,102,0.3)':`0 0 5px ${color}44`}}/>
+            <div title={`${prefix}${ptMoney(Math.abs(v))}${suffix}`} style={{width:'100%',height:barH,borderRadius:'3px 3px 0 0',background:isNeg?'var(--accent-red)':color,transition:'height 0.3s',minHeight:2,boxShadow:isNeg?'0 0 5px rgba(251,113,133,0.3)':`0 0 5px ${color}44`}}/>
             <div style={{fontSize:8,color:'var(--text-muted)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'100%'}}>{String(d[labelKey]||'').slice(0,8)}</div>
           </div>
         );
@@ -1027,7 +1027,7 @@ function DonutStat({ value, total, label, color }) {
         <circle cx={32} cy={32} r={r} fill="none" stroke={color} strokeWidth={6}
           strokeDasharray={circ} strokeDashoffset={defset}
           strokeLinecap="round" transform="rotate(-90 32 32)" style={{transition:'stroke-dashoffset 0.6s ease'}}/>
-        <text x={32} y={36} textAnchor="middle" fill="var(--text-primary)" fontSize={13} fontWeight={700} fontFamily="Orbitron,monospace">{value}</text>
+        <text x={32} y={36} textAnchor="middle" fill="var(--text-primary)" fontSize={13} fontWeight={700} fontFamily="Michroma,sans-serif">{value}</text>
       </svg>
       <div style={{fontSize:10,color:'var(--text-muted)',textAlign:'center',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em'}}>{label}</div>
     </div>
@@ -1042,14 +1042,14 @@ function DailyLossPanel({ losses, onAdd, onRemove, targetDate }) {
   const [open,setAbrir]=useState(false);
   const [delConf,setDelConf]=useState(null);
   const dayLosses=losses.filter(l=>l.date===targetDate);
-  const IS={padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
+  const IS={padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
   return (
-    <div style={{background:'var(--bg-card)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:8,marginBottom:12}}>
+    <div style={{background:'var(--bg-card)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:8,marginBottom:12}}>
       <button onClick={()=>setAbrir(!open)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',background:'none',border:'none',cursor:'pointer',color:'var(--text-primary)'}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <TrendingDown size={14} style={{color:'var(--accent-red)'}}/>
-          <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em'}}>💸 Perdas do Dia</span>
-          {dayLosses.length>0&&<span style={{fontSize:10,background:'rgba(255,68,102,0.1)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:10,padding:'1px 7px',color:'var(--accent-red)',fontWeight:700}}>{dayLosses.length} · -{ptMoney(dayLosses.reduce((a,l)=>a+l.amount,0))} aUEC</span>}
+          <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em'}}>💸 Perdas do Dia</span>
+          {dayLosses.length>0&&<span style={{fontSize:10,background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:10,padding:'1px 7px',color:'var(--accent-red)',fontWeight:700}}>{dayLosses.length} · -{ptMoney(dayLosses.reduce((a,l)=>a+l.amount,0))} aUEC</span>}
         </div>
         {open?<ChevronUp size={13} style={{color:'var(--text-muted)'}}/>:<ChevronDown size={13} style={{color:'var(--text-muted)'}}/>}
       </button>
@@ -1062,21 +1062,21 @@ function DailyLossPanel({ losses, onAdd, onRemove, targetDate }) {
               onBlur={()=>setAmtDisplay(amount>0?ptMoney(amount):'')}
               placeholder="ex: 500.000"/>
             <input style={{...IS,flex:1,minWidth:120}} value={note} onChange={e=>setNote(e.target.value)} placeholder="O que perdeu? Ex: Perdi cargo, compra..."/>
-            <button onClick={()=>{if(amount>0){onAdd(amount,note,targetDate);setQuantidade(0);setAmtDisplay('');setNote('');}}} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(255,68,102,0.1)',border:'1px solid rgba(255,68,102,0.3)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+            <button onClick={()=>{if(amount>0){onAdd(amount,note,targetDate);setQuantidade(0);setAmtDisplay('');setNote('');}}} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.3)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
               <Plus size={12}/> Registrar
             </button>
           </div>
           {dayLosses.map(l=>(
-            <div key={l.id} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',background:'rgba(255,68,102,0.04)',border:'1px solid rgba(255,68,102,0.1)',borderRadius:5,marginBottom:3}}>
+            <div key={l.id} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 8px',background:'rgba(251,113,133,0.04)',border:'1px solid rgba(251,113,133,0.1)',borderRadius:5,marginBottom:3}}>
               <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-red)',fontWeight:700,flexShrink:0}}>{ptMoney(l.amount)} aUEC</span>
               <span style={{flex:1,fontSize:11,color:'var(--text-secondary)'}}>{l.note||'—'}</span>
               {delConf===l.id?(
                 <div style={{display:'flex',gap:4}}>
-                  <button onClick={()=>{onRemove(l.id);setDelConf(null);}} style={{padding:'2px 6px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
+                  <button onClick={()=>{onRemove(l.id);setDelConf(null);}} style={{padding:'2px 6px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
                   <button onClick={()=>setDelConf(null)} style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>Não</button>
                 </div>
               ):(
-                <button onClick={()=>setDelConf(l.id)} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer'}}><Trash2 size={10}/></button>
+                <button onClick={()=>setDelConf(l.id)} style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer'}}><Trash2 size={10}/></button>
               )}
             </div>
           ))}
@@ -1109,21 +1109,21 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
   return (
     <div style={{
       background:'var(--bg-card)',
-      border:'1px solid rgba(0,212,255,0.35)',
+      border:'1px solid rgba(56,189,248,0.35)',
       borderRadius:10,
       padding:'14px 16px',
       marginBottom:12,
-      boxShadow:'0 0 20px rgba(0,212,255,0.08)',
+      boxShadow:'0 0 20px rgba(56,189,248,0.08)',
     }}>
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <div style={{width:7,height:7,borderRadius:'50%',background:'var(--accent-primary)',boxShadow:'0 0 6px var(--accent-primary)'}}/>
-          <span style={{fontFamily:'Orbitron,monospace',fontSize:12,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>
+          <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>
             {sel.length} MISSÃO{sel.length!==1?'S':''} SELECIONADA{sel.length!==1?'S':''}
           </span>
         </div>
-        <button onClick={onClear} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+        <button onClick={onClear} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
           <X size={10}/> Limpar
         </button>
       </div>
@@ -1137,7 +1137,7 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
           { label:'Falhas + Bugs',    value: failedN + buggedN, color: failedN+buggedN>0?'var(--accent-red)':'var(--text-muted)', sub: activeN > 0 ? `${activeN} ativa${activeN!==1?'s':''}` : null },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:7,padding:'9px 11px',textAlign:'center'}}>
-            <div style={{fontFamily:'Orbitron,monospace',fontSize:15,fontWeight:800,color,marginBottom:2}}>{value}</div>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:15,fontWeight:800,color,marginBottom:2}}>{value}</div>
             <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{label}</div>
             {sub && <div style={{fontSize:9,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{sub}</div>}
           </div>
@@ -1153,7 +1153,7 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
               const Icon = TYPE_ICONS[type] || Crosshair;
               const typeReward = sel.filter(m=>m.type===type&&m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
               return (
-                <div key={type} style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:20,fontSize:11}}>
+                <div key={type} style={{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.15)',borderRadius:20,fontSize:11}}>
                   <Icon size={10} style={{color:'var(--accent-primary)'}}/>
                   <span style={{fontWeight:700,color:'var(--text-primary)'}}>{type}</span>
                   <span style={{color:'var(--text-muted)'}}>×{count}</span>
@@ -1175,7 +1175,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
   const [expandedKey, setExpandedKey] = useState(null);
   const [delConf, setDelConf] = useState(null); // id da missão aguardando confirmação de delete
 
-  const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none'};
+  const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
   const SS = {...IS,appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center',paddingRight:26};
 
   // Agrupar missões por título+tipo+facção — a "chave" do template
@@ -1222,13 +1222,13 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
-      <div style={{background:'var(--bg-card)',border:'1px solid rgba(0,212,255,0.3)',borderRadius:12,padding:20,width:'100%',maxWidth:580,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:12,padding:20,width:'100%',maxWidth:580,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
 
         {/* Header */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <RefreshCw size={15} style={{color:'var(--accent-primary)'}}/>
-            <span style={{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>REAPROVEITAR MISSÃO</span>
+            <span style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>REAPROVEITAR MISSÃO</span>
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)'}}><X size={15}/></button>
         </div>
@@ -1274,13 +1274,13 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                         flex:1,textAlign:'left',padding:'10px 12px',background:'none',border:'none',
                         cursor:'pointer',display:'block',
                       }}
-                      onMouseEnter={e=>e.currentTarget.closest('div[style]').style.borderColor='rgba(0,212,255,0.4)'}
+                      onMouseEnter={e=>e.currentTarget.closest('div[style]').style.borderColor='rgba(56,189,248,0.4)'}
                       onMouseLeave={e=>e.currentTarget.closest('div[style]').style.borderColor='var(--border-subtle)'}>
                         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
                           <Icon size={13} style={{color:DIFF_COLORS[g.difficulty]||'var(--text-muted)',flexShrink:0}}/>
-                          <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</span>
+                          <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</span>
                           {/* Contador de vezes feita */}
-                          <span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.2)',color:'var(--accent-primary)',fontWeight:700,flexShrink:0}}>
+                          <span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.2)',color:'var(--accent-primary)',fontWeight:700,flexShrink:0}}>
                             ×{g.count}
                           </span>
                           {g.best.reward>0&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0}}>{ptMoney(g.best.reward)} aUEC</span>}
@@ -1299,7 +1299,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                         <button
                           onClick={()=>setExpandedKey(isExpanded ? null : g.key)}
                           title={`${g.variants.length} variantes com recompensas/locais diferentes`}
-                          style={{padding:'10px 12px',background:'none',border:'none',borderLeft:'1px solid var(--border-subtle)',cursor:'pointer',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,flexShrink:0,fontSize:10,fontFamily:'Rajdhani,sans-serif',fontWeight:700}}>
+                          style={{padding:'10px 12px',background:'none',border:'none',borderLeft:'1px solid var(--border-subtle)',cursor:'pointer',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4,flexShrink:0,fontSize:10,fontFamily:'"Exo 2",sans-serif',fontWeight:700}}>
                           <span style={{fontSize:9,color:'var(--accent-gold)'}}>{g.variants.length} var.</span>
                           {isExpanded ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
                         </button>
@@ -1317,7 +1317,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                                   .map(m => m.id);
                                 idsNoGrupo.forEach(id => onDelete(id));
                                 setDelConf(null);
-                              }} style={{padding:'2px 6px',background:'rgba(255,68,102,0.2)',border:'1px solid rgba(255,68,102,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'Rajdhani,sans-serif'}}>
+                              }} style={{padding:'2px 6px',background:'rgba(251,113,133,0.2)',border:'1px solid rgba(251,113,133,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif'}}>
                                 Sim
                               </button>
                               <button onClick={e=>{e.stopPropagation();setDelConf(null);}} style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>
@@ -1327,7 +1327,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                           </div>
                         ) : (
                           <button onClick={e=>{e.stopPropagation();setDelConf(g.key);}} title="Apagar todas as missões deste grupo"
-                            style={{width:26,height:26,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            style={{width:26,height:26,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
                             <Trash2 size={10}/>
                           </button>
                         )}
@@ -1347,7 +1347,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                               border:'1px solid var(--border-subtle)',borderRadius:6,cursor:'pointer',
                               display:'flex',alignItems:'center',gap:8,
                             }}
-                            onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(0,229,160,0.4)';e.currentTarget.style.background='rgba(0,229,160,0.06)';}}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(52,211,153,0.4)';e.currentTarget.style.background='rgba(52,211,153,0.06)';}}
                             onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.background='var(--bg-base)';}}>
                               <span style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',flexShrink:0}}>#{i+1}</span>
                               <div style={{flex:1,minWidth:0}}>
@@ -1365,13 +1365,13 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
                             {delConf === v.id ? (
                               <div style={{display:'flex',gap:3,flexShrink:0}}>
                                 <button onClick={e=>{e.stopPropagation();onDelete(v.id);setDelConf(null);}}
-                                  style={{padding:'2px 6px',background:'rgba(255,68,102,0.2)',border:'1px solid rgba(255,68,102,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
+                                  style={{padding:'2px 6px',background:'rgba(251,113,133,0.2)',border:'1px solid rgba(251,113,133,0.5)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
                                 <button onClick={e=>{e.stopPropagation();setDelConf(null);}}
                                   style={{padding:'2px 6px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>Não</button>
                               </div>
                             ) : (
                               <button onClick={e=>{e.stopPropagation();setDelConf(v.id);}} title="Apagar esta variante"
-                                style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(255,68,102,0.2)',background:'rgba(255,68,102,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                                 <Trash2 size={9}/>
                               </button>
                             )}
@@ -1448,7 +1448,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const allSelected = filtered.length > 0 && selected.size === filtered.length;
   const someSelected = selected.size > 0;
 
-  const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
+  const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
 
   return (
     <div>
@@ -1472,11 +1472,11 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
       <div style={{display:'flex',gap:7,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
         {!showForm&&!editM&&(
           <>
-            <button onClick={()=>{setShowForm(true);setEditM(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:7,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>
+            <button onClick={()=>{setShowForm(true);setEditM(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:7,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>
               <Plus size={14}/> Nova Missão
             </button>
             {missions.length > 0 && (
-              <button onClick={()=>setShowReuse(true)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.25)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>
+              <button onClick={()=>setShowReuse(true)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>
                 <RefreshCw size={13}/> Reaproveitar
               </button>
             )}
@@ -1488,7 +1488,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
         </select>
         {/* Checkbox selecionar tudo */}
         {filtered.length > 0 && (
-          <button onClick={toggleSelectAll} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:someSelected?'rgba(0,212,255,0.08)':'transparent',border:`1px solid ${someSelected?'rgba(0,212,255,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:someSelected?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase'}}>
+          <button onClick={toggleSelectAll} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:someSelected?'rgba(56,189,248,0.08)':'transparent',border:`1px solid ${someSelected?'rgba(56,189,248,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:someSelected?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
             <div style={{width:13,height:13,borderRadius:3,border:`2px solid ${allSelected?'var(--accent-primary)':'var(--text-muted)'}`,background:allSelected?'var(--accent-primary)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
               {allSelected && <div style={{width:6,height:6,background:'var(--bg-base)',borderRadius:1}}/>}
             </div>
@@ -1548,7 +1548,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
   const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>localDateStr(m.created_at)===selDay):[],[selDay,missions]);
   const selectedDayLosses=useMemo(()=>selDay?losses.filter(l=>l.date===selDay):[],[selDay,losses]);
 
-  const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
+  const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
 
   return (
     <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16,height:'100%'}}>
@@ -1580,13 +1580,13 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
               return (
                 <button key={date} onClick={()=>setSelDay(isSelected?null:date)} style={{
                   width:'100%',textAlign:'left',padding:'9px 11px',marginBottom:5,
-                  background:isSelected?'rgba(0,212,255,0.1)':'var(--bg-card)',
+                  background:isSelected?'rgba(56,189,248,0.1)':'var(--bg-card)',
                   border:`1px solid ${isSelected?'var(--border-bright)':'var(--border-subtle)'}`,
                   borderRadius:7,cursor:'pointer',transition:'all 0.15s',
                 }}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                    <span style={{fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,color:isSelected?'var(--accent-primary)':'var(--text-primary)'}}>{ptShortData(date)}</span>
-                    <span style={{fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:800,color:net>=0?'var(--accent-green)':'var(--accent-red)'}}>
+                    <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,color:isSelected?'var(--accent-primary)':'var(--text-primary)'}}>{ptShortData(date)}</span>
+                    <span style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:800,color:net>=0?'var(--accent-green)':'var(--accent-red)'}}>
                       {net>=0?'+':''}{ptMoney(net)}
                     </span>
                   </div>
@@ -1611,7 +1611,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
           <div>
             <DaySummary date={selDay} missions={selectedDayMissions} losses={selectedDayLosses}/>
             {selectedDayLosses.length>0&&(
-              <div style={{marginBottom:12,padding:'10px 14px',background:'rgba(255,68,102,0.04)',border:'1px solid rgba(255,68,102,0.15)',borderRadius:8}}>
+              <div style={{marginBottom:12,padding:'10px 14px',background:'rgba(251,113,133,0.04)',border:'1px solid rgba(251,113,133,0.15)',borderRadius:8}}>
                 <div style={{fontSize:10,fontWeight:700,color:'var(--accent-red)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>💸 Perdas Manuais do Dia</div>
                 {selectedDayLosses.map(l=>(
                   <div key={l.id} style={{display:'flex',gap:8,padding:'3px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11}}>
@@ -1624,16 +1624,16 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
             {(selectedDayMissions.some(m=>m.status==='Failed')||selectedDayMissions.some(m=>m.status==='Bugged'))&&(
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
                 {selectedDayMissions.filter(m=>m.status==='Failed').length>0&&(
-                  <div style={{padding:'10px',background:'rgba(255,68,102,0.06)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:7}}>
+                  <div style={{padding:'10px',background:'rgba(251,113,133,0.06)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:7}}>
                     <div style={{fontSize:10,fontWeight:700,color:'var(--accent-red)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>❌ Falhas (sua responsabilidade)</div>
-                    <div style={{fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:'var(--accent-red)'}}>{ptMoney(selectedDayMissions.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0))} aUEC</div>
+                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:'var(--accent-red)'}}>{ptMoney(selectedDayMissions.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0))} aUEC</div>
                     <div style={{fontSize:10,color:'var(--text-muted)',marginTop:3}}>{selectedDayMissions.filter(m=>m.status==='Failed').length} missão(ões) falhada(s)</div>
                   </div>
                 )}
                 {selectedDayMissions.filter(m=>m.status==='Bugged').length>0&&(
                   <div style={{padding:'10px',background:'rgba(225,112,85,0.06)',border:'1px solid rgba(225,112,85,0.2)',borderRadius:7}}>
                     <div style={{fontSize:10,fontWeight:700,color:'#e17055',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>🐛 Bugadas (bug do jogo)</div>
-                    <div style={{fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:'#e17055'}}>{ptMoney(selectedDayMissions.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0))} aUEC</div>
+                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:'#e17055'}}>{ptMoney(selectedDayMissions.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0))} aUEC</div>
                     <div style={{fontSize:10,color:'var(--text-muted)',marginTop:3}}>{selectedDayMissions.filter(m=>m.status==='Bugged').length} missão(ões) bugada(s)</div>
                   </div>
                 )}
@@ -1705,7 +1705,7 @@ function StatsTab({ missions, losses }) {
         {[
           {l:'Ganho Total',       v:`${ptMoney(totalEarned)} aUEC`, c:'var(--accent-green)',   s:'missões concluídas'},
           {l:'Perdas Manuais',    v:`${ptMoney(totalLost)} aUEC`,   c:'var(--accent-red)',     s:'fora de missões'},
-          {l:'Falhas (não ganho)',v:`${ptMoney(totalFailed)} aUEC`, c:'#ff8c00',               s:'sua responsabilidade'},
+          {l:'Falhas (não ganho)',v:`${ptMoney(totalFailed)} aUEC`, c:'#fb923c',               s:'sua responsabilidade'},
           {l:'Bugadas (perdido)', v:`${ptMoney(totalBugged)} aUEC`, c:'#e17055',               s:'bug do jogo'},
           {l:'Net Total',         v:`${netTotal>=0?'+':''}${ptMoney(netTotal)} aUEC`, c:netTotal>=0?'var(--accent-green)':'var(--accent-red)', s:'ganhos - perdas'},
           {l:'Taxa de Sucesso',   v:`${successRate}%`,              c:'var(--accent-primary)', s:`${completedN} de ${inAlcance.length}`},
@@ -1713,7 +1713,7 @@ function StatsTab({ missions, losses }) {
           {l:'Tempo Médio',       v:avgMin>0?`${avgMin} min`:'—',   c:'var(--accent-primary)', s:'por missão cronometrada'},
         ].map(({l,v,c,s})=>(
           <div key={l} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px 13px'}}>
-            <div style={{fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:c,marginBottom:2}}>{v}</div>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:c,marginBottom:2}}>{v}</div>
             <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
             <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{s}</div>
           </div>
@@ -1764,14 +1764,14 @@ function StatsTab({ missions, losses }) {
         <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px'}}>
           <div className="modal-section-title">⚠️ Recompensas Perdidas — Falha vs Bug</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            <div style={{padding:'11px',background:'rgba(255,68,102,0.06)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:7}}>
+            <div style={{padding:'11px',background:'rgba(251,113,133,0.06)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:7}}>
               <div style={{fontSize:10,fontWeight:700,color:'var(--accent-red)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>❌ Falhadas (sua responsabilidade)</div>
-              <div style={{fontFamily:'Orbitron,monospace',fontSize:18,fontWeight:800,color:'var(--accent-red)'}}>{ptMoney(totalFailed)} aUEC</div>
+              <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color:'var(--accent-red)'}}>{ptMoney(totalFailed)} aUEC</div>
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3}}>{inAlcance.filter(m=>m.status==='Failed').length} missão(ões) · recompensas não ganhas</div>
             </div>
             <div style={{padding:'11px',background:'rgba(225,112,85,0.06)',border:'1px solid rgba(225,112,85,0.2)',borderRadius:7}}>
               <div style={{fontSize:10,fontWeight:700,color:'#e17055',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>🐛 Bugadas (bug do jogo)</div>
-              <div style={{fontFamily:'Orbitron,monospace',fontSize:18,fontWeight:800,color:'#e17055'}}>{ptMoney(totalBugged)} aUEC</div>
+              <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color:'#e17055'}}>{ptMoney(totalBugged)} aUEC</div>
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:3}}>{inAlcance.filter(m=>m.status==='Bugged').length} missão(ões) · perdas por bug técnico</div>
             </div>
           </div>
@@ -1877,12 +1877,12 @@ export default function MissionTrackerPage() {
             background:'transparent',border:'none',
             borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`,
             color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)',
-            fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,
+            fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,
             letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',transition:'all 0.2s',
           }}>
             <t.icon size={13}/>
             {t.label}
-            {t.badge&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:10,padding:'1px 6px',background:activeTab===t.id?'rgba(0,212,255,0.15)':'rgba(255,255,255,0.05)',borderRadius:8}}>{t.badge}</span>}
+            {t.badge&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:10,padding:'1px 6px',background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)',borderRadius:8}}>{t.badge}</span>}
           </button>
         ))}
       </div>

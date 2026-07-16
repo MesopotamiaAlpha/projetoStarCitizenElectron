@@ -59,20 +59,20 @@ function InventoryModal({ itemName, invQty, neededQty, onUseInventory, onSkip })
       <div style={{ background:'var(--bg-card)', border:'1px solid rgba(255,200,0,0.4)', borderRadius:12, padding:22, width:'100%', maxWidth:440, boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
           <Archive size={16} style={{ color:'var(--accent-gold)' }}/>
-          <span style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-gold)', letterSpacing:'0.06em' }}>ITEM ENCONTRADO NO INVENTÁRIO</span>
+          <span style={{ fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, color:'var(--accent-gold)', letterSpacing:'0.06em' }}>ITEM ENCONTRADO NO INVENTÁRIO</span>
         </div>
         <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:16, lineHeight:1.7 }}>
           Você tem <strong style={{ color:'var(--text-primary)' }}>{invQty}</strong> unidade{invQty!==1?'s':''} de <strong style={{ color:'var(--accent-gold)' }}>{itemName}</strong> no seu inventário.<br/>
           Deseja considerar este estoque no acompanhamento desta missão?
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
-          <div style={{ padding:'10px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:7, textAlign:'center' }}>
+          <div style={{ padding:'10px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:7, textAlign:'center' }}>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-green)', textTransform:'uppercase', marginBottom:4 }}>Usar do Inventário</div>
             <div style={{ fontFamily:'Share Tech Mono,monospace', fontSize:13, color:'var(--text-primary)' }}>
               {invQty} disponível → considera como coletado
             </div>
           </div>
-          <div style={{ padding:'10px', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:7, textAlign:'center' }}>
+          <div style={{ padding:'10px', background:'rgba(56,189,248,0.06)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:7, textAlign:'center' }}>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', marginBottom:4 }}>Não Considerar</div>
             <div style={{ fontFamily:'Share Tech Mono,monospace', fontSize:13, color:'var(--text-primary)' }}>
               Começa do zero (0/{neededQty})
@@ -80,10 +80,10 @@ function InventoryModal({ itemName, invQty, neededQty, onUseInventory, onSkip })
           </div>
         </div>
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onSkip} style={{ padding:'7px 16px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onSkip} style={{ padding:'7px 16px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             Não Considerar
           </button>
-          <button onClick={onUseInventory} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onUseInventory} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <CheckCircle2 size={11}/> Usar do Inventário
           </button>
         </div>
@@ -102,7 +102,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
   const [showSugg, setShowSugg] = useState(false);
   const [error,    setError]    = useState('');
 
-  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' };
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:3 };
 
@@ -137,7 +137,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
   }
 
   return (
-    <div style={{ padding:'10px 12px', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:8, marginBottom:8 }}>
+    <div style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:8, marginBottom:8 }}>
       <div style={{ display:'grid', gridTemplateColumns:'2fr 80px 70px 1fr', gap:7, marginBottom:7, alignItems:'end' }}>
         {/* Nome com autocomplete */}
         <div style={{ position:'relative' }}>
@@ -153,7 +153,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
               </div>
               {suggs.map(s => (
                 <button key={s.id} onMouseDown={()=>handleSelectSugg(s)} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', padding:'6px 10px', background:'none', border:'none', borderBottom:'1px solid var(--border-subtle)', color:'var(--text-secondary)', cursor:'pointer', fontSize:11, textAlign:'left' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,212,255,0.07)'}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(56,189,248,0.07)'}
                   onMouseLeave={e=>e.currentTarget.style.background='none'}>
                   <span style={{ fontWeight:700, color:'var(--text-primary)' }}>{s.name}</span>
                   <span style={{ fontSize:10, color:'var(--text-muted)' }}>{s.category||''} {s.size?`S${s.size}`:''}</span>
@@ -179,8 +179,8 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
       </div>
       {error && <div style={{ fontSize:10, color:'var(--accent-red)', marginBottom:6 }}>{error}</div>}
       <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-        <button onClick={onCancel} style={{ padding:'5px 12px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:10, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
-        <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 12px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:5, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:10, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+        <button onClick={onCancel} style={{ padding:'5px 12px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:10, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 12px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:5, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:10, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
           <Save size={10}/> {initial ? 'Salvar' : 'Adicionar'}
         </button>
       </div>
@@ -223,8 +223,8 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
   return (
     <div style={{
       padding:'8px 12px', borderRadius:7,
-      background: isDone ? 'rgba(0,229,160,0.05)' : 'rgba(255,255,255,0.02)',
-      border: `1px solid ${isDone ? 'rgba(0,229,160,0.25)' : 'var(--border-subtle)'}`,
+      background: isDone ? 'rgba(52,211,153,0.05)' : 'rgba(255,255,255,0.02)',
+      border: `1px solid ${isDone ? 'rgba(52,211,153,0.25)' : 'var(--border-subtle)'}`,
       marginBottom:5,
     }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: isDone ? 0 : 5 }}>
@@ -238,7 +238,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
             <span style={{ fontSize:12, fontWeight:700, color: isDone ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: isDone ? 'line-through' : 'none' }}>
               {item.name}
             </span>
-            {fromInv > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(0,229,160,0.1)', color:'var(--accent-green)', border:'1px solid rgba(0,229,160,0.2)', fontWeight:700 }}>📦 {fromInv} do inv.</span>}
+            {fromInv > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', border:'1px solid rgba(52,211,153,0.2)', fontWeight:700 }}>📦 {fromInv} do inv.</span>}
             {item.notes && <span style={{ fontSize:10, color:'var(--text-muted)', fontStyle:'italic' }}>{item.notes}</span>}
           </div>
           {!isDone && (
@@ -252,21 +252,21 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
         </div>
         {/* Quantidade */}
         <div style={{ textAlign:'right', flexShrink:0 }}>
-          <span style={{ fontFamily:'Orbitron,monospace', fontSize:14, fontWeight:800, color: isDone ? 'var(--accent-green)' : 'var(--accent-primary)' }}>{qty}</span>
+          <span style={{ fontFamily:'Michroma,sans-serif', fontSize:14, fontWeight:800, color: isDone ? 'var(--accent-green)' : 'var(--accent-primary)' }}>{qty}</span>
           <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, color:'var(--text-muted)' }}>/{needed} {item.unit}</span>
         </div>
         {/* Ações */}
         <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-          <button onClick={()=>setEditMode(true)} style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(0,212,255,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <button onClick={()=>setEditMode(true)} style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <Edit3 size={10}/>
           </button>
           {delConf ? (
             <>
-              <button onClick={()=>{onDelete(missionId, item.id);setDelConf(false);}} style={{ padding:'2px 6px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+              <button onClick={()=>{onDelete(missionId, item.id);setDelConf(false);}} style={{ padding:'2px 6px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
               <button onClick={()=>setDelConf(false)} style={{ padding:'2px 6px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
             </>
           ) : (
-            <button onClick={()=>setDelConf(true)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <button onClick={()=>setDelConf(true)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Trash2 size={10}/>
             </button>
           )}
@@ -277,20 +277,20 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
       {!isDone && (
         <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:24 }}>
           <div style={{ display:'flex', borderRadius:4, overflow:'hidden', border:'1px solid var(--border-subtle)' }}>
-            <button onClick={()=>setAdjMode('add')} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(0,229,160,0.15)':'transparent', border:'none', borderRight:'1px solid var(--border-subtle)', color:adjMode==='add'?'var(--accent-green)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif' }}>+ Coletei</button>
-            <button onClick={()=>setAdjMode('sub')} style={{ padding:'3px 8px', background:adjMode==='sub'?'rgba(255,68,102,0.12)':'transparent', border:'none', color:adjMode==='sub'?'var(--accent-red)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif' }}>− Remover</button>
+            <button onClick={()=>setAdjMode('add')} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.15)':'transparent', border:'none', borderRight:'1px solid var(--border-subtle)', color:adjMode==='add'?'var(--accent-green)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>+ Coletei</button>
+            <button onClick={()=>setAdjMode('sub')} style={{ padding:'3px 8px', background:adjMode==='sub'?'rgba(251,113,133,0.12)':'transparent', border:'none', color:adjMode==='sub'?'var(--accent-red)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>− Remover</button>
           </div>
           {[1,5,10].map(n=>(
             <button key={n} onClick={()=>{
               const newQty = adjMode==='add' ? Math.min(needed,qty+n) : Math.max(0,qty-n);
               onUpdate(missionId, {...item, collected:newQty});
-            }} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(0,229,160,0.07)':'rgba(255,68,102,0.07)', border:`1px solid ${adjMode==='add'?'rgba(0,229,160,0.2)':'rgba(255,68,102,0.2)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace' }}>
+            }} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.07)':'rgba(251,113,133,0.07)', border:`1px solid ${adjMode==='add'?'rgba(52,211,153,0.2)':'rgba(251,113,133,0.2)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontFamily:'Share Tech Mono,monospace' }}>
               {adjMode==='add'?'+':'-'}{n}
             </button>
           ))}
           <input type="number" min="1" value={adjVal} onChange={e=>setAdjVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&applyAdj()}
             placeholder="outro" style={{ width:60, padding:'3px 7px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:10, outline:'none', textAlign:'center' }}/>
-          <button onClick={applyAdj} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(0,229,160,0.1)':'rgba(255,68,102,0.1)', border:`1px solid ${adjMode==='add'?'rgba(0,229,160,0.3)':'rgba(255,68,102,0.3)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>OK</button>
+          <button onClick={applyAdj} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)', border:`1px solid ${adjMode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>OK</button>
         </div>
       )}
       {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo!</div>}
@@ -300,7 +300,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
 
 // ── Card de missão ────────────────────────────────────────────────────────────
 function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete, onEditTitle }) {
-  const [expanded,   setExpanded]   = useState(true);
+  const [expanded,   setExpanded]   = useState(false);
   const [showForm,   setShowForm]   = useState(false);
   const [editTitle,  setEditTitle]  = useState(false);
   const [titleVal,   setTitleVal]   = useState(mission.title);
@@ -324,8 +324,8 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
 
   return (
     <div style={{
-      background: isComplete ? 'rgba(0,229,160,0.05)' : 'var(--bg-card)',
-      border: `1px solid ${isComplete ? 'rgba(0,229,160,0.35)' : 'var(--border-subtle)'}`,
+      background: isComplete ? 'rgba(52,211,153,0.05)' : 'var(--bg-card)',
+      border: `1px solid ${isComplete ? 'rgba(52,211,153,0.35)' : 'var(--border-subtle)'}`,
       borderRadius:10, overflow:'hidden', marginBottom:10, transition:'all 0.2s',
     }}>
       {invModal && (
@@ -345,16 +345,16 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
         <div style={{ flex:1, minWidth:0 }}>
           {editTitle ? (
             <div style={{ display:'flex', gap:6 }} onClick={e=>e.stopPropagation()}>
-              <input style={{ flex:1, padding:'4px 8px', background:'var(--bg-base)', border:'1px solid var(--accent-primary)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' }}
+              <input style={{ flex:1, padding:'4px 8px', background:'var(--bg-base)', border:'1px solid var(--accent-primary)', borderRadius:4, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' }}
                 value={titleVal} onChange={e=>setTitleVal(e.target.value)} autoFocus
                 onKeyDown={e=>{ if(e.key==='Enter'){ onEditTitle(mission.id,titleVal); setEditTitle(false); } }}/>
-              <button onClick={()=>{ onEditTitle(mission.id,titleVal); setEditTitle(false); }} style={{ padding:'3px 8px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700 }}>✓</button>
+              <button onClick={()=>{ onEditTitle(mission.id,titleVal); setEditTitle(false); }} style={{ padding:'3px 8px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700 }}>✓</button>
               <button onClick={()=>setEditTitle(false)} style={{ padding:'3px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button>
             </div>
           ) : (
             <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-              <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:14, fontWeight:700, color: isComplete ? 'var(--accent-green)' : 'var(--text-primary)' }}>{mission.title}</span>
-              {isComplete && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:3, background:'rgba(0,229,160,0.15)', color:'var(--accent-green)', border:'1px solid rgba(0,229,160,0.35)', fontWeight:700 }}>✓ COMPLETA</span>}
+              <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:14, fontWeight:700, color: isComplete ? 'var(--accent-green)' : 'var(--text-primary)' }}>{mission.title}</span>
+              {isComplete && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:3, background:'rgba(52,211,153,0.15)', color:'var(--accent-green)', border:'1px solid rgba(52,211,153,0.35)', fontWeight:700 }}>✓ COMPLETA</span>}
             </div>
           )}
           <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3 }}>
@@ -366,16 +366,16 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
           </div>
         </div>
         <div style={{ display:'flex', gap:5, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
-          <button onClick={()=>setEditTitle(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(0,212,255,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <button onClick={()=>setEditTitle(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <Edit3 size={10}/>
           </button>
           {delConf ? (
             <>
-              <button onClick={()=>onDelete(mission.id)} style={{ padding:'3px 7px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+              <button onClick={()=>onDelete(mission.id)} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
               <button onClick={()=>setDelConf(false)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
             </>
           ) : (
-            <button onClick={()=>setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <button onClick={()=>setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Trash2 size={11}/>
             </button>
           )}
@@ -404,7 +404,7 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
             />
           )}
           {!showForm && (
-            <button onClick={()=>setShowForm(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(0,212,255,0.06)', border:'1px dashed rgba(0,212,255,0.25)', borderRadius:6, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase', marginTop:6 }}>
+            <button onClick={()=>setShowForm(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(56,189,248,0.06)', border:'1px dashed rgba(56,189,248,0.25)', borderRadius:6, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', marginTop:6 }}>
               <Plus size={11}/> Adicionar Item
             </button>
           )}
@@ -480,7 +480,7 @@ export default function WikeloTrackerPage() {
   const totalItems     = missions.reduce((a,m)=>a+(m.items||[]).length,0);
   const doneItems      = missions.reduce((a,m)=>a+(m.items||[]).filter(i=>(i.collected||0)>=(i.needed||1)).length,0);
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden' }}>
@@ -496,7 +496,7 @@ export default function WikeloTrackerPage() {
             {wfTotal > 0 && <span style={{ marginLeft:10, color:'#a29bfe', fontWeight:700 }}>★ {wfTotal} Wikelo Favor{wfTotal!==1?'s':''} disponíveis</span>}
           </div>
         </div>
-        <button onClick={()=>setShowNewForm(true)} style={{ display:'flex', alignItems:'center', gap:7, padding:'9px 16px', background:'rgba(255,200,0,0.1)', border:'1px solid rgba(255,200,0,0.35)', borderRadius:7, color:'var(--accent-gold)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
+        <button onClick={()=>setShowNewForm(true)} style={{ display:'flex', alignItems:'center', gap:7, padding:'9px 16px', background:'rgba(255,200,0,0.1)', border:'1px solid rgba(255,200,0,0.35)', borderRadius:7, color:'var(--accent-gold)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
           <Plus size={14}/> Nova Missão
         </button>
       </div>
@@ -511,7 +511,7 @@ export default function WikeloTrackerPage() {
             { label:'Wikelo Favors',   value:wfTotal,         color:'#a29bfe' },
           ].map(({label,value,color}) => (
             <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 13px' }}>
-              <div style={{ fontFamily:'Orbitron,monospace', fontSize:18, fontWeight:800, color }}>{value}</div>
+              <div style={{ fontFamily:'Michroma,sans-serif', fontSize:18, fontWeight:800, color }}>{value}</div>
               <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
             </div>
           ))}
@@ -523,11 +523,11 @@ export default function WikeloTrackerPage() {
             <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Nova Missão Wikelo</div>
             <div style={{ display:'flex', gap:8 }}>
               <input
-                style={{ flex:1, padding:'8px 12px', background:'var(--bg-base)', border:'1px solid rgba(255,200,0,0.3)', borderRadius:6, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' }}
+                style={{ flex:1, padding:'8px 12px', background:'var(--bg-base)', border:'1px solid rgba(255,200,0,0.3)', borderRadius:6, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' }}
                 placeholder="Nome da missão (ex: Align and Mine, New to System...)"
                 value={newTitle} onChange={e=>setNewTitle(e.target.value)}
                 onKeyDown={e=>e.key==='Enter'&&handleCreateMission()} autoFocus/>
-              <button onClick={handleCreateMission} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 16px', background:'rgba(255,200,0,0.1)', border:'1px solid rgba(255,200,0,0.3)', borderRadius:6, color:'var(--accent-gold)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+              <button onClick={handleCreateMission} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 16px', background:'rgba(255,200,0,0.1)', border:'1px solid rgba(255,200,0,0.3)', borderRadius:6, color:'var(--accent-gold)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
                 <Save size={12}/> Criar
               </button>
               <button onClick={()=>{setShowNewForm(false);setNewTitle('');}} style={{ width:34, display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-muted)', cursor:'pointer' }}>
@@ -541,7 +541,7 @@ export default function WikeloTrackerPage() {
         <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap', alignItems:'center' }}>
           <div style={{ position:'relative', flex:1, minWidth:180 }}>
             <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-            <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+            <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
               placeholder="Buscar missão ou item..." value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <select style={SS} value={filterDone} onChange={e=>setFilterDone(e.target.value)}>
@@ -556,7 +556,7 @@ export default function WikeloTrackerPage() {
         {filtered.length === 0 ? (
           <div style={{ textAlign:'center', padding:'60px 20px', color:'var(--text-muted)' }}>
             <Star size={48} style={{ display:'block', margin:'0 auto 14px', opacity:0.15 }}/>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:13, fontWeight:700, marginBottom:8 }}>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:13, fontWeight:700, marginBottom:8 }}>
               {missions.length === 0 ? 'NENHUMA MISSÃO CADASTRADA' : 'NENHUM RESULTADO'}
             </div>
             <div style={{ fontSize:12, lineHeight:1.6 }}>

@@ -76,7 +76,7 @@ function LiveCountDown({ targetIso, onComplete, color='#a29bfe' }) {
 }
 
 // ── Styles shared ─────────────────────────────────────────────────────────────
-const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none' };
+const IS = { width:'100%',padding:'7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none' };
 const SS_STYLE = { ...IS,padding:'7px 26px 7px 10px',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center' };
 const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
 
@@ -121,7 +121,7 @@ function SectionHeader({ icon:Icon, title, color='var(--accent-primary)' }) {
   return (
     <div style={{ display:'flex',alignItems:'center',gap:7,marginBottom:10,paddingBottom:6,borderBottom:'1px solid var(--border-subtle)' }}>
       <Icon size={14} style={{ color,flexShrink:0 }}/>
-      <span style={{ fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:700,color,letterSpacing:'0.08em',textTransform:'uppercase' }}>{title}</span>
+      <span style={{ fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color,letterSpacing:'0.08em',textTransform:'uppercase' }}>{title}</span>
     </div>
   );
 }
@@ -130,7 +130,7 @@ function SectionHeader({ icon:Icon, title, color='var(--accent-primary)' }) {
 function KPI({ label, value, color='var(--text-primary)', unit='' }) {
   return (
     <div style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 14px',textAlign:'center' }}>
-      <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color }}>{value}</div>
+      <div style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color }}>{value}</div>
       <div style={{ fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,marginTop:2 }}>{label}</div>
       {unit && <div style={{ fontSize:9,color:'var(--text-muted)',marginTop:1 }}>{unit}</div>}
     </div>
@@ -165,9 +165,9 @@ function StartSessionModal({ onStart, onCancel }) {
   }
 
   return (
-    <div style={{ background:'var(--bg-card)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:10,padding:'18px',marginBottom:16 }}>
+    <div style={{ background:'var(--bg-card)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:10,padding:'18px',marginBottom:16 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10 }}>
-        <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
+        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
           <PlayCircle size={16}/> INICIAR NOVA SESSÃO DE MINERAÇÃO
         </span>
         <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}><X size={13}/></button>
@@ -197,24 +197,24 @@ function StartSessionModal({ onStart, onCancel }) {
           <div key={i} style={{ display:'flex',gap:6,marginBottom:6 }}>
             <input style={IS} value={n} onChange={e=>updateMemberName(i,e.target.value)} placeholder={`Nome do participante ${i+1}`}/>
             {memberNames.length>1&&(
-              <button onClick={()=>removeMemberField(i)} style={{ width:34,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
+              <button onClick={()=>removeMemberField(i)} style={{ width:34,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
             )}
           </div>
         ))}
-        <button onClick={addMemberField} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(0,229,160,0.08)',border:'1px solid rgba(0,229,160,0.25)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+        <button onClick={addMemberField} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(52,211,153,0.08)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           <Plus size={12}/> Adicionar Participante
         </button>
       </div>
 
       {error&&(
-        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:10 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:10 }}>
           <AlertTriangle size={13}/>{error}
         </div>
       )}
 
       <div style={{ display:'flex',gap:8,justifyContent:'flex-end',marginTop:6,paddingTop:12,borderTop:'1px solid var(--border-subtle)' }}>
-        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
-        <button onClick={handleStart} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(255,196,54,0.12)',border:'1px solid rgba(255,196,54,0.4)',borderRadius:6,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleStart} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(251,191,36,0.12)',border:'1px solid rgba(251,191,36,0.4)',borderRadius:6,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
           <PlayCircle size={14}/> Iniciar Mineração em Grupo
         </button>
       </div>
@@ -285,7 +285,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
   return (
     <div style={{ background:'var(--bg-card)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:10,padding:'18px',marginBottom:16 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6 }}>
-        <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'#a29bfe',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
+        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'#a29bfe',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:7 }}>
           <StopCircle size={16}/> FINALIZAR MINERAÇÃO — {session.name}
         </span>
         <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}><X size={13}/></button>
@@ -297,7 +297,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
       {/* Sub-tabs */}
       <div style={{ display:'flex',gap:0,marginBottom:16,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden' }}>
         {FINISH_TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:5,padding:'8px 6px',background:tab===t.id?'rgba(162,155,254,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:tab===t.id?'#a29bfe':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em',textTransform:'uppercase' }}>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:5,padding:'8px 6px',background:tab===t.id?'rgba(162,155,254,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:tab===t.id?'#a29bfe':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em',textTransform:'uppercase' }}>
             <t.icon size={11}/><span style={{ fontSize:10 }}>{t.label}</span>
           </button>
         ))}
@@ -306,7 +306,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
       {/* ── MINÉRIOS ── */}
       {tab==='ores'&&(
         <div>
-          <button onClick={addOre} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.3)',borderRadius:6,color:'var(--accent-gold)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+          <button onClick={addOre} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:6,color:'var(--accent-gold)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',marginBottom:12 }}>
             <Plus size={13}/> Adicionar Minério
           </button>
           {ores.map((o,i)=>(
@@ -319,7 +319,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
                 </div>
                 <div><label style={LS}>SCU Bruto Coletado</label><input style={IS} type="number" min="0" step="0.001" value={o.raw_scu||''} onChange={e=>updateOre(i,'raw_scu',Number(e.target.value))} placeholder="0"/></div>
                 <div><label style={LS}>SCU Refinado (esperado)</label><input style={IS} type="number" min="0" step="0.001" value={o.refined_scu||''} onChange={e=>updateOre(i,'refined_scu',Number(e.target.value))} placeholder="0"/></div>
-                <button onClick={()=>removeOre(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+                <button onClick={()=>removeOre(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
               </div>
             </div>
           ))}
@@ -360,10 +360,10 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
           ):(
             <>
               <div style={{ display:'flex',gap:0,marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden',width:'fit-content' }}>
-                <button onClick={applyEqualDivision} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='equal'?'rgba(0,229,160,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:divisionMode==='equal'?'var(--accent-green)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                <button onClick={applyEqualDivision} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='equal'?'rgba(52,211,153,0.12)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:divisionMode==='equal'?'var(--accent-green)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
                   <Scale size={13}/> Dividir Igual
                 </button>
-                <button onClick={()=>setDivisionMode('manual')} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='manual'?'rgba(0,212,255,0.12)':'transparent',border:'none',color:divisionMode==='manual'?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+                <button onClick={()=>setDivisionMode('manual')} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 16px',background:divisionMode==='manual'?'rgba(56,189,248,0.12)':'transparent',border:'none',color:divisionMode==='manual'?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
                   <Edit3 size={13}/> Manual
                 </button>
               </div>
@@ -372,8 +372,8 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
                 const scuShare = totalRefined*(Number(m.scu_share_pct)||0)/100;
                 return (
                   <div key={m.id} style={{ display:'flex',alignItems:'center',gap:10,background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',marginBottom:7 }}>
-                    <div style={{ width:28,height:28,borderRadius:'50%',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Orbitron,monospace',fontSize:11,color:'var(--accent-primary)',fontWeight:700,flexShrink:0 }}>{i+1}</div>
-                    <span style={{ flex:1,fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{m.name}</span>
+                    <div style={{ width:28,height:28,borderRadius:'50%',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Michroma,sans-serif',fontSize:11,color:'var(--accent-primary)',fontWeight:700,flexShrink:0 }}>{i+1}</div>
+                    <span style={{ flex:1,fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{m.name}</span>
                     <input style={{ ...IS,width:80,textAlign:'right' }} type="number" min="0" max="100" step="0.01"
                       disabled={divisionMode==='equal'}
                       value={m.scu_share_pct||''} onChange={e=>{ setDivisionMode('manual'); updateMemberPct(i,Number(e.target.value)); }}/>
@@ -384,7 +384,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
               })}
 
               {Math.abs(totalPct-100)>0.5&&(
-                <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginTop:6 }}>
+                <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginTop:6 }}>
                   <AlertTriangle size={13}/>Total: {totalPct.toFixed(2)}% (deve somar 100%)
                 </div>
               )}
@@ -396,7 +396,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
       {/* ── ESTOQUE / COFRE ── */}
       {tab==='storage'&&(
         <div>
-          <button onClick={addStorage} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(0,119,255,0.1)',border:'1px solid rgba(0,119,255,0.3)',borderRadius:6,color:'var(--accent-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+          <button onClick={addStorage} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:6,color:'var(--accent-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',marginBottom:12 }}>
             <Plus size={13}/> Adicionar Local de Estoque
           </button>
           {storage.length===0&&<div style={{ textAlign:'center',padding:'30px',color:'var(--text-muted)',fontSize:13 }}>Nenhum estoque registrado ainda.</div>}
@@ -428,7 +428,7 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
                     {QUALITY_PRESETS.map(q=><option key={q} value={q}>{q||'— N/A —'}</option>)}
                   </select>
                 </div>
-                <button onClick={()=>removeStorage(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+                <button onClick={()=>removeStorage(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
               </div>
               <div style={{ marginTop:6,display:'flex',gap:8,alignItems:'center' }}>
                 <input style={{ ...IS,flex:1,fontSize:11 }} value={st.notes||''} onChange={e=>updateStorage(i,'notes',e.target.value)} placeholder="Observações..."/>
@@ -443,14 +443,14 @@ function FinishSessionModal({ session, onFinish, onCancel }) {
       )}
 
       {error&&(
-        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginTop:12 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginTop:12 }}>
           <AlertTriangle size={13}/>{error}
         </div>
       )}
 
       <div style={{ display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,paddingTop:12,borderTop:'1px solid var(--border-subtle)' }}>
-        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
-        <button onClick={handleSubmit} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(162,155,254,0.15)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+        <button onClick={onCancel} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={handleSubmit} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(162,155,254,0.15)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
           <StopCircle size={14}/> Finalizar e Iniciar Refino
         </button>
       </div>
@@ -512,7 +512,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
   return (
     <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'18px',marginBottom:16 }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14 }}>
-        <span style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em' }}>
+        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em' }}>
           {initial?'EDITAR SESSÃO':'NOVA SESSÃO DE MINERAÇÃO'}
         </span>
         <button onClick={onCancelar} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}><X size={13}/></button>
@@ -521,7 +521,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
       {/* Sub-tabs */}
       <div style={{ display:'flex',gap:0,marginBottom:16,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden' }}>
         {FORM_TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:5,padding:'8px 6px',background:tab===t.id?'rgba(0,212,255,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:tab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em',textTransform:'uppercase' }}>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:5,padding:'8px 6px',background:tab===t.id?'rgba(56,189,248,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:tab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em',textTransform:'uppercase' }}>
             <t.icon size={11}/><span style={{ display:'none' }}>{t.label}</span>
             <span style={{ fontSize:10 }}>{t.label}</span>
           </button>
@@ -577,11 +577,11 @@ function SessãoForm({ initial, onSave, onCancelar }) {
       {tab==='crew'&&(
         <div>
           <div style={{ display:'flex',gap:8,marginBottom:12,alignItems:'center' }}>
-            <button onClick={addMember} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.3)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+            <button onClick={addMember} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
               <Plus size={13}/> Adicionar Membro
             </button>
             {s.members.length>1&&(
-              <button onClick={redistributeEqual} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 12px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+              <button onClick={redistributeEqual} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
                 <Scale size={13}/> Dividir Igual (SCU %)
               </button>
             )}
@@ -596,10 +596,10 @@ function SessãoForm({ initial, onSave, onCancelar }) {
             <div key={m.id} style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'12px',marginBottom:8 }}>
               <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
                 <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-                  <div style={{ width:28,height:28,borderRadius:'50%',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Orbitron,monospace',fontSize:11,color:'var(--accent-primary)',fontWeight:700 }}>{i+1}</div>
+                  <div style={{ width:28,height:28,borderRadius:'50%',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Michroma,sans-serif',fontSize:11,color:'var(--accent-primary)',fontWeight:700 }}>{i+1}</div>
                   <input style={{ ...IS,width:160,fontWeight:700 }} value={m.name} onChange={e=>updateMember(i,'name',e.target.value)} placeholder="Nome do jogador"/>
                 </div>
-                <button onClick={()=>removeMember(i)} style={{ width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={11}/></button>
+                <button onClick={()=>removeMember(i)} style={{ width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={11}/></button>
               </div>
               <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:8 }}>
                 <div><label style={LS}>Função</label>
@@ -628,7 +628,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
             const totalPct=s.members.reduce((a,m)=>a+(Number(m.scu_share_pct)||0),0);
             const diff=Math.abs(totalPct-100);
             return diff>0.1?(
-              <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginTop:4 }}>
+              <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginTop:4 }}>
                 <AlertTriangle size={13}/>Total de % SCU: {totalPct.toFixed(2)}% (deve ser 100%)
               </div>
             ):null;
@@ -639,7 +639,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
       {/* ── ORES TAB ── */}
       {tab==='ores'&&(
         <div>
-          <button onClick={addOre} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.3)',borderRadius:6,color:'var(--accent-gold)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+          <button onClick={addOre} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:6,color:'var(--accent-gold)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',marginBottom:12 }}>
             <Plus size={13}/> Adicionar Minério
           </button>
           {s.ores.length===0&&<div style={{ textAlign:'center',padding:'30px',color:'var(--text-muted)',fontSize:13 }}>Nenhum minério registrado.</div>}
@@ -655,7 +655,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
                 <div><label style={LS}>SCU Refinado</label><input style={IS} type="number" min="0" step="0.001" value={o.refined_scu||''} onChange={e=>updateOre(i,'refined_scu',Number(e.target.value))} placeholder="0"/></div>
                 <div><label style={LS}>Rendimento %</label><input style={IS} type="number" min="0" max="100" value={o.yield_pct||''} onChange={e=>updateOre(i,'yield_pct',Number(e.target.value))} placeholder="80"/></div>
                 <div><label style={LS}>Preço/SCU (aUEC)</label><input style={IS} type="number" min="0" value={o.price_per_scu||''} onChange={e=>updateOre(i,'price_per_scu',Number(e.target.value))} placeholder="0"/></div>
-                <button onClick={()=>removeOre(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginBottom:0,marginTop:16 }}><Trash2 size={12}/></button>
+                <button onClick={()=>removeOre(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginBottom:0,marginTop:16 }}><Trash2 size={12}/></button>
               </div>
               {o.refined_scu>0&&o.price_per_scu>0&&(
                 <div style={{ marginTop:6,fontSize:11,color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace' }}>
@@ -678,13 +678,13 @@ function SessãoForm({ initial, onSave, onCancelar }) {
       {tab==='costs'&&(
         <div>
           <div style={{ display:'flex',gap:8,marginBottom:12 }}>
-            <button onClick={addCost} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(255,68,102,0.1)',border:'1px solid rgba(255,68,102,0.3)',borderRadius:6,color:'var(--accent-red)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase' }}>
+            <button onClick={addCost} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.3)',borderRadius:6,color:'var(--accent-red)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
               <Plus size={13}/> Adicionar Custo
             </button>
           </div>
 
           {/* Revenue */}
-          <div style={{ background:'rgba(0,229,160,0.05)',border:'1px solid rgba(0,229,160,0.2)',borderRadius:8,padding:'12px',marginBottom:12 }}>
+          <div style={{ background:'rgba(52,211,153,0.05)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8,padding:'12px',marginBottom:12 }}>
             <div style={{ display:'grid',gridTemplateColumns:'1fr 2fr',gap:10 }}>
               <div><label style={{ ...LS,color:'var(--accent-green)' }}>Receita Total (aUEC)</label>
                 <input style={IS} type="text" inputMode="numeric"
@@ -715,7 +715,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
                   <option value="Grupo">Grupo (rateado)</option>
                 </select>
               </div>
-              <button onClick={()=>removeCost(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+              <button onClick={()=>removeCost(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
             </div>
           ))}
 
@@ -734,7 +734,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
       {/* ── STORAGE TAB ── */}
       {tab==='storage'&&(
         <div>
-          <button onClick={addEstoque} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(0,119,255,0.1)',border:'1px solid rgba(0,119,255,0.3)',borderRadius:6,color:'var(--accent-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',marginBottom:12 }}>
+          <button onClick={addEstoque} style={{ display:'flex',alignItems:'center',gap:6,padding:'7px 14px',background:'rgba(99,102,241,0.1)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:6,color:'var(--accent-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',marginBottom:12 }}>
             <Plus size={13}/> Adicionar Local de Estoque
           </button>
           {s.storage.length===0&&<div style={{ textAlign:'center',padding:'30px',color:'var(--text-muted)',fontSize:13 }}>Nenhum estoque registrado.</div>}
@@ -771,7 +771,7 @@ function SessãoForm({ initial, onSave, onCancelar }) {
                     {['Guardado','Aguardando Refino','Refinando','Pronto para Venda','Vendido'].map(st=><option key={st}>{st}</option>)}
                   </select>
                 </div>
-                <button onClick={()=>removeEstoque(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
+                <button onClick={()=>removeEstoque(i)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',marginTop:16 }}><Trash2 size={12}/></button>
               </div>
               <div style={{ marginTop:6,display:'flex',gap:8,alignItems:'center' }}>
                 <input style={{ ...IS,flex:1,fontSize:11 }} value={st.notes||''} onChange={e=>updateEstoque(i,'notes',e.target.value)} placeholder="Observações..."/>
@@ -792,8 +792,8 @@ function SessãoForm({ initial, onSave, onCancelar }) {
 
       {/* Save/Cancelar */}
       <div style={{ display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,paddingTop:12,borderTop:'1px solid var(--border-subtle)' }}>
-        <button onClick={onCancelar} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
-        <button onClick={()=>{ if(!s.name.trim()){alert('Nome da sessão obrigatório.');return;} onSave(s); }} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+        <button onClick={onCancelar} style={{ padding:'9px 18px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>Cancelar</button>
+        <button onClick={()=>{ if(!s.name.trim()){alert('Nome da sessão obrigatório.');return;} onSave(s); }} style={{ display:'flex',alignItems:'center',gap:7,padding:'9px 22px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
           <Save size={13}/>{initial?'Salvar Alterações':'Criar Sessão'}
         </button>
       </div>
@@ -846,12 +846,12 @@ function DivisãoTab({ session:s, totalRefinedSCU, totalCosts, netRevenue }) {
 
       {/* Validation warnings */}
       {Math.abs(totalScuPct-100)>0.1&&members.some(m=>m.scu_share_pct>0)&&(
-        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginBottom:10 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginBottom:10 }}>
           <AlertTriangle size={13}/>% SCU soma {totalScuPct.toFixed(2)}% — deveria ser 100%
         </div>
       )}
       {Math.abs(totalPrdeitPct-100)>0.1&&members.some(m=>m.prdeit_share_pct>0)&&(
-        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginBottom:10 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-gold)',marginBottom:10 }}>
           <AlertTriangle size={13}/>% Lucro soma {totalPrdeitPct.toFixed(2)}% — deveria ser 100%
         </div>
       )}
@@ -861,36 +861,36 @@ function DivisãoTab({ session:s, totalRefinedSCU, totalCosts, netRevenue }) {
         {memberCalcs.map((m,i)=>(
           <div key={m.id} style={{ background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'12px' }}>
             <div style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10 }}>
-              <div style={{ width:32,height:32,borderRadius:'50%',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Orbitron,monospace',fontSize:12,color:'var(--accent-primary)',fontWeight:800,flexShrink:0 }}>{i+1}</div>
+              <div style={{ width:32,height:32,borderRadius:'50%',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.3)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Michroma,sans-serif',fontSize:12,color:'var(--accent-primary)',fontWeight:800,flexShrink:0 }}>{i+1}</div>
               <div>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{m.name||`Jogador ${i+1}`}</div>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{m.name||`Jogador ${i+1}`}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)' }}>{m.role}{m.ship_contribution?` · ${m.ship_contribution}`:''}</div>
               </div>
             </div>
 
             <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8 }}>
               {/* SCU share */}
-              <div style={{ background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:6,padding:'9px',textAlign:'center' }}>
+              <div style={{ background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6,padding:'9px',textAlign:'center' }}>
                 <div style={{ fontSize:9,color:'var(--accent-gold)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>SCU Refinado</div>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:16,fontWeight:800,color:'var(--accent-gold)' }}>{ptSCU(m.scuQuantidade)}</div>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color:'var(--accent-gold)' }}>{ptSCU(m.scuQuantidade)}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{m.scuPct}% do total</div>
               </div>
               {/* Prdeit share */}
-              <div style={{ background:'rgba(0,229,160,0.06)',border:'1px solid rgba(0,229,160,0.18)',borderRadius:6,padding:'9px',textAlign:'center' }}>
+              <div style={{ background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.18)',borderRadius:6,padding:'9px',textAlign:'center' }}>
                 <div style={{ fontSize:9,color:'var(--accent-green)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>Parte do Lucro</div>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--accent-green)' }}>{ptMoney(m.prdeitQuantidade)}</div>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-green)' }}>{ptMoney(m.prdeitQuantidade)}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{m.prdeitPct}% · aUEC</div>
               </div>
               {/* Cost share */}
-              <div style={{ background:'rgba(255,68,102,0.05)',border:'1px solid rgba(255,68,102,0.15)',borderRadius:6,padding:'9px',textAlign:'center' }}>
+              <div style={{ background:'rgba(251,113,133,0.05)',border:'1px solid rgba(251,113,133,0.15)',borderRadius:6,padding:'9px',textAlign:'center' }}>
                 <div style={{ fontSize:9,color:'var(--accent-red)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>Parte dos Custos</div>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:'var(--accent-red)' }}>{ptMoney(m.costShare)}</div>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-red)' }}>{ptMoney(m.costShare)}</div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>aUEC</div>
               </div>
               {/* Reembolso */}
-              <div style={{ background:m.reimbursement>0?'rgba(0,212,255,0.06)':'rgba(255,255,255,0.03)',border:`1px solid ${m.reimbursement>0?'rgba(0,212,255,0.2)':'var(--border-subtle)'}`,borderRadius:6,padding:'9px',textAlign:'center' }}>
+              <div style={{ background:m.reimbursement>0?'rgba(56,189,248,0.06)':'rgba(255,255,255,0.03)',border:`1px solid ${m.reimbursement>0?'rgba(56,189,248,0.2)':'var(--border-subtle)'}`,borderRadius:6,padding:'9px',textAlign:'center' }}>
                 <div style={{ fontSize:9,color:m.reimbursement>0?'var(--accent-primary)':'var(--text-muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>Reembolso</div>
-                <div style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:800,color:m.reimbursement>0?'var(--accent-primary)':m.reimbursement<0?'var(--accent-red)':'var(--text-muted)' }}>
+                <div style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:m.reimbursement>0?'var(--accent-primary)':m.reimbursement<0?'var(--accent-red)':'var(--text-muted)' }}>
                   {m.reimbursement>0?'+':''}{ptMoney(m.reimbursement)}
                 </div>
                 <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{m.paidForGrupo>0?`Pagou ${ptMoney(m.paidForGrupo)}`:'Não pagou custos'}</div>
@@ -899,13 +899,13 @@ function DivisãoTab({ session:s, totalRefinedSCU, totalCosts, netRevenue }) {
 
             {/* Estoque */}
             {m.myEstoque.length>0&&(
-              <div style={{ marginTop:8,padding:'7px 10px',background:'rgba(0,119,255,0.06)',border:'1px solid rgba(0,119,255,0.15)',borderRadius:5 }}>
+              <div style={{ marginTop:8,padding:'7px 10px',background:'rgba(99,102,241,0.06)',border:'1px solid rgba(99,102,241,0.15)',borderRadius:5 }}>
                 <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-secondary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:5,display:'flex',alignItems:'center',gap:5 }}>
                   <Archive size={10}/> Estoque
                 </div>
                 <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
                   {m.myEstoque.map((st,si)=>(
-                    <span key={si} style={{ fontSize:11,padding:'3px 8px',background:'rgba(0,119,255,0.08)',border:'1px solid rgba(0,119,255,0.2)',borderRadius:5,color:'var(--accent-secondary)' }}>
+                    <span key={si} style={{ fontSize:11,padding:'3px 8px',background:'rgba(99,102,241,0.08)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:5,color:'var(--accent-secondary)' }}>
                       <MapPin size={9} style={{ marginRight:3 }}/>{st.location}: {st.ore} — {ptSCU(st.scu)} SCU <span style={{ color:'var(--text-muted)' }}>({st.status})</span>
                     </span>
                   ))}
@@ -947,14 +947,14 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
   const statusColor     = STATUS_COLORS[s.status]||'var(--text-muted)';
 
   return (
-    <div style={{ background:'var(--bg-card)',border:`1px solid ${s.status==='Concluída'?'rgba(0,229,160,0.2)':'var(--border-subtle)'}`,borderRadius:9,overflow:'hidden',marginBottom:10,transition:'all 0.2s' }}>
+    <div style={{ background:'var(--bg-card)',border:`1px solid ${s.status==='Concluída'?'rgba(52,211,153,0.2)':'var(--border-subtle)'}`,borderRadius:9,overflow:'hidden',marginBottom:10,transition:'all 0.2s' }}>
       <div style={{ display:'flex',alignItems:'center',gap:12,padding:'13px 16px',cursor:'pointer' }} onClick={()=>setExpandired(!expanded)}>
         <div style={{ width:38,height:38,borderRadius:8,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',background:`${statusColor}18`,border:`1px solid ${statusColor}33` }}>
           <Pickaxe size={18} style={{ color:statusColor }}/>
         </div>
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:3,flexWrap:'wrap' }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{s.name||'Sessão sem nome'}</span>
+            <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{s.name||'Sessão sem nome'}</span>
             <span style={{ fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:3,background:`${statusColor}18`,color:statusColor,border:`1px solid ${statusColor}33` }}>{s.status}</span>
             {s.members.length>0&&<span style={{ fontSize:11,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:3 }}><Users size={10}/>{s.members.length} crew</span>}
           </div>
@@ -970,18 +970,18 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
             <div style={{ textAlign:'right' }}>
               {s.revenue>0&&<div style={{ fontSize:12,color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>+{ptMoney(s.revenue)} aUEC</div>}
               {totalCosts>0&&<div style={{ fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace' }}>-{ptMoney(totalCosts)} aUEC</div>}
-              <div style={{ fontFamily:'Orbitron,monospace',fontSize:11,fontWeight:800,color:netRevenue>=0?'var(--accent-green)':'var(--accent-red)' }}>NET {ptMoney(netRevenue)}</div>
+              <div style={{ fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:800,color:netRevenue>=0?'var(--accent-green)':'var(--accent-red)' }}>NET {ptMoney(netRevenue)}</div>
             </div>
           )}
           <div style={{ display:'flex',gap:5 }} onClick={e=>e.stopPropagation()}>
-            <button onClick={()=>onEdit(s)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer' }}><Edit3 size={12}/></button>
+            <button onClick={()=>onEdit(s)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer' }}><Edit3 size={12}/></button>
             {delConf?(
               <div style={{ display:'flex',gap:4,alignItems:'center' }}>
-                <button onClick={()=>onDelete(s.id)} style={{ padding:'3px 7px',background:'rgba(255,68,102,0.15)',border:'1px solid rgba(255,68,102,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
+                <button onClick={()=>onDelete(s.id)} style={{ padding:'3px 7px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
                 <button onClick={()=>setDelConf(false)} style={{ padding:'3px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-secondary)',cursor:'pointer',fontSize:11 }}>Não</button>
               </div>
             ):(
-              <button onClick={()=>setDelConf(true)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
+              <button onClick={()=>setDelConf(true)} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer' }}><Trash2 size={12}/></button>
             )}
             {expanded?<ChevronUp size={13} style={{ color:'var(--text-muted)'}}/>:<ChevronDown size={13} style={{ color:'var(--text-muted)'}}/>}
           </div>
@@ -994,7 +994,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
           {s.status==='Planejando'&&(
             <>
               <span style={{ fontSize:11,color:'var(--text-muted)' }}>Sessão ainda não iniciada</span>
-              <button onClick={()=>onStartMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(0,212,255,0.1)',border:'1px solid rgba(0,212,255,0.35)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+              <button onClick={()=>onStartMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:6,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
                 <PlayCircle size={13}/> Iniciar Mineração em Grupo
               </button>
             </>
@@ -1002,7 +1002,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
           {s.status==='Em andamento'&&(
             <>
               <LiveCountUp startIso={s.start_time||s.created_at} color="var(--accent-primary)"/>
-              <button onClick={()=>onFinishMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(162,155,254,0.12)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+              <button onClick={()=>onFinishMining(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(162,155,254,0.12)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:6,color:'#a29bfe',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
                 <StopCircle size={13}/> Finalizar Mineração em Grupo
               </button>
             </>
@@ -1013,7 +1013,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
                 targetIso={new Date(new Date(s.refine_start_time).getTime()+(s.refinery_duration_h||0)*3600*1000).toISOString()}
                 onComplete={()=>onCompleteRefine(s)}
               />
-              <button onClick={()=>onCompleteRefine(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(0,229,160,0.1)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
+              <button onClick={()=>onCompleteRefine(s)} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 14px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:6,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase' }}>
                 <CheckCircle2 size={13}/> Marcar Refino Concluído
               </button>
             </>
@@ -1029,7 +1029,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
               <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:7,display:'flex',alignItems:'center',gap:5 }}><Gem size={11}/>Minérios</div>
               <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
                 {s.ores.map((o,i)=>(
-                  <div key={i} style={{ padding:'5px 10px',background:'rgba(255,196,54,0.08)',border:'1px solid rgba(255,196,54,0.2)',borderRadius:6,fontSize:11 }}>
+                  <div key={i} style={{ padding:'5px 10px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6,fontSize:11 }}>
                     <span style={{ color:'var(--accent-gold)',fontWeight:700 }}>{o.name}</span>
                     <span style={{ color:'var(--text-muted)',marginLeft:6 }}>{ptSCU(o.refined_scu)} SCU refinado</span>
                     {o.price_per_scu>0&&<span style={{ color:'var(--accent-green)',marginLeft:6 }}>≈{ptMoney(o.refined_scu*o.price_per_scu)} aUEC</span>}
@@ -1044,7 +1044,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
               <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-secondary)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:7,display:'flex',alignItems:'center',gap:5 }}><Archive size={11}/>Estoque</div>
               <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
                 {s.storage.map((st,i)=>(
-                  <div key={i} style={{ padding:'5px 10px',background:'rgba(0,119,255,0.07)',border:'1px solid rgba(0,119,255,0.2)',borderRadius:6,fontSize:11 }}>
+                  <div key={i} style={{ padding:'5px 10px',background:'rgba(99,102,241,0.07)',border:'1px solid rgba(99,102,241,0.2)',borderRadius:6,fontSize:11 }}>
                     <MapPin size={9} style={{ color:'var(--accent-secondary)',marginRight:4 }}/>
                     <span style={{ color:'var(--text-secondary)' }}>{st.owner?`${st.owner} — `:'Grupo — '}</span>
                     <span style={{ color:'var(--accent-secondary)',fontWeight:700 }}>{st.ore||'Minério'}</span>
@@ -1063,7 +1063,7 @@ function SessãoCard({ session:s, onEdit, onDelete, onStartMining, onFinishMinin
                 {s.members.map((m,i)=>{
                   const scuShare = totalRefinedSCU*(Number(m.scu_share_pct)||0)/100;
                   return (
-                    <div key={i} style={{ padding:'5px 10px',background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:6,fontSize:11 }}>
+                    <div key={i} style={{ padding:'5px 10px',background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.15)',borderRadius:6,fontSize:11 }}>
                       <span style={{ color:'var(--accent-primary)',fontWeight:700 }}>{m.name||`Jogador ${i+1}`}</span>
                       <span style={{ color:'var(--text-muted)',marginLeft:6 }}>{m.role}</span>
                       {scuShare>0&&<span style={{ color:'var(--accent-gold)',marginLeft:6 }}>{ptSCU(scuShare)} SCU</span>}
@@ -1136,7 +1136,7 @@ export default function MiningGrupoPage() {
   const totalNetTodos   = totalRevTodos - totalCostTodos;
   const avgScuSessão = allCompleted.length>0?totalScuTodos/allCompleted.length:0;
 
-  const SS={padding:'7px 24px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center'};
+  const SS={padding:'7px 24px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 6px center'};
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -1146,7 +1146,7 @@ export default function MiningGrupoPage() {
           <div className="page-subtitle">{section.length} section · {allCompleted.length} concluídas · {ptSCU(totalScuTodos)} SCU refinado total</div>
         </div>
         {!showForm&&!editSessão&&!startingSessão&&!finishingSessão&&activeTab==='section'&&(
-          <button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 18px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
+          <button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 18px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer' }}>
             <PlayCircle size={15}/> Nova Sessão
           </button>
         )}
@@ -1155,7 +1155,7 @@ export default function MiningGrupoPage() {
       {/* Tabs */}
       <div style={{ padding:'0 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',flexShrink:0 }}>
         {[{id:'section',label:'Sessões',icon:Pickaxe},{id:'stats',label:'Estatísticas',icon:BarChart3||TrendingUp}].map(t=>(
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex',alignItems:'center',gap:7,padding:'11px 18px',background:'transparent',border:'none',borderBottom:`2px solid ${activeTab===t.id?'var(--accent-gold)':'transparent'}`,color:activeTab===t.id?'var(--accent-gold)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',transition:'all 0.2s' }}>
+          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex',alignItems:'center',gap:7,padding:'11px 18px',background:'transparent',border:'none',borderBottom:`2px solid ${activeTab===t.id?'var(--accent-gold)':'transparent'}`,color:activeTab===t.id?'var(--accent-gold)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',transition:'all 0.2s' }}>
             <t.icon size={13}/>{t.label}
           </button>
         ))}
@@ -1192,7 +1192,7 @@ export default function MiningGrupoPage() {
                     <Pickaxe size={56} className="empty-state-icon"/>
                     <div className="empty-state-title">{section.length===0?'NENHUMA SESSÃO REGISTRADA':'NENHUM RESULTADO'}</div>
                     <div className="empty-state-text">{section.length===0?'Clique em "Nova Sessão" para iniciar sua primeira sessão de mineração em grupo.':''}</div>
-                    {section.length===0&&<button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 20px',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'Rajdhani,sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:8 }}><PlayCircle size={14}/>Nova Sessão</button>}
+                    {section.length===0&&<button onClick={()=>setStartingSessão(true)} style={{ display:'flex',alignItems:'center',gap:7,padding:'10px 20px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:8,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:8 }}><PlayCircle size={14}/>Nova Sessão</button>}
                   </div>
                 ):(
                   filtered.map(s=><SessãoCard key={s.id} session={s} onEdit={s=>{setEditSessão(s);setShowForm(false);}} onDelete={handleDelete}
@@ -1238,7 +1238,7 @@ export default function MiningGrupoPage() {
                       <thead>
                         <tr style={{ background:'var(--bg-panel)' }}>
                           {['Minério','SCU Bruto','SCU Refinado','Receita Estimada'].map(h=>(
-                            <th key={h} style={{ padding:'8px 10px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',color:'var(--accent-primary)',fontWeight:700,fontFamily:'Rajdhani,sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>{h}</th>
+                            <th key={h} style={{ padding:'8px 10px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',color:'var(--accent-primary)',fontWeight:700,fontFamily:'"Exo 2",sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>{h}</th>
                           ))}
                         </tr>
                       </thead>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
+import EmotoIcon          from './components/EmotoIcon';
 import TodosArmorsPage    from './pages/AllArmorsPage';
 import MyCollectionPage from './pages/MyCollectionPage';
 import DashboardPage    from './pages/DashboardPage';
@@ -13,11 +14,12 @@ import ClanVaultPage      from './pages/ClanVaultPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
+import BackupPage         from './pages/BackupPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import UexNotificationBell from './components/UexNotificationBell';
-import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -140,6 +142,7 @@ const PAGES = [
   { id:'uexnegotiations', label:'Negociações UEX', icon:MessageSquare },
   { id:'wikelo',     label:'Acompanhamento Wikelo',icon:Star       },
   { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
+  { id:'backup',     label:'Backup & Restauração', icon:Save       },
 ];
 
 export default function App() {
@@ -176,8 +179,8 @@ export default function App() {
   if (loading) return (
     <div className="app-loading">
       <div className="loading-inner">
-        <Crosshair size={48} className="loading-icon" />
-        <div className="loading-text">INICIALIZANDO SC ARMOR TRACKER</div>
+        <EmotoIcon size={48} className="loading-icon" />
+        <div className="loading-text">INICIALIZANDO COMPANHEIRO EMOTO</div>
         <div className="loading-bar"><div className="loading-bar-fill" /></div>
       </div>
     </div>
@@ -190,10 +193,10 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <Crosshair size={28} className="logo-icon" />
+          <EmotoIcon size={30} className="logo-icon" />
           <div className="logo-text">
-            <span className="logo-main">SC</span>
-            <span className="logo-sub">ARMOR TRACKER</span>
+            <span className="logo-main">EMOTO</span>
+            <span className="logo-sub">COMPANHEIRO</span>
           </div>
         </div>
         <nav className="sidebar-nav">
@@ -202,7 +205,7 @@ export default function App() {
               <Icon size={18} />
               <span>{label}</span>
               {id==='custom'&&customCount>0 ? (
-                <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(0,212,255,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
+                <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(56,189,248,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
               ) : activePage===id ? (
                 <ChevronRight size={14} className="nav-arrow" />
               ) : null}
@@ -247,6 +250,7 @@ export default function App() {
         {activePage==='uexnegotiations' && <UexNegotiationsPage />}
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
+        {activePage==='backup'     && <BackupPage />}
       </main>
 
       <UexNotificationBell onNavigate={setActivePage} />

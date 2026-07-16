@@ -96,7 +96,7 @@ export default function UexNotificationBell({ onNavigate }) {
             borderRadius: 9, background: 'var(--accent-red)', color: '#fff',
             fontFamily: 'Share Tech Mono,monospace', fontSize: 10, fontWeight: 700,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 8px rgba(255,68,102,0.6)',
+            boxShadow: '0 0 8px rgba(251,113,133,0.6)',
           }}>
             {count > 99 ? '99+' : count}
           </span>
@@ -114,7 +114,7 @@ export default function UexNotificationBell({ onNavigate }) {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
           }}>
-            <span style={{ fontFamily: 'Rajdhani,sans-serif', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
+            <span style={{ fontFamily: '"Exo 2",sans-serif', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
               Mensagens da UEX
             </span>
             {count > 0 && (
@@ -175,7 +175,7 @@ export default function UexNotificationBell({ onNavigate }) {
               onClick={() => runCheck(false)}
               disabled={checking}
               style={{
-                width: '100%', padding: '6px 0', background: 'rgba(0,212,255,0.08)',
+                width: '100%', padding: '6px 0', background: 'rgba(56,189,248,0.08)',
                 border: '1px solid var(--border-normal)', borderRadius: 6,
                 color: 'var(--accent-primary)', fontSize: 11, fontWeight: 700,
                 textTransform: 'uppercase', cursor: checking ? 'not-allowed' : 'pointer',
