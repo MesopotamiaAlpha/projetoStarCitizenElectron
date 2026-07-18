@@ -19,7 +19,7 @@ import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import UexNotificationBell from './components/UexNotificationBell';
-import { Shield, Package, BarChart3, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -125,31 +125,71 @@ function buildMockAPI() {
 
 export const api = window.electronAPI || buildMockAPI();
 
-const PAGES = [
-  { id:'dashboard',  label:'Dashboard',          icon:BarChart3  },
-  { id:'all',        label:'Todas as Armaduras',  icon:Shield     },
-  { id:'collection', label:'Minha Coleção',       icon:Package    },
-  { id:'inventory',  label:'Inventário de Itens', icon:Archive    },
-  { id:'blueprints',    label:'Blueprints',          icon:Cpu        },
-  { id:'materials',    label:'Tracking Materiais',  icon:Hammer     },
-  { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
-  { id:'mining',     label:'Guia de Mineração',   icon:Pickaxe    },
-  { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
-  { id:'clanvault',  label:'Cofre do Clã',        icon:Lock       },
-  { id:'missions',   label:'Missões',             icon:ListChecks },
-  { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
-  { id:'uexsales',   label:'Acompanhamento UEX',  icon:ShoppingBag},
-  { id:'uexnegotiations', label:'Negociações UEX', icon:MessageSquare },
-  { id:'wikelo',     label:'Acompanhamento Wikelo',icon:Star       },
-  { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
-  { id:'backup',     label:'Backup & Restauração', icon:Save       },
+const NAV_GROUPS = [
+  { id:'inicio', label:'Início', pages:[
+    { id:'dashboard',  label:'Dashboard',          icon:BarChart3  },
+  ]},
+  { id:'armaduras', label:'Armaduras', pages:[
+    { id:'all',        label:'Todas as Armaduras',  icon:Shield     },
+    { id:'collection', label:'Minha Coleção',       icon:Package    },
+    { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
+  ]},
+  { id:'itens', label:'Itens & Crafting', pages:[
+    { id:'inventory',  label:'Inventário de Itens', icon:Archive    },
+    { id:'blueprints', label:'Blueprints',          icon:Cpu        },
+    { id:'materials',  label:'Tracking Materiais',  icon:Hammer     },
+  ]},
+  { id:'mineracao', label:'Mineração', pages:[
+    { id:'mining',       label:'Guia de Mineração',  icon:Pickaxe },
+    { id:'mininggroup',  label:'Mineração em Grupo', icon:Users   },
+    { id:'orevault',     label:'Baú de Minério',     icon:Archive },
+  ]},
+  { id:'cla', label:'Clã & Missões', pages:[
+    { id:'clanvault',  label:'Cofre do Clã', icon:Lock       },
+    { id:'missions',   label:'Missões',      icon:ListChecks },
+  ]},
+  { id:'uex', label:'UEX', pages:[
+    { id:'uexsales',        label:'Acompanhamento UEX',   icon:ShoppingBag   },
+    { id:'uexnegotiations', label:'Negociações UEX',      icon:MessageSquare },
+    { id:'wikelo',          label:'Acompanhamento Wikelo',icon:Star          },
+    { id:'uexapi',          label:'UEX API (Live)',       icon:Globe         },
+  ]},
+  { id:'sistema', label:'Sistema', pages:[
+    { id:'backup', label:'Backup & Restauração', icon:Save },
+  ]},
 ];
+const PAGES = NAV_GROUPS.flatMap(g => g.pages);
+const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sets,       setSets]       = useState([]);
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
+  });
+
+  function toggleGroup(groupId) {
+    setCollapsedGroups(prev => {
+      const next = prev.includes(groupId) ? prev.filter(g => g !== groupId) : [...prev, groupId];
+      localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function goToPage(pageId) {
+    setActivePage(pageId);
+    // Garante que a seção da página escolhida esteja aberta
+    const group = NAV_GROUPS.find(g => g.pages.some(p => p.id === pageId));
+    if (group && collapsedGroups.includes(group.id)) {
+      setCollapsedGroups(prev => {
+        const next = prev.filter(g => g !== group.id);
+        localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -200,17 +240,28 @@ export default function App() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {PAGES.map(({id,label,icon:Icon})=>(
-            <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>setActivePage(id)}>
-              <Icon size={18} />
-              <span>{label}</span>
-              {id==='custom'&&customCount>0 ? (
-                <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(56,189,248,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
-              ) : activePage===id ? (
-                <ChevronRight size={14} className="nav-arrow" />
-              ) : null}
-            </button>
-          ))}
+          {NAV_GROUPS.map(group => {
+            const isCollapsed = collapsedGroups.includes(group.id);
+            return (
+              <div key={group.id} className="nav-group">
+                <button className="nav-group-header" onClick={()=>toggleGroup(group.id)}>
+                  <span>{group.label}</span>
+                  <ChevronDown size={12} className={`nav-group-chevron ${isCollapsed?'collapsed':''}`}/>
+                </button>
+                {!isCollapsed && group.pages.map(({id,label,icon:Icon})=>(
+                  <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)}>
+                    <Icon size={16} />
+                    <span>{label}</span>
+                    {id==='custom'&&customCount>0 ? (
+                      <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(56,189,248,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
+                    ) : activePage===id ? (
+                      <ChevronRight size={13} className="nav-arrow" />
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         {stats && (
           <div className="sidebar-stats">
@@ -234,7 +285,7 @@ export default function App() {
       </aside>
 
       <main className="main-content">
-        {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
+        {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
         {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
         {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
         {activePage==='inventory'  && <InventoryPage />}
@@ -253,7 +304,7 @@ export default function App() {
         {activePage==='backup'     && <BackupPage />}
       </main>
 
-      <UexNotificationBell onNavigate={setActivePage} />
+      <UexNotificationBell onNavigate={goToPage} />
     </div>
   );
 }

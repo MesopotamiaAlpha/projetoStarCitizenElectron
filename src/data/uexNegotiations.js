@@ -53,6 +53,24 @@ export async function fetchNegotiationMessages(hash) {
   return Array.isArray(data) ? data : [];
 }
 
+/** Envia uma resposta para o comprador/vendedor dentro de uma negociação. */
+export async function sendNegotiationMessage(hash, message) {
+  const token = loadToken();
+  const secretKey = loadSecretKey();
+  if (!token) throw new Error('Configure seu token UEX antes de responder.');
+  if (!message || !message.trim()) throw new Error('Escreva uma mensagem antes de enviar.');
+  if (!window.electronAPI?.uexPost) {
+    throw new Error('Responder mensagens só funciona no app Electron (não no navegador).');
+  }
+  const result = await window.electronAPI.uexPost({
+    endpoint: 'marketplace_negotiations_messages',
+    token, secretKey,
+    body: { hash, message: message.trim(), is_production: 1 },
+  });
+  if (result.success) return result.data;
+  throw new Error(result.message || 'Erro ao enviar mensagem para a UEX');
+}
+
 /** Notificações gerais da conta UEX (sino amplo). */
 export async function fetchUserNotifications() {
   const data = await uexAuthFetch('user_notifications');

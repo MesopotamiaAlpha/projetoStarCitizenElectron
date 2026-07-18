@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key } from 'lucide-react';
+import { MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send } from 'lucide-react';
 import {
-  loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages,
+  loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages, sendNegotiationMessage,
 } from '../data/uexNegotiations';
 
 function fmtDate(ts) {
@@ -13,7 +13,11 @@ function NegotiationThread({ negotiation, onBack }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
+  const [reply, setReply]       = useState('');
+  const [sending, setSending]   = useState(false);
+  const [sendError, setSendError] = useState('');
   const myUsername = loadUsername().trim().toLowerCase();
+  const isClosed = !!negotiation.date_closed;
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -25,6 +29,21 @@ function NegotiationThread({ negotiation, onBack }) {
   }, [negotiation.hash]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleSend() {
+    if (!reply.trim() || sending) return;
+    setSending(true); setSendError('');
+    try {
+      await sendNegotiationMessage(negotiation.hash, reply);
+      setReply('');
+      await load(); // recarrega a conversa pra mostrar a mensagem enviada
+    } catch (e) { setSendError(e.message); }
+    finally { setSending(false); }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -77,6 +96,46 @@ function NegotiationThread({ negotiation, onBack }) {
           );
         })}
       </div>
+
+      {/* Caixa de resposta */}
+      {isClosed ? (
+        <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(122,144,176,0.06)', border: '1px solid var(--border-subtle)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+          Esta negociação está encerrada — não é possível enviar novas mensagens.
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, flexShrink: 0 }}>
+          {sendError && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.25)', borderRadius: 6, color: 'var(--accent-red)', fontSize: 11, marginBottom: 8 }}>
+              <AlertTriangle size={12} />{sendError}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea
+              value={reply}
+              onChange={e => setReply(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Escreva sua resposta ao comprador/vendedor... (Enter envia, Shift+Enter quebra linha)"
+              rows={2}
+              style={{
+                flex: 1, resize: 'none', padding: '9px 12px', background: 'var(--bg-base)',
+                border: '1px solid var(--border-subtle)', borderRadius: 7, color: 'var(--text-primary)',
+                fontFamily: '"Exo 2",sans-serif', fontSize: 13, outline: 'none',
+              }}
+            />
+            <button onClick={handleSend} disabled={!reply.trim() || sending} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', flexShrink: 0,
+              background: reply.trim() ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${reply.trim() ? 'rgba(56,189,248,0.4)' : 'var(--border-subtle)'}`,
+              borderRadius: 7, color: reply.trim() ? 'var(--accent-primary)' : 'var(--text-muted)',
+              fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
+              cursor: reply.trim() && !sending ? 'pointer' : 'not-allowed',
+            }}>
+              {sending ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }}/> : <Send size={13}/>}
+              {sending ? 'Enviando' : 'Enviar'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

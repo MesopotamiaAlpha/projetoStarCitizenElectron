@@ -1,8 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, MessageSquare, X, CheckCheck, AlertCircle } from 'lucide-react';
+import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { loadToken, checkForUpdates } from '../data/uexNegotiations';
 
 const POLL_INTERVAL_MS = 90 * 1000; // 90s
+const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
+
+// Toca um "ding" de duas notas sintetizado — não depende de nenhum arquivo de áudio.
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    const tone = (freq, start, dur, peak = 0.16) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + start);
+      gain.gain.linearRampToValueAtTime(peak, now + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + dur + 0.03);
+    };
+    tone(880, 0, 0.12);
+    tone(1318.5, 0.1, 0.2);
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* ambiente sem suporte a Web Audio — ignora silenciosamente */ }
+}
 
 export default function UexNotificationBell({ onNavigate }) {
   const [open, setOpen]       = useState(false);
@@ -10,7 +34,16 @@ export default function UexNotificationBell({ onNavigate }) {
   const [checking, setChecking] = useState(false);
   const [error, setError]     = useState('');
   const [hasToken, setHasToken] = useState(!!loadToken());
+  const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
   const wrapRef = useRef(null);
+
+  function toggleMuted() {
+    setMuted(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SOUND_MUTED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
 
   const runCheck = useCallback(async (silent = true) => {
     if (!loadToken()) { setHasToken(false); return; }
@@ -26,7 +59,9 @@ export default function UexNotificationBell({ onNavigate }) {
       if (mapped.length) {
         setItems(prev => {
           const existingKeys = new Set(prev.map(i => i.key));
-          const merged = [...mapped.filter(i => !existingKeys.has(i.key)), ...prev];
+          const freshOnes = mapped.filter(i => !existingKeys.has(i.key));
+          if (freshOnes.length && !muted) playNotificationSound();
+          const merged = [...freshOnes, ...prev];
           return merged.sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 50);
         });
       }
@@ -35,7 +70,7 @@ export default function UexNotificationBell({ onNavigate }) {
     } finally {
       setChecking(false);
     }
-  }, []);
+  }, [muted]);
 
   useEffect(() => {
     runCheck(true);
@@ -117,14 +152,19 @@ export default function UexNotificationBell({ onNavigate }) {
             <span style={{ fontFamily: '"Exo 2",sans-serif', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
               Mensagens da UEX
             </span>
-            {count > 0 && (
-              <button onClick={handleDismissAll} style={{
-                display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
-                color: 'var(--accent-primary)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              }}>
-                <CheckCheck size={12} /> Marcar tudo como lido
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button onClick={toggleMuted} title={muted ? 'Ativar som de notificação' : 'Silenciar som de notificação'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted ? 'var(--text-muted)' : 'var(--accent-primary)', display: 'flex' }}>
+                {muted ? <VolumeX size={14}/> : <Volume2 size={14}/>}
               </button>
-            )}
+              {count > 0 && (
+                <button onClick={handleDismissAll} style={{
+                  display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
+                  color: 'var(--accent-primary)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                }}>
+                  <CheckCheck size={12} /> Marcar tudo como lido
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
