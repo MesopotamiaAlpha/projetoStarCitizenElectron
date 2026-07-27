@@ -1,9 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Pickaxe, Gem, MapPin, Star, BarChart3, RefreshCw, Plus, Trash2, Edit3, Save, X, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Pickaxe, Gem, Star, BarChart3, RefreshCw, Plus, Trash2, Edit3, Save, X, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDataset, DATASETS } from '../data/dataStore';
-import { ProvenanceBadge } from '../components/ProvenanceBadge';
-import { loadUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
-import { buildLocationTree, getUexLocationsStats } from '../data/uexLocationsDB';
 
 export const DEFAULT_MINEABLE_ORES = [
   { name:'Quantainium', value:7950, rarity:'Raro', locations:['Yela Asteroid Belt','Aaron Halo','Cellin','Daymar'], color:'#34d399', hazardous:true, notes:'Instável — pode explodir. Use laser em baixa potência. Vale a pena pelo alto valor.' },
@@ -52,59 +49,6 @@ export const DEFAULT_MINING_LOCATIONS = {
   'Ita': { system:'Stanton',type:'Moon', best:['Laranite','Gold','Iron'], danger:'Baixo', notes:'Lua de Hurston. Menor atmosfera — mais fácil de voar.' },
 };
 
-// ── Mesclagem com dados sincronizados da UEX API ──────────────────────────────
-const ORE_PALETTE = ['#34d399','#a29bfe','#74b9ff','#fd79a8','#e17055','#55efc4','#fbbf24','#dfe6e9','#b2bec3','#636e72','#fdcb6e','#00cec9','#ff7675','#fab1a0'];
-function pickColor(name='') {
-  let h = 0; for (let i=0;i<name.length;i++) h = (h*31 + name.charCodeAt(i)) >>> 0;
-  return ORE_PALETTE[h % ORE_PALETTE.length];
-}
-
-// Atualiza preços dos minérios já cadastrados e adiciona os que a UEX conhece mas
-// ainda não estão na lista curada manualmente.
-function mergeOresWithUex(base) {
-  const db = loadUexMiningDB();
-  if (!db.minerals?.length) return base;
-  const byName = {};
-  base.forEach(o => { byName[o.name.toLowerCase()] = { ...o }; });
-  db.minerals.forEach(m => {
-    if (!m.name) return;
-    const key = m.name.toLowerCase();
-    const price = Number(m.price_sell) || 0;
-    if (byName[key]) {
-      byName[key] = { ...byName[key], value: price>0 ? price : byName[key].value, synced:true };
-    } else {
-      byName[key] = {
-        name: m.name,
-        value: price,
-        rarity: 'A Definir',
-        locations: [],
-        color: pickColor(m.name),
-        hazardous: !!m.is_explosive,
-        notes: 'Minério sincronizado da API UEX — ainda sem local/raridade cadastrados manualmente.',
-        synced: true,
-      };
-    }
-  });
-  return Object.values(byName);
-}
-
-// Adiciona planetas/luas sincronizados que ainda não têm um card de local cadastrado à mão.
-function mergeLocationsWithUex(base) {
-  const tree = buildLocationTree({});
-  if (Object.keys(tree).length === 0) return base;
-  const merged = { ...base };
-  Object.entries(tree).forEach(([system, types]) => {
-    (types['Planeta / Lua'] || []).forEach(name => {
-      if (merged[name]) return; // já cadastrado manualmente, não sobrescreve
-      merged[name] = {
-        system, type:'Planeta/Lua (UEX)', best: [], danger:'Desconhecido',
-        notes: 'Local sincronizado da API UEX. Adicione os melhores minérios e o nível de perigo conforme sua experiência de mineração.',
-        synced: true,
-      };
-    });
-  });
-  return merged;
-}
 // ── Banco de dados completo de lasers e módulos de mineração ─────────────────
 // Nomes, fabricantes, tamanhos e preços verificados contra a UEX API / uexcorp.space
 // (categoria "Utility, Mining Laser Heads", id_category=29 — Star Citizen 4.8.3).
@@ -182,15 +126,46 @@ const MODULE_TYPE_COLORS = {
 
 // Slots correspondem ao que cada nave realmente aceita no jogo.
 const SHIP_CONFIGS = {
-  'Prospector': { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:2, desc:'1 laser size 1 · 2 módulos' },
-  'MOLE':       { lasers:[{ id:'l1', size:2, label:'Laser Centro' },{ id:'l2', size:2, label:'Laser Esquerda' },{ id:'l3', size:2, label:'Laser Direita' }], moduleSlots:3, desc:'3 lasers size 2 · 3 módulos' },
-  'Golem':      { lasers:[{ id:'l1', size:1, label:'Laser Pitman (fixo)' }], moduleSlots:1, desc:'1 laser size 1 (Pitman) · 1 módulo' },
+  'Prospector': { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:3, desc:'1 laser size 1 · até 3 módulos nessa cabeça' },
+  'MOLE':       { lasers:[{ id:'l1', size:2, label:'Laser Centro' },{ id:'l2', size:2, label:'Laser Esquerda' },{ id:'l3', size:2, label:'Laser Direita' }], moduleSlots:3, desc:'3 lasers size 2 · até 3 módulos em cada cabeça' },
+  'Golem':      { lasers:[{ id:'l1', size:1, label:'Laser Pitman (fixo)' }], moduleSlots:3, desc:'1 laser size 1 (Pitman) · até 3 módulos nessa cabeça' },
 };
 
 const BUILDS_KEY = 'sc_mining_builds_v1';
 function loadBuilds()   { try { return JSON.parse(localStorage.getItem(BUILDS_KEY))||[]; } catch { return []; } }
 function saveBuilds(d)  { localStorage.setItem(BUILDS_KEY, JSON.stringify(d)); }
 function localISO()     { const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+// ── Configuração por cabeça de mineração (módulos + craft) ────────────────────
+function newCraftInfo() {
+  return {
+    isCrafted: false,
+    ores: [{ name:'', quality:'' }, { name:'', quality:'' }, { name:'', quality:'' }],
+    powerChangePct: 0,
+    integrityChangePct: 0,
+  };
+}
+function newHeadConfig() {
+  return { moduleSlotCount: 1, modules: [], craft: newCraftInfo() };
+}
+/** Garante que a build tenha headConfig para cada slot de laser da nave (migra builds antigas). */
+function ensureHeadConfig(build, cfg) {
+  const hc = { ...(build?.headConfig || {}) };
+  cfg.lasers.forEach(slot => { if (!hc[slot.id]) hc[slot.id] = newHeadConfig(); });
+  return hc;
+}
+/** Aplica os ajustes de craft (potência/integridade) por cima dos stats base do laser. */
+function effectiveLaserStats(laser, craft) {
+  if (!laser) return null;
+  if (!craft?.isCrafted) return { power: laser.power, instab: laser.instab, crafted:false };
+  const powerMult = 1 + (Number(craft.powerChangePct) || 0) / 100;
+  const integrityMult = 1 - (Number(craft.integrityChangePct) || 0) / 100;
+  return {
+    power: Math.max(0, Math.round(laser.power * powerMult)),
+    instab: Math.max(0, Math.min(1, laser.instab * integrityMult)),
+    crafted: true,
+  };
+}
 function ptDate(iso)    { return iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 
 // ── Build Editor ───────────────────────────────────────────────────────────────
@@ -199,29 +174,73 @@ function BuildEditor({ build, onSave, onCancel }) {
   const [ship,    setShip]    = useState(build?.ship    || 'Prospector');
   const [notes,   setNotes]   = useState(build?.notes   || '');
   const [lasers,  setLasers]  = useState(build?.lasers  || {});
-  const [modules, setModules] = useState(build?.modules || []);
   const [active,  setActive]  = useState(build?.active  || false);
   const [error,   setError]   = useState('');
 
   const cfg = SHIP_CONFIGS[ship] || SHIP_CONFIGS['Prospector'];
+  const [headConfig, setHeadConfig] = useState(() => ensureHeadConfig(build, cfg));
+
   const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:3 };
+  const miniIS = { ...IS, padding:'5px 8px', fontSize:11 };
 
   function setLaser(slotId, laserName) { setLasers(p=>({...p,[slotId]:laserName})); }
-  function addModule(mod) {
-    if (modules.length >= cfg.moduleSlots) return;
-    setModules(p=>[...p, mod]);
+
+  function updateHead(slotId, patch) {
+    setHeadConfig(p => ({ ...p, [slotId]: { ...p[slotId], ...patch } }));
   }
-  function removeModule(idx) { setModules(p=>p.filter((_,i)=>i!==idx)); }
+  function setModuleSlotCount(slotId, count) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      return { ...p, [slotId]: { ...head, moduleSlotCount: count, modules: head.modules.slice(0, count) } };
+    });
+  }
+  function addModuleToHead(slotId, mod) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      if (head.modules.length >= head.moduleSlotCount) return p;
+      return { ...p, [slotId]: { ...head, modules: [...head.modules, mod] } };
+    });
+  }
+  function removeModuleFromHead(slotId, idx) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      return { ...p, [slotId]: { ...head, modules: head.modules.filter((_,i)=>i!==idx) } };
+    });
+  }
+  function toggleCrafted(slotId) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      return { ...p, [slotId]: { ...head, craft: { ...head.craft, isCrafted: !head.craft.isCrafted } } };
+    });
+  }
+  function updateCraft(slotId, patch) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      return { ...p, [slotId]: { ...head, craft: { ...head.craft, ...patch } } };
+    });
+  }
+  function updateCraftOre(slotId, oreIdx, patch) {
+    setHeadConfig(p => {
+      const head = p[slotId] || newHeadConfig();
+      const ores = head.craft.ores.map((o,i)=> i===oreIdx ? { ...o, ...patch } : o);
+      return { ...p, [slotId]: { ...head, craft: { ...head.craft, ores } } };
+    });
+  }
+
+  function handleShipChange(newShip) {
+    setShip(newShip);
+    setLasers({});
+    setHeadConfig(ensureHeadConfig(null, SHIP_CONFIGS[newShip] || SHIP_CONFIGS['Prospector']));
+  }
 
   function handleSave() {
     if (!name.trim()) { setError('Nome da build obrigatório.'); return; }
-    onSave({ id:build?.id||Date.now(), name:name.trim(), ship, lasers, modules, notes, active, created_at:build?.created_at||localISO(), updated_at:localISO() });
+    onSave({ id:build?.id||Date.now(), name:name.trim(), ship, lasers, headConfig, notes, active, created_at:build?.created_at||localISO(), updated_at:localISO() });
   }
 
   const lasersBySize = (size) => MINING_LASERS_DB.filter(l=>l.size===size);
-  const usedModuleNames = modules.map(m=>m.name);
 
   return (
     <div style={{ background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:10, padding:18, marginBottom:14 }}>
@@ -240,7 +259,7 @@ function BuildEditor({ build, onSave, onCancel }) {
         </div>
         <div>
           <label style={LS}>Nave</label>
-          <select style={SS} value={ship} onChange={e=>{setShip(e.target.value);setLasers({});setModules([]);}}>
+          <select style={SS} value={ship} onChange={e=>handleShipChange(e.target.value)}>
             {Object.keys(SHIP_CONFIGS).map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
@@ -254,74 +273,118 @@ function BuildEditor({ build, onSave, onCancel }) {
         <strong style={{ color:'var(--accent-primary)' }}>{ship}:</strong> {cfg.desc}
       </div>
 
-      {/* Lasers */}
-      <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>🔫 Lasers de Mineração</div>
-        <div style={{ display:'grid', gridTemplateColumns:`repeat(${cfg.lasers.length},1fr)`, gap:10 }}>
-          {cfg.lasers.map(slot => {
-            const available = lasersBySize(slot.size);
-            const selected  = MINING_LASERS_DB.find(l=>l.name===lasers[slot.id]);
-            return (
-              <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:8 }}>
-                <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>
-                  {slot.label} (Size {slot.size})
-                </div>
-                <select style={SS} value={lasers[slot.id]||''} onChange={e=>setLaser(slot.id,e.target.value)}>
-                  <option value="">— Sem laser —</option>
-                  {available.map(l=><option key={l.name} value={l.name}>{l.name} · {l.tier}</option>)}
-                </select>
-                {selected && (
-                  <div style={{ marginTop:6, fontSize:10, color:'var(--text-muted)', lineHeight:1.4 }}>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:3 }}>
-                      <span>⚡ {selected.power} MW</span>
-                      <span>📏 {selected.range}m</span>
-                      <span style={{ color: selected.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>⚡ Instab: {Math.round(selected.instab*100)}%</span>
-                    </div>
-                    <div style={{ color:'var(--text-secondary)', fontStyle:'italic' }}>{selected.notes}</div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Cabeças de mineração — cada uma com seu laser, seus módulos e craft */}
+      <div style={{ marginBottom:14, display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>🔫 Cabeças de Mineração</div>
+        {cfg.lasers.map(slot => {
+          const available = lasersBySize(slot.size);
+          const laser  = MINING_LASERS_DB.find(l=>l.name===lasers[slot.id]);
+          const head   = headConfig[slot.id] || newHeadConfig();
+          const eff    = effectiveLaserStats(laser, head.craft);
+          const usedModuleNames = head.modules.map(m=>m.name);
 
-      {/* Módulos */}
-      <div style={{ marginBottom:12 }}>
-        <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
-          🔧 Módulos ({modules.length}/{cfg.moduleSlots} slots)
-        </div>
-        {/* Módulos equipados */}
-        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
-          {modules.map((m,i) => (
-            <div key={i} style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}18`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}44` }}>
-              <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
-              <span style={{ fontSize:9, color:'var(--text-muted)' }}>{m.effect}</span>
-              <button onClick={()=>removeModule(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0, display:'flex', alignItems:'center' }}><X size={10}/></button>
-            </div>
-          ))}
-          {modules.length === 0 && <span style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Nenhum módulo equipado</span>}
-        </div>
-        {/* Adicionar módulo */}
-        {modules.length < cfg.moduleSlots && (
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:5 }}>
-            {MINING_MODULES_DB.filter(m=>!usedModuleNames.includes(m.name)).map(m => (
-              <button key={m.name} onClick={()=>addModule(m)} style={{
-                textAlign:'left', padding:'6px 10px', background:'rgba(255,255,255,0.02)',
-                border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--border-subtle)'}33`,
-                borderRadius:6, cursor:'pointer', transition:'all 0.15s',
-              }}
-              onMouseEnter={e=>{e.currentTarget.style.background=`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}10`;}}
-              onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:5 }}>
-                  <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
-                  <span style={{ fontSize:8, padding:'1px 5px', borderRadius:3, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}22`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.type}</span>
+          return (
+            <div key={slot.id} style={{ padding:'12px 14px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:8 }}>
+              <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>
+                {slot.label} (Size {slot.size})
+              </div>
+
+              <select style={{...SS, marginBottom:8}} value={lasers[slot.id]||''} onChange={e=>setLaser(slot.id,e.target.value)}>
+                <option value="">— Sem laser —</option>
+                {available.map(l=><option key={l.name} value={l.name}>{l.name} · {l.tier}</option>)}
+              </select>
+
+              {laser && eff && (
+                <div style={{ marginBottom:10, fontSize:10, color:'var(--text-muted)', lineHeight:1.4 }}>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:3 }}>
+                    <span>⚡ {eff.power} MW{eff.crafted && eff.power!==laser.power ? <em style={{ color: eff.power>laser.power?'var(--accent-green)':'var(--accent-red)', fontStyle:'normal' }}> ({eff.power>laser.power?'+':''}{Math.round((eff.power/laser.power-1)*100)}%)</em> : null}</span>
+                    <span>📏 {laser.range}m</span>
+                    <span style={{ color: eff.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>
+                      Instab: {Math.round(eff.instab*100)}%{eff.crafted && eff.instab!==laser.instab ? ` (base ${Math.round(laser.instab*100)}%)` : ''}
+                    </span>
+                  </div>
+                  <div style={{ color:'var(--text-secondary)', fontStyle:'italic' }}>{laser.notes}</div>
                 </div>
-                <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:2 }}>{m.effect}</div>
-              </button>
-            ))}
-          </div>
-        )}
+              )}
+
+              {/* Craftado? */}
+              <label style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8, cursor:'pointer' }}>
+                <input type="checkbox" checked={head.craft.isCrafted} onChange={()=>toggleCrafted(slot.id)}/>
+                <span style={{ fontSize:11, fontWeight:700, color: head.craft.isCrafted ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>Craftado?</span>
+              </label>
+
+              {head.craft.isCrafted && (
+                <div style={{ marginBottom:10, padding:'10px', background:'rgba(251,191,36,0.05)', border:'1px solid rgba(251,191,36,0.2)', borderRadius:6 }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Minérios usados no craft</div>
+                  {head.craft.ores.map((ore,i)=>(
+                    <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:6, marginBottom:5 }}>
+                      <input style={miniIS} value={ore.name} onChange={e=>updateCraftOre(slot.id,i,{name:e.target.value})} placeholder={`Minério ${i+1}...`}/>
+                      <input style={miniIS} type="number" value={ore.quality} onChange={e=>updateCraftOre(slot.id,i,{quality:e.target.value})} placeholder="Qualidade"/>
+                    </div>
+                  ))}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:6 }}>
+                    <div>
+                      <label style={LS}>Potência (% aumento/redução)</label>
+                      <input style={miniIS} type="number" value={head.craft.powerChangePct} onChange={e=>updateCraft(slot.id,{powerChangePct:e.target.value})} placeholder="ex: 15 ou -10"/>
+                    </div>
+                    <div>
+                      <label style={LS}>Integridade (% aumento/redução)</label>
+                      <input style={miniIS} type="number" value={head.craft.integrityChangePct} onChange={e=>updateCraft(slot.id,{integrityChangePct:e.target.value})} placeholder="ex: 20 ou -5"/>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:6, fontStyle:'italic' }}>Esses valores são somados aos stats base do laser acima.</div>
+                </div>
+              )}
+
+              {/* Qtd. de módulos desta cabeça */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                <label style={{ ...LS, marginBottom:0 }}>Módulos nesta cabeça:</label>
+                <div style={{ display:'flex', gap:4 }}>
+                  {[1,2,3].map(n=>(
+                    <button key={n} onClick={()=>setModuleSlotCount(slot.id,n)} style={{
+                      width:24, height:24, borderRadius:4, cursor:'pointer',
+                      background: head.moduleSlotCount===n ? 'rgba(56,189,248,0.2)' : 'transparent',
+                      border:`1px solid ${head.moduleSlotCount===n ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                      color: head.moduleSlotCount===n ? 'var(--accent-primary)' : 'var(--text-muted)',
+                      fontSize:11, fontWeight:700,
+                    }}>{n}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Módulos equipados nesta cabeça */}
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+                {head.modules.map((m,i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}18`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}44` }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
+                    <span style={{ fontSize:9, color:'var(--text-muted)' }}>{m.effect}</span>
+                    <button onClick={()=>removeModuleFromHead(slot.id,i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0, display:'flex', alignItems:'center' }}><X size={10}/></button>
+                  </div>
+                ))}
+                {head.modules.length === 0 && <span style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Nenhum módulo equipado</span>}
+              </div>
+              {head.modules.length < head.moduleSlotCount && (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:5 }}>
+                  {MINING_MODULES_DB.filter(m=>!usedModuleNames.includes(m.name)).map(m => (
+                    <button key={m.name} onClick={()=>addModuleToHead(slot.id,m)} style={{
+                      textAlign:'left', padding:'6px 10px', background:'rgba(255,255,255,0.02)',
+                      border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--border-subtle)'}33`,
+                      borderRadius:6, cursor:'pointer', transition:'all 0.15s',
+                    }}
+                    onMouseEnter={e=>{e.currentTarget.style.background=`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}10`;}}
+                    onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:5 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
+                        <span style={{ fontSize:8, padding:'1px 5px', borderRadius:3, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}22`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.type}</span>
+                      </div>
+                      <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:2 }}>{m.effect}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Notas */}
@@ -347,10 +410,12 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
   const [expanded, setExpanded] = useState(false);
   const [delConf,  setDelConf]  = useState(false);
   const cfg = SHIP_CONFIGS[build.ship] || SHIP_CONFIGS['Prospector'];
+  const headConfig = ensureHeadConfig(build, cfg);
 
   const laserList = cfg.lasers.map(slot => ({
-    slot, laser: MINING_LASERS_DB.find(l=>l.name===build.lasers?.[slot.id])
+    slot, laser: MINING_LASERS_DB.find(l=>l.name===build.lasers?.[slot.id]), head: headConfig[slot.id],
   }));
+  const totalModules = laserList.reduce((a,{head})=>a+(head?.modules?.length||0),0);
 
   return (
     <div style={{
@@ -368,14 +433,12 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
             <span style={{ fontSize:10, color:'var(--text-muted)' }}>🚀 {build.ship}</span>
           </div>
           <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
-            {laserList.map(({slot,laser}) => laser && (
+            {laserList.map(({slot,laser,head}) => laser && (
               <span key={slot.id} style={{ display:'flex', alignItems:'center', gap:3 }}>
-                🔫 {laser.name}
+                🔫 {laser.name}{head?.craft?.isCrafted ? ' ⚒️' : ''}
               </span>
             ))}
-            {(build.modules||[]).map((m,i) => (
-              <span key={i} style={{ color:MODULE_TYPE_COLORS[m.type]||'var(--text-muted)' }}>· {m.name}</span>
-            ))}
+            {totalModules > 0 && <span>· {totalModules} módulo{totalModules!==1?'s':''}</span>}
           </div>
         </div>
         <div style={{ display:'flex', gap:5, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
@@ -403,40 +466,45 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
       {/* Detalhes expandidos */}
       {expanded && (
         <div style={{ padding:'0 14px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
-          <div style={{ display:'grid', gridTemplateColumns:`repeat(${cfg.lasers.length},1fr)`, gap:10, margin:'12px 0' }}>
-            {laserList.map(({slot,laser}) => (
-              <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.12)', borderRadius:7 }}>
-                <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>{slot.label}</div>
-                {laser ? (
-                  <>
-                    <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:4 }}>{laser.name}</div>
-                    <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap', marginBottom:3 }}>
-                      <span>⚡ {laser.power} MW</span>
-                      <span>📏 {laser.range}m</span>
-                      <span>Extr: {laser.extr}x</span>
-                      <span style={{ color:laser.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>Instab: {Math.round(laser.instab*100)}%</span>
-                    </div>
-                    <div style={{ fontSize:10, color:'var(--text-secondary)', fontStyle:'italic' }}>{laser.notes}</div>
-                  </>
-                ) : (
-                  <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Sem laser</div>
-                )}
-              </div>
-            ))}
+          <div style={{ display:'flex', flexDirection:'column', gap:8, margin:'12px 0' }}>
+            {laserList.map(({slot,laser,head}) => {
+              const eff = effectiveLaserStats(laser, head?.craft);
+              return (
+                <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.12)', borderRadius:7 }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>{slot.label}</div>
+                  {laser ? (
+                    <>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                        <span style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{laser.name}</span>
+                        {head?.craft?.isCrafted && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:3, background:'rgba(251,191,36,0.12)', color:'var(--accent-gold)', border:'1px solid rgba(251,191,36,0.3)' }}>⚒️ CRAFTADO</span>}
+                      </div>
+                      <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap', marginBottom:3 }}>
+                        <span>⚡ {eff.power} MW{eff.crafted && eff.power!==laser.power ? ` (base ${laser.power})` : ''}</span>
+                        <span>📏 {laser.range}m</span>
+                        <span>Extr: {laser.extr}x</span>
+                        <span style={{ color:eff.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>Instab: {Math.round(eff.instab*100)}%{eff.crafted && eff.instab!==laser.instab ? ` (base ${Math.round(laser.instab*100)}%)` : ''}</span>
+                      </div>
+                      {head?.craft?.isCrafted && head.craft.ores.some(o=>o.name) && (
+                        <div style={{ fontSize:9, color:'var(--text-muted)', marginBottom:4 }}>
+                          Minérios: {head.craft.ores.filter(o=>o.name).map(o=>`${o.name}${o.quality?` (Q${o.quality})`:''}`).join(', ')}
+                        </div>
+                      )}
+                      {(head?.modules?.length > 0) && (
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:5 }}>
+                          {head.modules.map((m,i) => (
+                            <span key={i} style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}14`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}33`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.name}</span>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ fontSize:10, color:'var(--text-secondary)', fontStyle:'italic', marginTop:4 }}>{laser.notes}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Sem laser</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          {(build.modules||[]).length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Módulos Equipados</div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {build.modules.map((m,i) => (
-                  <div key={i} style={{ padding:'5px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}14`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}33` }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</div>
-                    <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:1 }}>{m.effect}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {build.notes && (
             <div style={{ padding:'7px 10px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:5, fontSize:11, color:'var(--text-secondary)', fontStyle:'italic' }}>
               📝 {build.notes}
@@ -538,34 +606,14 @@ function BuildsTab() {
 }
 
 export default function MiningPage() {
-  const mergedOres      = useMemo(() => mergeOresWithUex(DEFAULT_MINEABLE_ORES), []);
-  const mergedLocations = useMemo(() => mergeLocationsWithUex(DEFAULT_MINING_LOCATIONS), []);
-  const { data: MINEABLE_ORES } = useDataset(DATASETS.MINING_ORES.key, mergedOres);
-  const { data: SHIP_LASERS } = useDataset(DATASETS.MINING_LASERS.key, DEFAULT_SHIP_LASERS);
   const { data: MINING_SHIPS } = useDataset(DATASETS.MINING_SHIPS.key, DEFAULT_MINING_SHIPS);
   const { data: MODULES } = useDataset(DATASETS.MINING_MODULES.key, DEFAULT_MINING_MODULES);
-  const { data: LOCATIONS } = useDataset(DATASETS.MINING_LOCATIONS.key, mergedLocations);
-  const miningStats    = getUexMiningStats();
-  const locationsStats = getUexLocationsStats();
-  const [activeTab, setActiveTab] = useState('locations');
-  const [selectedLaser, setSelectedLaser] = useState(null);
+  const [activeTab, setActiveTab] = useState('builds');
   const [selectedShip, setSelectedShip] = useState(null);
-  const [filterRaridade, setFilterRaridade] = useState('all');
-  const [sortOre, setOrdenarOre] = useState('value');
-  const [selectedLocalização, setSelectedLocalização] = useState(null);
-
-  const sortedOres = useMemo(() => {
-    let ores = [...MINEABLE_ORES].filter(o => filterRaridade==='all' || o.rarity===filterRaridade);
-    ores.sort((a,b) => sortOre==='name' ? a.name.localeCompare(b.name) : b.value-a.value);
-    return ores;
-  }, [filterRaridade, sortOre]);
 
   const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
 
   const TABS = [
-    { id:'locations', label:'Locais de Mineração' },
-    { id:'ores',      label:'Minérios & Valores' },
-    { id:'lasers',    label:'Lasers de Mining' },
     { id:'ships',     label:'Naves & Módulos' },
     { id:'builds',    label:'Builds de Nave' },
   ];
@@ -575,7 +623,7 @@ export default function MiningPage() {
       <div className="page-header">
         <div>
           <div className="page-title">GUIA DE MINERAÇÃO</div>
-          <div className="page-subtitle">Locais, minérios, lasers, naves e módulos para maximizar seu lucro</div>
+          <div className="page-subtitle">Naves, módulos e builds de mineração personalizadas</div>
         </div>
       </div>
 
@@ -593,152 +641,6 @@ export default function MiningPage() {
       </div>
 
       <div className="page-body">
-
-        {(miningStats.updatedAt || locationsStats.updatedAt) && (
-          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:16,padding:'10px 14px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8 }}>
-            <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
-              <strong style={{ color:'var(--accent-green)' }}>Dados sincronizados da UEX:</strong>{' '}
-              {miningStats.updatedAt ? `${miningStats.count} minérios (${ptDate(miningStats.updatedAt)})` : 'minérios ainda não sincronizados'}
-              {' · '}
-              {locationsStats.updatedAt ? `${locationsStats.counts.planets + locationsStats.counts.moons} planetas/luas (${ptDate(locationsStats.updatedAt)})` : 'locais ainda não sincronizados'}
-            </div>
-            <div style={{ fontSize:10,color:'var(--text-muted)' }}>Sincronize em UEX API (Live) → Mineração / Localizações</div>
-          </div>
-        )}
-        {!miningStats.updatedAt && !locationsStats.updatedAt && (
-          <div style={{ display:'flex',alignItems:'center',gap:10,marginBottom:16,padding:'10px 14px',background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:8,fontSize:11,color:'var(--text-secondary)' }}>
-            💡 Esta guia ainda está usando apenas dados curados manualmente. Visite <strong style={{ color:'var(--accent-gold)' }}>UEX API (Live)</strong> → abas Mineração/Localizações para trazer preços e locais atualizados da comunidade.
-          </div>
-        )}
-
-        {/* LOCATIONS TAB */}
-        {activeTab==='locations' && (
-          <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:16 }}>
-            {Object.entries(LOCATIONS).map(([loc,data])=>(
-              <div key={loc} style={{
-                background:'var(--bg-card)',border:`1px solid ${selectedLocalização===loc?'var(--border-bright)':'var(--border-subtle)'}`,
-                borderRadius:8,padding:'14px',cursor:'pointer',transition:'all 0.2s',
-              }} onClick={()=>setSelectedLocalização(selectedLocalização===loc?null:loc)}>
-                <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8 }}>
-                  <div>
-                    <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-                      <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{loc}</span>
-                      {data.synced && <span style={{ fontSize:9,fontWeight:700,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)' }}>UEX</span>}
-                    </div>
-                    <div style={{ fontSize:11,color:'var(--text-muted)',marginTop:2 }}>{data.system} · {data.type}</div>
-                  </div>
-                  <span style={{
-                    fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:4,letterSpacing:'0.08em',
-                    background:data.danger==='Alto'?'rgba(251,113,133,0.12)':data.danger==='Médio'?'rgba(251,191,36,0.1)':data.danger==='Desconhecido'?'rgba(122,144,176,0.1)':'rgba(52,211,153,0.1)',
-                    color:data.danger==='Alto'?'var(--accent-red)':data.danger==='Médio'?'var(--accent-gold)':data.danger==='Desconhecido'?'var(--text-muted)':'var(--accent-green)',
-                    border:`1px solid ${data.danger==='Alto'?'rgba(251,113,133,0.3)':data.danger==='Médio'?'rgba(251,191,36,0.25)':data.danger==='Desconhecido'?'rgba(122,144,176,0.25)':'rgba(52,211,153,0.25)'}`,
-                  }}>⚠ {data.danger}</span>
-                </div>
-                <div style={{ display:'flex',gap:5,flexWrap:'wrap',marginBottom:8 }}>
-                  {data.best.map(ore=>{
-                    const oreData=MINEABLE_ORES.find(o=>o.name===ore);
-                    return (
-                      <span key={ore} style={{ fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:3,background:`${oreData?.color||'#7a90b0'}18`,border:`1px solid ${oreData?.color||'#7a90b0'}44`,color:oreData?.color||'#7a90b0' }}>
-                        {ore}
-                      </span>
-                    );
-                  })}
-                </div>
-                {selectedLocalização===loc && (
-                  <div style={{ fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,borderTop:'1px solid var(--border-subtle)',paddingTop:8,marginTop:4 }}>
-                    {data.notes}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ORES TAB */}
-        {activeTab==='ores' && (
-          <div>
-            <div style={{ display:'flex',gap:10,marginBottom:16 }}>
-              <select style={SS} value={filterRaridade} onChange={e=>setFilterRaridade(e.target.value)}>
-                <option value="all">Todas Raridades</option>
-                <option value="Comum">Comum</option>
-                <option value="Incomum">Incomum</option>
-                <option value="Raro">Raro</option>
-              </select>
-              <select style={SS} value={sortOre} onChange={e=>setOrdenarOre(e.target.value)}>
-                <option value="value">Valor (maior)</option>
-                <option value="name">Nome (A-Z)</option>
-              </select>
-            </div>
-            <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:12 }}>
-              {sortedOres.map(ore=>(
-                <div key={ore.name} style={{ background:'var(--bg-card)',border:`1px solid ${ore.color}33`,borderRadius:8,padding:'14px',borderLeft:`3px solid ${ore.color}` }}>
-                  <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8 }}>
-                    <div>
-                      <div style={{ display:'flex',alignItems:'center',gap:6,flexWrap:'wrap' }}>
-                        <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:ore.color }}>{ore.name}</span>
-                        {ore.synced && <ProvenanceBadge category="mining_ore" name={ore.name}/>}
-                      </div>
-                      <div style={{ fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginTop:2 }}>{ore.rarity}</div>
-                    </div>
-                    <div style={{ textAlign:'right' }}>
-                      <div style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-gold)' }}>
-                        {ore.value.toLocaleString()}
-                      </div>
-                      <div style={{ fontSize:9,color:'var(--text-muted)' }}>aUEC/unidade</div>
-                    </div>
-                  </div>
-                  {ore.hazardous && (
-                    <div style={{ fontSize:10,color:'var(--accent-red)',fontWeight:700,background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:4,padding:'3px 8px',marginBottom:8 }}>
-                      ⚠️ INSTÁVEL — Risco de explosão
-                    </div>
-                  )}
-                  <div style={{ fontSize:11,color:'var(--text-secondary)',lineHeight:1.5,marginBottom:6 }}>{ore.notes}</div>
-                  <div style={{ fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:4 }}>
-                    <MapPin size={10}/> {ore.locations.join(' · ')}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* LASERS TAB */}
-        {activeTab==='lasers' && (
-          <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
-            <div style={{ display:'flex',alignItems:'flex-start',gap:8,padding:'10px 14px',background:'rgba(56,189,248,0.05)',border:'1px solid rgba(56,189,248,0.15)',borderRadius:8,fontSize:11,color:'var(--text-secondary)',marginBottom:4 }}>
-              💡 Nomes, fabricantes, tamanhos e preços verificados contra a UEX API. Os valores de Potência/Alcance/Extração/Instabilidade são estimativas comparativas — a UEX não expõe números oficiais de balanceamento de jogo.
-            </div>
-            {SHIP_LASERS.map(laser=>(
-              <div key={laser.name} style={{
-                background:'var(--bg-card)',border:`1px solid ${selectedLaser===laser.name?'var(--border-bright)':'var(--border-subtle)'}`,
-                borderRadius:8,padding:'14px',cursor:'pointer',transition:'all 0.2s',
-              }} onClick={()=>setSelectedLaser(selectedLaser===laser.name?null:laser.name)}>
-                <div style={{ display:'flex',alignItems:'center',gap:12 }}>
-                  <Pickaxe size={20} style={{ color:'var(--accent-gold)',flexShrink:0 }}/>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:4 }}>
-                      <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{laser.name}</span>
-                      <span style={{ fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:3,background:laser.tier==='Avançado'?'rgba(251,113,133,0.1)':laser.tier==='Intermediário'?'rgba(56,189,248,0.1)':laser.tier==='Craftado'?'rgba(52,211,153,0.1)':'rgba(255,255,255,0.05)',color:laser.tier==='Avançado'?'var(--accent-red)':laser.tier==='Intermediário'?'var(--accent-primary)':laser.tier==='Craftado'?'var(--accent-green)':'var(--text-muted)',border:'1px solid var(--border-subtle)' }}>{laser.tier}</span>
-                    </div>
-                    <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8 }}>
-                      {[['Potência',`${laser.power.toLocaleString()} MW`,'var(--accent-red)'],['Alcance',`${laser.range}m`,'var(--accent-primary)'],['Extração',`${laser.extraction}x`,'var(--accent-green)'],['Instab.',`${(laser.instability*100).toFixed(0)}%`,laser.instability>0.3?'var(--accent-red)':'var(--accent-green)']].map(([l,v,c])=>(
-                        <div key={l} style={{ background:'var(--bg-panel)',borderRadius:5,padding:'5px 8px' }}>
-                          <div style={{ fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em' }}>{l}</div>
-                          <div style={{ fontSize:12,color:c,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                {selectedLaser===laser.name && (
-                  <div style={{ marginTop:10,paddingTop:10,borderTop:'1px solid var(--border-subtle)',fontSize:12,color:'var(--text-secondary)',lineHeight:1.6 }}>
-                    {laser.notes}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* SHIPS & MODULES TAB */}
         {activeTab==='builds' && <BuildsTab/>}

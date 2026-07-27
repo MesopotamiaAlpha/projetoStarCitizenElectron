@@ -3,7 +3,8 @@ import {
   Pickaxe, Plus, Trash2, Edit3, Save, X, Search,
   MapPin, Star, CheckCircle2, Package, FlaskConical,
   ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Archive,
-  Gem, Layers, Minus, ArrowLeft, Camera, Download, Copy
+  Gem, Layers, Minus, ArrowLeft, Camera, Download, Copy,
+  Stone, Diamond, Sprout
 } from 'lucide-react';
 import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry } from '../data/oreVault';
 import { buildLocationFlatList } from '../data/uexLocationsDB';
@@ -13,7 +14,7 @@ const ORE_DATABASE = {
   // SHIP MINING (Prospector / MOLE / Orion)
   'Minério de Nave': {
     color: '#38bdf8',
-    icon: '🚀',
+    icon: Stone,
     ores: [
       { name:'Agricium',     rarity:'uncommon',  notes:'Bom valor, luas de Crusader' },
       { name:'Aluminium',    rarity:'common',    notes:'Muito comum, baixo valor' },
@@ -46,7 +47,7 @@ const ORE_DATABASE = {
   // VEHICLE MINING (ROC)
   'Vehicle Mining': {
     color: '#fbbf24',
-    icon: '🚗',
+    icon: Diamond,
     ores: [
       { name:'Beradom',      rarity:'uncommon', notes:'ROC mining' },
       { name:'Carinite',     rarity:'common',   notes:'ROC mining, comum' },
@@ -57,7 +58,7 @@ const ORE_DATABASE = {
   // FPS MINING (hand mining)
   'FPS Mining': {
     color: '#34d399',
-    icon: '⛏️',
+    icon: Diamond,
     ores: [
       { name:'Aphorite',     rarity:'rare',     notes:'Gema, alto valor, sem refino' },
       { name:'Carinite',     rarity:'common',   notes:'FPS mining, comum' },
@@ -73,7 +74,7 @@ const ORE_DATABASE = {
   // PLANTAS / FLORES
   'Plants': {
     color: '#55efc4',
-    icon: '🌿',
+    icon: Sprout,
     ores: [
       { name:'Amiant',         rarity:'uncommon', notes:'Planta colhível' },
       { name:'Decari',         rarity:'uncommon', notes:'Planta colhível' },
@@ -130,7 +131,7 @@ const ORE_COLORS = {
   'Hephaestanite':'#e17055','Corundum':'#81ecec','Titanium':'#74b9ff','Lindinium':'#a29bfe',
   'Ouratite':'#ffeaa7','Riccite':'#ff7675','Savrilium':'#fb7185','Stileron':'#e84393',
   'Beryl':'#34d399','Silicon':'#b2bec3','Quartz':'#dfe6e9','Ice':'#81ecec',
-  'Aslarite':'#74b9ff','Torite':'#fb923c','Tin':'#b2bec3','Mg Script':'#a29bfe',
+  'Aslarite':'#74b9ff','Torite':'#fb923c','Tin':'#b2bec3','Mg Scrip':'#a29bfe',
   'Concuil Script':'#a29bfe',
 };
 function getOreColor(name) { return ORE_COLORS[name] || '#7a90b0'; }
@@ -231,7 +232,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
       {/* Info do minério selecionado */}
       {oreInfo && (
         <div style={{marginBottom:12,padding:'7px 12px',background:oreCat?`${ORE_DATABASE[oreCat].color}11`:'rgba(255,255,255,0.03)',border:`1px solid ${oreCat?ORE_DATABASE[oreCat].color+'33':'var(--border-subtle)'}`,borderRadius:6,fontSize:11,display:'flex',alignItems:'center',gap:10}}>
-          <span style={{fontSize:14}}>{oreCat?ORE_DATABASE[oreCat].icon:''}</span>
+          {oreCat && (() => { const CatIcon = ORE_DATABASE[oreCat].icon; return <CatIcon size={15} strokeWidth={1.5} style={{color:ORE_DATABASE[oreCat].color,flexShrink:0}}/>; })()}
           <div>
             <span style={{fontWeight:700,color:'var(--text-primary)'}}>{d.ore_name}</span>
             {oreInfo.rarity && <span style={{marginLeft:8,fontSize:9,padding:'1px 5px',borderRadius:3,background:`${RARITY_COLORS[oreInfo.rarity]}22`,color:RARITY_COLORS[oreInfo.rarity],fontWeight:700}}>{oreInfo.rarity.toUpperCase()}</span>}
@@ -330,7 +331,7 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
       <div style={{display:'flex',alignItems:'center',gap:10}}>
         {/* Dot de cor */}
         <div style={{width:32,height:32,borderRadius:'50%',background:`${color}22`,border:`1px solid ${color}44`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14}}>
-          {oreCat ? ORE_DATABASE[oreCat]?.icon : '⛏'}
+          {(() => { const CatIcon = oreCat ? ORE_DATABASE[oreCat]?.icon : Pickaxe; return CatIcon ? <CatIcon size={15} strokeWidth={1.5} style={{color}}/> : null; })()}
         </div>
         {/* Info */}
         <div style={{flex:1,minWidth:0}}>
@@ -418,12 +419,11 @@ async function generateVaultImage(summary) {
   const grouped = CATEGORIES.map(cat => ({
     cat,
     color: ORE_DATABASE[cat].color,
-    icon: ORE_DATABASE[cat].icon,
     items: summary.filter(s => getOreCategory(s.name) === cat).sort((a,b)=>b.total-a.total),
   })).filter(g => g.items.length > 0);
 
   const uncategorized = summary.filter(s => !getOreCategory(s.name));
-  if (uncategorized.length) grouped.push({ cat:'Outros', color:'#7a90b0', icon:'📦', items:uncategorized });
+  if (uncategorized.length) grouped.push({ cat:'Outros', color:'#7a90b0', items:uncategorized });
 
   const WIDTH = 760;
   const PAD = 28;
@@ -473,7 +473,7 @@ async function generateVaultImage(summary) {
     ctx.fillRect(PAD-10, y, WIDTH-2*(PAD-10), SECTION_H-6);
     ctx.fillStyle = g.color;
     ctx.font = '700 13px Michroma, sans-serif';
-    ctx.fillText(`${g.icon}  ${g.cat.toUpperCase()}`, PAD, y+7);
+    ctx.fillText(g.cat.toUpperCase(), PAD, y+7);
     y += SECTION_H;
 
     g.items.forEach((it,i) => {
@@ -799,7 +799,7 @@ export default function OreVaultPage() {
               <>
                 <span style={{color:'var(--text-muted)'}}>›</span>
                 <button onClick={()=>{setSelOre(null);setSearch('');}} style={{background:'none',border:'none',cursor:selOre?'pointer':'default',color:selOre?'var(--accent-primary)':'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,padding:0,display:'flex',alignItems:'center',gap:4}}>
-                  <span>{ORE_DATABASE[selCategory].icon}</span>{selCategory}
+                  {(() => { const CatIcon = ORE_DATABASE[selCategory].icon; return <CatIcon size={13} strokeWidth={1.5}/>; })()}{selCategory}
                 </button>
               </>
             )}
@@ -831,7 +831,7 @@ export default function OreVaultPage() {
                     }}
                     onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 6px 20px ${data.color}22`;}}
                     onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
-                      <div style={{fontSize:24,marginBottom:8}}>{data.icon}</div>
+                      <div style={{marginBottom:8}}><data.icon size={26} strokeWidth={1.5} style={{color:data.color}}/></div>
                       <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color:data.color,marginBottom:4,letterSpacing:'0.04em'}}>{cat}</div>
                       <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:2}}>{count}</div>
                       <div style={{fontSize:10,color:'var(--text-muted)'}}>entrada{count!==1?'s':''} de {totalOres} tipos</div>
@@ -858,7 +858,7 @@ export default function OreVaultPage() {
           {selCategory && selCategory!=='__all' && !selOre && !search.trim() && (
             <div>
               <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:ORE_DATABASE[selCategory]?.color,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:12}}>
-                {ORE_DATABASE[selCategory].icon} Minérios em {selCategory}
+                {(() => { const CatIcon = ORE_DATABASE[selCategory].icon; return <CatIcon size={13} strokeWidth={1.5} style={{display:'inline-block',verticalAlign:'-2px',marginRight:4}}/>; })()} Minérios em {selCategory}
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:8,marginBottom:16}}>
                 {oresInCategory.map(({name,hasEntries,count,total,unit,info})=>{

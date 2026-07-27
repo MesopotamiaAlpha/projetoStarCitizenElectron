@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Save, Upload, Download, CheckSquare, Square, AlertTriangle, CheckCircle2,
   RefreshCw, FileWarning, Info, Shield
@@ -17,6 +17,17 @@ function fmtData(iso) {
 function BackupSection() {
   const [selected, setSelected] = useState(() => BACKUP_CATEGORIES.map(c => c.id));
   const [done, setDone] = useState(null); // resumo do último backup gerado
+  const [counts, setCounts] = useState({});
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCountsLoading(true);
+    Promise.all(BACKUP_CATEGORIES.map(async cat => [cat.id, await countCategoryItems(cat)]))
+      .then(pairs => { if (!cancelled) { setCounts(Object.fromEntries(pairs)); setCountsLoading(false); } });
+    return () => { cancelled = true; };
+  }, []);
 
   function toggle(id) {
     setSelected(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
@@ -25,10 +36,13 @@ function BackupSection() {
   function selectAll()  { setSelected(BACKUP_CATEGORIES.map(c=>c.id)); setDone(null); }
   function selectNone() { setSelected([]); setDone(null); }
 
-  function handleDownload() {
+  async function handleDownload() {
     if (selected.length === 0) return;
-    const backup = downloadBackup(selected);
-    setDone({ count: selected.length, at: backup.exported_at });
+    setDownloading(true);
+    try {
+      const backup = await downloadBackup(selected);
+      setDone({ count: selected.length, at: backup.exported_at });
+    } finally { setDownloading(false); }
   }
 
   return (
@@ -53,7 +67,7 @@ function BackupSection() {
       <div style={{ display:'flex',flexDirection:'column',gap:6,marginBottom:16 }}>
         {BACKUP_CATEGORIES.map(cat => {
           const checked = selected.includes(cat.id);
-          const count = countCategoryItems(cat);
+          const count = counts[cat.id];
           return (
             <label key={cat.id} style={{
               display:'flex',alignItems:'center',gap:10,padding:'9px 12px',cursor:'pointer',
@@ -63,21 +77,24 @@ function BackupSection() {
               <input type="checkbox" checked={checked} onChange={()=>toggle(cat.id)} style={{ flexShrink:0 }}/>
               <span style={{ flex:1,fontSize:13,color:'var(--text-primary)',fontWeight:600 }}>{cat.label}</span>
               {cat.sensitive && <Shield size={12} title="Contém seu token da UEX — mantenha o arquivo em local seguro." style={{ color:'var(--accent-gold)',flexShrink:0 }}/>}
-              <span style={{ fontSize:11,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',flexShrink:0 }}>{count} registro{count!==1?'s':''}</span>
+              <span style={{ fontSize:11,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',flexShrink:0 }}>
+                {countsLoading ? '...' : `${count ?? 0} registro${count!==1?'s':''}`}
+              </span>
             </label>
           );
         })}
       </div>
 
-      <button onClick={handleDownload} disabled={selected.length===0} style={{
+      <button onClick={handleDownload} disabled={selected.length===0||downloading} style={{
         display:'flex',alignItems:'center',gap:8,padding:'11px 22px',
         background: selected.length? 'rgba(52,211,153,0.12)':'rgba(255,255,255,0.03)',
         border:`1px solid ${selected.length?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`, borderRadius:8,
         color: selected.length?'var(--accent-green)':'var(--text-muted)',
         fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,textTransform:'uppercase',
-        cursor: selected.length?'pointer':'not-allowed',
+        cursor: selected.length&&!downloading?'pointer':'not-allowed',
       }}>
-        <Download size={15}/> Baixar Backup ({selected.length} {selected.length===1?'seção':'seções'})
+        {downloading ? <RefreshCw size={15} style={{ animation:'spin 1s linear infinite' }}/> : <Download size={15}/>}
+        {downloading ? 'Gerando...' : `Baixar Backup (${selected.length} ${selected.length===1?'seção':'seções'})`}
       </button>
 
       {done && (
@@ -118,10 +135,15 @@ function RestoreSection() {
     setSelected(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
   }
 
-  function handleRestore() {
-    const res = restoreBackup(backup, selected);
-    setResult(res);
-    setConfirming(false);
+  const [restoring, setRestoring] = useState(false);
+
+  async function handleRestore() {
+    setRestoring(true);
+    try {
+      const res = await restoreBackup(backup, selected);
+      setResult(res);
+      setConfirming(false);
+    } finally { setRestoring(false); }
   }
 
   return (
@@ -192,7 +214,7 @@ function RestoreSection() {
           ) : (
             <div style={{ display:'flex',gap:8,alignItems:'center' }}>
               <span style={{ fontSize:12,color:'var(--accent-red)',fontWeight:700 }}>Tem certeza?</span>
-              <button onClick={handleRestore} style={{ padding:'8px 16px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:6,color:'var(--accent-red)',fontWeight:700,fontSize:12,cursor:'pointer' }}>Sim, restaurar</button>
+              <button onClick={handleRestore} disabled={restoring} style={{ padding:'8px 16px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:6,color:'var(--accent-red)',fontWeight:700,fontSize:12,cursor:restoring?'not-allowed':'pointer',opacity:restoring?0.6:1 }}>{restoring?'Restaurando...':'Sim, restaurar'}</button>
               <button onClick={()=>setConfirming(false)} style={{ padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:'var(--text-secondary)',fontSize:12,cursor:'pointer' }}>Cancelar</button>
             </div>
           )}

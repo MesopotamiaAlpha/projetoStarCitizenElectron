@@ -9,7 +9,7 @@ import { searchUexItems } from '../data/uexItemsDB';
 // ── Storage ───────────────────────────────────────────────────────────────────
 const MISSIONS_KEY = 'sc_wikelo_missions_v1';
 const INV_KEY      = 'sc_inventory_v1';
-const SCRIPT_ITEMS = ['Mg Script', 'Concuil Script'];
+const SCRIPT_ITEMS = ['Mg Scrip', 'Concuil Script'];
 const SCRIPT_RATIO = 50;
 
 function loadMissions() {

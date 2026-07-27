@@ -1,8 +1,8 @@
 // ── Backup & Restauração ──────────────────────────────────────────────────────
-// Cobre todos os dados guardados em localStorage pelo app. Itens que vivem no
-// banco do Electron (Armaduras, Inventário de Itens, Blueprints) usam um
-// armazenamento separado (SQLite via processo principal) e ainda não entram
-// neste backup — ver aviso na tela de Backup.
+// A maior parte dos dados vive em localStorage. Blueprints customizadas (cadastradas
+// manualmente) vivem no banco SQLite do Electron — essa categoria usa IPC em vez de
+// localStorage pra exportar/importar. Armaduras e Inventário de Itens também vivem
+// lá e ainda não têm backup — ver UNSUPPORTED_CATEGORIES.
 
 const DATA_OVERRIDE_PREFIX = 'sc_data_override_';
 
@@ -13,6 +13,7 @@ export const BACKUP_CATEGORIES = [
   { id:'missions',    label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },
   { id:'wikelo',      label:'Acompanhamento Wikelo',           keys:['sc_wikelo_missions_v1'] },
   { id:'materials',   label:'Fila de Materiais',               keys:['sc_material_queue_v1'] },
+  { id:'blueprints',  label:'Blueprints Customizadas',         electron:'blueprints' },
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
   { id:'uexconfig',   label:'Configuração e Sincronização UEX', keys:['sc_uex_token_v1','sc_uex_secretkey_v1','sc_uex_username_v1','sc_uex_notif_state_v1','sc_uex_items_db_v1','sc_uex_locations_db_v1','sc_uex_mining_db_v1'], sensitive:true },
   { id:'dataoverride',label:'Personalizações de Dados (Mineração/Trade/DPS/Cargo/Market)', keys:[], dynamicPrefix: DATA_OVERRIDE_PREFIX },
@@ -23,14 +24,13 @@ export const BACKUP_CATEGORIES = [
 export const UNSUPPORTED_CATEGORIES = [
   'Armaduras (Todas as Armaduras / Meus Sets)',
   'Inventário de Itens',
-  'Blueprints',
 ];
 
 function keysForCategory(cat) {
   if (cat.dynamicPrefix) {
     return Object.keys(localStorage).filter(k => k.startsWith(cat.dynamicPrefix));
   }
-  return cat.keys;
+  return cat.keys || [];
 }
 
 function countFromRaw(raw) {
@@ -44,13 +44,26 @@ function countFromRaw(raw) {
   } catch { return 0; }
 }
 
+async function fetchElectronCategoryData(cat) {
+  if (cat.electron === 'blueprints') {
+    if (!window.electronAPI?.bpExportCustom) return [];
+    try { return await window.electronAPI.bpExportCustom(); } catch { return []; }
+  }
+  return [];
+}
+
 /** Quantos itens/registros uma categoria tem guardado agora (pra mostrar antes de exportar). */
-export function countCategoryItems(cat) {
+export async function countCategoryItems(cat) {
+  if (cat.electron) {
+    const list = await fetchElectronCategoryData(cat);
+    return list.length;
+  }
   return keysForCategory(cat).reduce((total, k) => total + countFromRaw(localStorage.getItem(k)), 0);
 }
 
 /** Mesma contagem, mas lendo de um backup já carregado (pra tela de restauração). */
 export function countCategoryItemsFromBackup(cat, backup) {
+  if (cat.electron) return backup.electron?.[cat.electron]?.length || 0;
   const keys = cat.dynamicPrefix
     ? Object.keys(backup.data).filter(k => k.startsWith(cat.dynamicPrefix))
     : cat.keys;
@@ -58,27 +71,33 @@ export function countCategoryItemsFromBackup(cat, backup) {
 }
 
 /** Monta o objeto de backup para as categorias selecionadas. */
-export function buildBackup(selectedIds) {
+export async function buildBackup(selectedIds) {
   const categories = BACKUP_CATEGORIES.filter(c => selectedIds.includes(c.id));
   const data = {};
-  categories.forEach(cat => {
+  const electronData = {};
+  for (const cat of categories) {
+    if (cat.electron) {
+      electronData[cat.electron] = await fetchElectronCategoryData(cat);
+      continue;
+    }
     keysForCategory(cat).forEach(k => {
       const raw = localStorage.getItem(k);
       if (raw !== null) data[k] = raw; // guarda a string crua, sem re-parsear
     });
-  });
+  }
   return {
     app: 'SC Toolbox',
-    version: 1,
+    version: 2,
     exported_at: new Date().toISOString(),
     categories: categories.map(c => c.id),
     data,
+    electron: electronData,
   };
 }
 
 /** Dispara o download do backup como arquivo .json. */
-export function downloadBackup(selectedIds) {
-  const backup = buildBackup(selectedIds);
+export async function downloadBackup(selectedIds) {
+  const backup = await buildBackup(selectedIds);
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -106,6 +125,7 @@ export async function readBackupFile(file) {
 /** Quais categorias conhecidas este backup realmente contém dados. */
 export function categoriesInBackup(backup) {
   return BACKUP_CATEGORIES.filter(cat => {
+    if (cat.electron) return !!(backup.electron && backup.electron[cat.electron]?.length);
     if (cat.dynamicPrefix) {
       return Object.keys(backup.data).some(k => k.startsWith(cat.dynamicPrefix));
     }
@@ -114,10 +134,19 @@ export function categoriesInBackup(backup) {
 }
 
 /** Restaura as categorias selecionadas de um backup já validado. Sobrescreve os dados atuais. */
-export function restoreBackup(backup, selectedIds) {
+export async function restoreBackup(backup, selectedIds) {
   let restoredKeys = 0;
   const categories = BACKUP_CATEGORIES.filter(c => selectedIds.includes(c.id));
-  categories.forEach(cat => {
+  const labels = [];
+  for (const cat of categories) {
+    if (cat.electron === 'blueprints') {
+      if (window.electronAPI?.bpImportCustom && backup.electron?.blueprints) {
+        const res = await window.electronAPI.bpImportCustom(backup.electron.blueprints);
+        restoredKeys += res.imported || 0;
+        labels.push(`${cat.label} (${res.imported} importada${res.imported!==1?'s':''}${res.skipped?`, ${res.skipped} já existente${res.skipped!==1?'s':''}`:''})`);
+      }
+      continue;
+    }
     const keysToRestore = cat.dynamicPrefix
       ? Object.keys(backup.data).filter(k => k.startsWith(cat.dynamicPrefix))
       : cat.keys;
@@ -127,6 +156,7 @@ export function restoreBackup(backup, selectedIds) {
         restoredKeys++;
       }
     });
-  });
-  return { restoredKeys, categories: categories.map(c => c.label) };
+    labels.push(cat.label);
+  }
+  return { restoredKeys, categories: labels };
 }

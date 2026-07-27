@@ -963,9 +963,10 @@ function ItemDBSyncButton() {
     return db.updatedAt ? { count: db.itemCount, updatedAt: db.updatedAt } : null;
   });
   const [error, setError] = useState('');
+  const [priceWarning, setPriceWarning] = useState('');
 
   async function handleSync() {
-    setSyncing(true); setError(''); setPhase('Buscando categorias...');
+    setSyncing(true); setError(''); setPriceWarning(''); setPhase('Buscando categorias...');
     try {
       const allItems = [];
       const seenIds  = new Set();
@@ -1016,6 +1017,7 @@ function ItemDBSyncButton() {
       // 3. Buscar items_prices_all para enriquecer com preços reais de mercado.
       // (items_prices exige id_item/id_terminal por chamada e por isso falhava silenciosamente
       // sem preencher nada; items_prices_all traz tudo de uma vez, sem parâmetros.)
+      let priceFetchError = '';
       try {
         const prices = await uexFetch('items_prices_all');
         if (prices && Array.isArray(prices)) {
@@ -1032,8 +1034,10 @@ function ItemDBSyncButton() {
               if (val < priceMap[id].min) priceMap[id].min = val;
             }
           });
+        } else {
+          priceFetchError = 'A UEX não retornou uma lista de preços válida.';
         }
-      } catch { /* preços podem não estar disponíveis */ }
+      } catch (e) { priceFetchError = e.message; }
 
       // 4. Enriquecer itens com preços
       const enriched = allItems.map(item => {
@@ -1049,6 +1053,7 @@ function ItemDBSyncButton() {
 
       const db = saveUexItemsDB(enriched);
       setSyncInfo({ count: db.itemCount, updatedAt: db.updatedAt });
+      if (priceFetchError) setPriceWarning(`Itens sincronizados, mas os preços de mercado não puderam ser carregados: ${priceFetchError}`);
       setPhase('');
     } catch (err) {
       setError(`Erro: ${err.message}`);
@@ -1077,6 +1082,7 @@ function ItemDBSyncButton() {
         </span>
       )}
       {error && <span style={{ fontSize:10,color:'var(--accent-red)' }}>{error}</span>}
+      {priceWarning && !error && <span style={{ fontSize:10,color:'var(--accent-gold)',maxWidth:280,textAlign:'right' }}>{priceWarning}</span>}
     </div>
   );
 }

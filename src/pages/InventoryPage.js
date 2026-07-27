@@ -12,7 +12,7 @@ import { setProvenance, SOURCES } from '../data/provenance';
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
-const SCRIPT_ITEMS = ['Mg Script', 'Concuil Script'];
+const SCRIPT_ITEMS = ['Mg Scrip', 'Concuil Script'];
 const SCRIPT_RATIO = 50; // 50 scripts = 1 Wikelo Favor
 const WIKELO_COLOR = '#a29bfe';
 
@@ -353,10 +353,13 @@ const emptyItem = () => ({
   container:'', quantity:0, unit:'un',
   size:'', grade:'', manufacturer:'', condition:'Bom',
   value_auec:0, is_contraband:false, notes:'',
+  is_crafted:false, craft_status:[],
 });
 
+function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
+
 function ItemForm({ initial, onSave, onCancelar }) {
-  const [data, setData]       = useState(initial || emptyItem());
+  const [data, setData]       = useState(() => initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem());
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSugg, setShowSugg]       = useState(false);
@@ -389,31 +392,55 @@ function ItemForm({ initial, onSave, onCancelar }) {
     setImportModal(uexItem);
   }
 
-  // Mapear categoria UEX para categoria local
-  function mapCategory(uexCat) {
-    const catMap = {
-      'armor': 'Armadura FPS', 'helmet': 'Armadura FPS', 'arms': 'Armadura FPS',
-      'legs': 'Armadura FPS', 'backpack': 'Armadura FPS', 'undersuit': 'Armadura FPS',
-      'pistol': 'Arma Pessoal', 'rifle': 'Arma Pessoal', 'shotgun': 'Arma Pessoal',
-      'smg': 'Arma Pessoal', 'sniper': 'Arma Pessoal',
-      'optics': 'Acessório de Arma', 'barrel': 'Acessório de Arma',
-      'shield': 'Componente de Nave', 'power plant': 'Componente de Nave',
-      'cooler': 'Componente de Nave', 'quantum': 'Componente de Nave',
-      'medical': 'Utilitário', 'multi-tool': 'Utilitário',
-      'food': 'Consumível', 'drink': 'Consumível',
-      'flair': 'Decoração / Flair', 'decal': 'Decoração / Flair',
-    };
-    const lower = (uexCat||'').toLowerCase();
-    const mapped = Object.entries(catMap).find(([k]) => lower.includes(k));
-    return mapped ? mapped[1] : null;
+  // Mapear categoria/seção da UEX para categoria + subcategoria locais
+  function mapUexToLocal(uexItem) {
+    const hay = `${uexItem.section||''} ${uexItem.category||''}`.toLowerCase();
+    const rules = [
+      [['helmet'],'Armadura FPS','Capacete'], [['torso'],'Armadura FPS','Torso'],
+      [['arm'],'Armadura FPS','Braços'], [['leg'],'Armadura FPS','Pernas'],
+      [['backpack'],'Armadura FPS','Mochila'], [['undersuit'],'Armadura FPS','Undersuit'],
+      [['full set'],'Armadura FPS','Set Completo'],
+      [['assault rifle'],'Arma Pessoal','Rifle de Assalto'], [['sniper'],'Arma Pessoal','Rifle de Sniper'],
+      [['shotgun'],'Arma Pessoal','Espingarda (Shotgun)'], [['smg'],'Arma Pessoal','SMG'],
+      [['pistol'],'Arma Pessoal','Pistola'], [['grenade launcher'],'Arma Pessoal','Lança-granadas'],
+      [['rocket launcher','missile launcher'],'Arma Pessoal','Lança-foguetes'],
+      [['melee','knife'],'Arma Pessoal','Arma Melee'], [['ammo','ammunition'],'Arma Pessoal','Munição'],
+      [['scope','sight','optic'],'Acessório de Arma','Mira/Scope'],
+      [['suppressor','silencer'],'Acessório de Arma','Supressor'],
+      [['flashlight','tactical light'],'Acessório de Arma','Lanterna Tática'],
+      [['magazine'],'Acessório de Arma','Carregador'], [['underbarrel'],'Acessório de Arma','Underbarrel'],
+      [['grip'],'Acessório de Arma','Empunhadura'],
+      [['shield generator','shield'],'Componente de Nave','Escudo'],
+      [['power plant'],'Componente de Nave','Planta de Energia'], [['cooler'],'Componente de Nave','Cooler'],
+      [['quantum drive'],'Componente de Nave','Propulsor Quântico'], [['thruster'],'Componente de Nave','Thruster'],
+      [['radar','avionics'],'Componente de Nave','Radar/Avionics'],
+      [['mining laser','mining module','mining head'],'Componente de Nave','Módulo de Mining'],
+      [['salvage'],'Componente de Nave','Módulo de Salvage'],
+      [['weapon','cannon','laser repeater','ballistic gun','energy gun'],'Componente de Nave','Arma de Nave'],
+      [['medpen','medical'],'Utilitário','Medpen'], [['multi-tool','multitool'],'Utilitário','Multi-Tool'],
+      [['tractor beam'],'Utilitário','Tractor Beam'], [['scanner'],'Utilitário','Scanner'],
+      [['jacket'],'Roupa','Jaqueta'], [['shirt'],'Roupa','Camisa'], [['pants','trouser'],'Roupa','Calça'],
+      [['shoe','boot'],'Roupa','Calçado'], [['glove'],'Roupa','Luvas'], [['hat','cap'],'Roupa','Chapéu / Boné'],
+      [['blueprint'],'Blueprint',''],
+      [['flair','decal','trophy'],'Decoração / Flair',''],
+      [['food'],'Consumível','Comida'], [['drink'],'Consumível','Bebida'],
+    ];
+    for (const [keywords, category, subcategory] of rules) {
+      if (keywords.some(k => hay.includes(k))) return { category, subcategory };
+    }
+    return { category: null, subcategory: '' };
   }
 
   // Aplicar dados UEX ao form (incluindo preço)
   function applyUexData(uexItem, fields) {
     const updates = {};
     if (fields.includes('category') && uexItem.category) {
-      const cat = mapCategory(uexItem.category);
-      if (cat) updates.category = cat;
+      const { category, subcategory } = mapUexToLocal(uexItem);
+      if (category) {
+        updates.category = category;
+        // Só sobrescreve subcategoria se o mapeamento encontrou uma correspondente na lista local
+        if (subcategory && (CATEGORIES[category]||[]).includes(subcategory)) updates.subcategory = subcategory;
+      }
     }
     if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
     if (fields.includes('manufacturer') && uexItem.company_name) updates.manufacturer = uexItem.company_name;
@@ -435,15 +462,27 @@ function ItemForm({ initial, onSave, onCancelar }) {
     ? LOCATIONS[data.system][data.location_type] : [];
   const subcatOptions = CATEGORIES[data.category] || [];
 
+  // Modo de digitação manual do local — estado próprio, independente de data.location_name,
+  // pra não conflitar com o valor do <select> conforme o usuário digita.
+  const [manualLocation, setManualLocation] = useState(() =>
+    !!data.location_name && locationOptions.length > 0 && !locationOptions.includes(data.location_name)
+  );
+
   function handleSistemaChange(sys) {
     const types = Object.keys(LOCATIONS[sys]||{});
     const lt = types[0]||'';
     const locs = (LOCATIONS[sys]||{})[lt]||[];
+    setManualLocation(false);
     set('system',sys); set('location_type',lt); set('location_name',locs[0]||'');
   }
   function handleTipoChange(lt) {
     const locs = (LOCATIONS[data.system]||{})[lt]||[];
+    setManualLocation(false);
     set('location_type',lt); set('location_name',locs[0]||'');
+  }
+  function handleLocationSelectChange(v) {
+    if (v === '__custom') { setManualLocation(true); set('location_name',''); }
+    else { setManualLocation(false); set('location_name', v); }
   }
 
   function handleSubmit() {
@@ -626,17 +665,22 @@ function ItemForm({ initial, onSave, onCancelar }) {
         </div>
         <div>
           <label style={LS}>Localização *</label>
-          {locationOptions.length > 0 ? (
-            <select style={SS} value={data.location_name} onChange={e=>set('location_name',e.target.value)}>
+          {locationOptions.length > 0 && !manualLocation ? (
+            <select style={SS} value={data.location_name} onChange={e=>handleLocationSelectChange(e.target.value)}>
               <option value="">— selecione —</option>
               {locationOptions.map(l=><option key={l} value={l}>{l}</option>)}
               <option value="__custom">Outro (digitar)</option>
             </select>
           ) : (
-            <input style={IS} value={data.location_name} onChange={e=>set('location_name',e.target.value)} placeholder="Nome do local..."/>
-          )}
-          {data.location_name === '__custom' && (
-            <input style={{ ...IS, marginTop:6 }} placeholder="Digite o local..." onChange={e=>set('location_name',e.target.value)}/>
+            <div style={{ display:'flex', gap:6 }}>
+              <input style={IS} value={data.location_name} onChange={e=>set('location_name',e.target.value)} placeholder="Digite o local..." autoFocus={manualLocation}/>
+              {locationOptions.length > 0 && (
+                <button type="button" onClick={()=>{ setManualLocation(false); set('location_name', locationOptions[0]||''); }}
+                  style={{ padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                  Voltar à lista
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -687,6 +731,43 @@ function ItemForm({ initial, onSave, onCancelar }) {
             {CONDITIONS.map(c=><option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+      </div>
+
+      {/* Craftado? */}
+      <div style={{ marginBottom:12 }}>
+        <label style={{ display:'flex',alignItems:'center',gap:8,cursor:'pointer',padding:'10px 14px',background:data.is_crafted?'rgba(251,191,36,0.08)':'rgba(255,255,255,0.03)',border:`1px solid ${data.is_crafted?'rgba(251,191,36,0.35)':'var(--border-subtle)'}`,borderRadius:6,transition:'all 0.2s',marginBottom:data.is_crafted?10:0 }}>
+          <input type="checkbox" checked={!!data.is_crafted} onChange={e=>set('is_crafted',e.target.checked)} style={{ accentColor:'var(--accent-gold)',width:16,height:16 }}/>
+          <div>
+            <div style={{ fontSize:12,fontWeight:700,color:data.is_crafted?'var(--accent-gold)':'var(--text-secondary)',letterSpacing:'0.06em' }}>⚒️ ITEM CRAFTADO</div>
+            <div style={{ fontSize:10,color:'var(--text-muted)' }}>Registre os status que mudaram ao craftar este item</div>
+          </div>
+        </label>
+
+        {data.is_crafted && (
+          <div style={{ padding:'12px 14px', background:'rgba(251,191,36,0.04)', border:'1px solid rgba(251,191,36,0.15)', borderRadius:6 }}>
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>Status do Craft</div>
+            {data.craft_status.map((row,i) => (
+              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:6 }}>
+                <input style={IS} value={row.status} onChange={e=>{
+                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,status:e.target.value} : r);
+                  set('craft_status', rows);
+                }} placeholder="Status (ex: Potência do laser)"/>
+                <input style={IS} value={row.bonus} onChange={e=>{
+                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,bonus:e.target.value} : r);
+                  set('craft_status', rows);
+                }} placeholder="Bônus (ex: +15%)"/>
+                <button onClick={()=>set('craft_status', data.craft_status.filter((_,j)=>j!==i))}
+                  style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                  <X size={13}/>
+                </button>
+              </div>
+            ))}
+            <button onClick={()=>set('craft_status', [...data.craft_status, newCraftStatusRow()])}
+              style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:data.craft_status.length?4:0 }}>
+              <Plus size={12}/> + Status
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Notas + Contrabando */}
@@ -834,6 +915,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
           <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
           {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
+          {item.is_crafted ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>⚒ CRAFT</span> : null}
           {isScript && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700,flexShrink:0}}>★ WIKELO</span>}
           {isPaf && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(56,189,248,0.15)',color:PAF_COLOR,border:'1px solid rgba(56,189,248,0.3)',fontWeight:700,flexShrink:0}}>📡 PAF</span>}
         </div>
@@ -915,6 +997,20 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
                 </div>
               ))}
             </div>
+
+            {item.is_crafted && (item.craft_status?.length > 0) && (
+              <div style={{marginBottom:14,padding:'10px 12px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6}}>
+                <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>⚒️ Item Craftado</div>
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {item.craft_status.map(row => (
+                    <div key={row.id} style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
+                      <span style={{color:'var(--text-secondary)'}}>{row.status}</span>
+                      <span style={{color:'var(--accent-gold)',fontWeight:700,fontFamily:'Share Tech Mono,monospace'}}>{row.bonus}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {item.notes && (
               <div style={{marginBottom:14,padding:'8px 12px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
