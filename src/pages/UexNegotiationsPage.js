@@ -18,17 +18,24 @@ function NegotiationThread({ negotiation, onBack }) {
   const [sendError, setSendError] = useState('');
   const myUsername = loadUsername().trim().toLowerCase();
   const isClosed = !!negotiation.date_closed;
+  const messagesEndRef = React.useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const data = await fetchNegotiationMessages(negotiation.hash);
-      setMessages(data.filter(m => m.message));
+      const sorted = data.filter(m => m.message).sort((a, b) => (a.date_added || 0) - (b.date_added || 0));
+      setMessages(sorted);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [negotiation.hash]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Rola pra última mensagem sempre que a conversa carrega ou recebe algo novo
+  useEffect(() => {
+    if (!loading) messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages, loading]);
 
   async function handleSend() {
     if (!reply.trim() || sending) return;
@@ -95,6 +102,7 @@ function NegotiationThread({ negotiation, onBack }) {
             </div>
           );
         })}
+        <div ref={messagesEndRef}/>
       </div>
 
       {/* Caixa de resposta */}

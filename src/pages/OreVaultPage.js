@@ -3,8 +3,8 @@ import {
   Pickaxe, Plus, Trash2, Edit3, Save, X, Search,
   MapPin, Star, CheckCircle2, Package, FlaskConical,
   ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Archive,
-  Gem, Layers, Minus, ArrowLeft, Camera, Download, Copy,
-  Stone, Diamond, Sprout
+  Gem, Minus, ArrowLeft, Camera, Download, Copy,
+  Diamond, Sprout
 } from 'lucide-react';
 import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry } from '../data/oreVault';
 import { buildLocationFlatList } from '../data/uexLocationsDB';
@@ -14,7 +14,7 @@ const ORE_DATABASE = {
   // SHIP MINING (Prospector / MOLE / Orion)
   'Minério de Nave': {
     color: '#38bdf8',
-    icon: Stone,
+    icon: Gem,
     ores: [
       { name:'Agricium',     rarity:'uncommon',  notes:'Bom valor, luas de Crusader' },
       { name:'Aluminium',    rarity:'common',    notes:'Muito comum, baixo valor' },
