@@ -18,7 +18,7 @@ async function fetchInventoryItems() {
   } catch { return []; }
 }
 
-const SCRIPT_ITEMS = ['Mg Scrip', 'Concuil Script'];
+const SCRIPT_ITEMS = ['Mg Scrip', 'Council Scrip'];
 const SCRIPT_RATIO = 50;
 const PAF_WIKELO_COLOR = '#a29bfe';
 const PAF_COLOR = '#38bdf8';
@@ -421,7 +421,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
                   <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Wikelo Favor{wfTotal!==1?'s':''} totais</div>
                 </div>
                 <div style={{ fontSize:10, color:'var(--text-muted)', textAlign:'center', lineHeight:1.5 }}>
-                  Contagem de Mg Scrip + Concuil Script<br/>no inventário de itens (50 = 1 favor)
+                  Contagem de Mg Scrip + Council Scrip<br/>no inventário de itens (50 = 1 favor)
                 </div>
               </div>
             )}

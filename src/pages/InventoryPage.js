@@ -1101,15 +1101,12 @@ export default function InventoryPage() {
     await loadData();
   }
   async function handleDelete(id) { await invAPI.delete(id); await loadData(); }
-  function handleScriptUpdate(id, newQty) {
-    setItens(prev => {
-      const KEY = 'sc_inventory_v1';
-      const s = JSON.parse(localStorage.getItem(KEY)||'{"itens":[],"nextId":1}');
-      const updated = prev.map(i => i.id===id ? {...i, quantity:newQty, updated_at:new Date().toISOString()} : i);
-      s.itens = updated;
-      localStorage.setItem(KEY, JSON.stringify(s));
-      return updated;
-    });
+  async function handleScriptUpdate(id, newQty) {
+    const current = itens.find(i => i.id === id);
+    if (!current) return;
+    const updatedItem = { ...current, quantity: newQty };
+    await invAPI.update(updatedItem);
+    setItens(prev => prev.map(i => i.id===id ? updatedItem : i));
   }
 
   // ── Derivados para navegação ──
