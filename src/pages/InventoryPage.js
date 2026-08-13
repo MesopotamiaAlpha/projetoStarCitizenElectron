@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
@@ -8,18 +8,12 @@ import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { searchUexItems, getUexItemByName, loadUexItemsDB } from '../data/uexItemsDB';
 import { buildLocationTree } from '../data/uexLocationsDB';
 import { setProvenance, SOURCES } from '../data/provenance';
+import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
-const SCRIPT_ITEMS = ['Mg Scrip', 'Concuil Script'];
-const SCRIPT_RATIO = 50; // 50 scripts = 1 Wikelo Favor
 const WIKELO_COLOR = '#a29bfe';
-
-function isScriptItem(name) {
-  if (!name) return false;
-  return SCRIPT_ITEMS.some(s => name.trim().toLowerCase() === s.toLowerCase());
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAF Items — missão de satélites
@@ -63,12 +57,7 @@ export function calcPafSummary(inventoryItems) {
 
 // Calcular Wikelo Favors totais de todos os scripts no inventário
 export function calcWikeloTotal(inventoryItems) {
-  const itens = inventoryItems || [];
-  let total = 0;
-  itens.forEach(i => {
-    if (isScriptItem(i.name)) total += Math.floor((i.quantity||0) / SCRIPT_RATIO);
-  });
-  return total;
+  return calcWikeloFavors(inventoryItems || []);
 }
 
 // Painel de ajuste de quantidade para Script Items
@@ -76,7 +65,7 @@ function ScriptPanel({ item, onUpdate }) {
   const [adding, setAdding]     = useState('');
   const [removing, setRemoving] = useState('');
 
-  const qty     = item.quantity || 0;
+  const qty     = Math.max(0, Number(item.quantity) || 0);
   const favors  = Math.floor(qty / SCRIPT_RATIO);
   const resto   = qty % SCRIPT_RATIO;
   const faltam  = resto > 0 ? SCRIPT_RATIO - resto : 0;
@@ -810,7 +799,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
 function PafPanel({ item, allItems }) {
   const pafInfo = PAF_ITEMS[item.name];
   if (!pafInfo) return null;
-  const qty     = item.quantity || 0;
+  const qty     = Math.max(0, Number(item.quantity) || 0);
   const yields  = Math.floor(qty / pafInfo.ratio);
   const resto   = qty % pafInfo.ratio;
   const faltam  = resto > 0 ? pafInfo.ratio - resto : 0;
@@ -1059,6 +1048,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
 // Navegação: Sistema → Local → Cards
 export default function InventoryPage() {
   const [itens,        setItens]        = useState([]);
+  const itensRef = useRef([]);
   const [loading,      setLoading]      = useState(true);
   const [showForm,     setShowForm]     = useState(false);
   const [editItem,     setEditItem]     = useState(null);
@@ -1087,6 +1077,7 @@ export default function InventoryPage() {
     setLoading(true);
     try {
       const all = await invAPI.getAll();
+      itensRef.current = all;
       setItens(all);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
@@ -1102,11 +1093,23 @@ export default function InventoryPage() {
   }
   async function handleDelete(id) { await invAPI.delete(id); await loadData(); }
   async function handleScriptUpdate(id, newQty) {
-    const current = itens.find(i => i.id === id);
+    const current = itensRef.current.find(i => i.id === id);
     if (!current) return;
-    const updatedItem = { ...current, quantity: newQty };
-    await invAPI.update(updatedItem);
-    setItens(prev => prev.map(i => i.id===id ? updatedItem : i));
+
+    // Normaliza para número e atualiza a referência imediatamente para que cliques rápidos
+    // não calculem sobre um snapshot antigo do estado React.
+    const quantity = Math.max(0, Number(newQty) || 0);
+    const updatedItem = { ...current, quantity };
+    const nextItems = itensRef.current.map(i => i.id === id ? updatedItem : i);
+    itensRef.current = nextItems;
+    setItens(nextItems);
+
+    try {
+      await invAPI.update(updatedItem);
+    } catch (e) {
+      await loadData();
+      console.error('Erro ao atualizar quantidade de script:', e);
+    }
   }
 
   // ── Derivados para navegação ──

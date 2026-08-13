@@ -18,13 +18,11 @@ async function fetchInventoryItems() {
   } catch { return []; }
 }
 
-const SCRIPT_ITEMS = ['Mg Scrip', 'Council Scrip'];
-const SCRIPT_RATIO = 50;
 const PAF_WIKELO_COLOR = '#a29bfe';
 const PAF_COLOR = '#38bdf8';
 
 function isScriptItemDash(name) {
-  return SCRIPT_ITEMS.some(s => (name||'').trim().toLowerCase() === s.toLowerCase());
+  return isScriptItem(name);
 }
 function isPafItemDash(name) {
   const PAF_NAMES = ['Alignment Blade','GP-XP Industrial Battery','Cartão de Ativação do Lazer'];
@@ -44,7 +42,7 @@ function calcPafLocal(items) {
 }
 
 function calcWikeloLocal(items) {
-  return items.reduce((total, i) => isScriptItemDash(i.name) ? total + Math.floor((i.quantity||0)/SCRIPT_RATIO) : total, 0);
+  return calcWikeloFavors(items);
 }
 
 // ── Leitura das demais seções do app (todas em localStorage puro, sem IPC) ────
@@ -61,6 +59,7 @@ function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
 import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users } from 'lucide-react';
+import { isScriptItem, calcWikeloFavors } from '../data/wikelo';
 
 const PIECE_ICONS  = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
 const PIECE_PT_PLU = { Helmet:'Capacetes', Torso:'Torsos', Arms:'Braços', Legs:'Pernas', Backpack:'Mochilas' };

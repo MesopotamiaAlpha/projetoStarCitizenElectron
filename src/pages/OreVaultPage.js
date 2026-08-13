@@ -132,6 +132,7 @@ const ORE_COLORS = {
   'Ouratite':'#ffeaa7','Riccite':'#ff7675','Savrilium':'#fb7185','Stileron':'#e84393',
   'Beryl':'#34d399','Silicon':'#b2bec3','Quartz':'#dfe6e9','Ice':'#81ecec',
   'Aslarite':'#74b9ff','Torite':'#fb923c','Tin':'#b2bec3','Mg Scrip':'#a29bfe',
+  'Council Scrip':'#a29bfe',
   'Concuil Script':'#a29bfe',
 };
 function getOreColor(name) { return ORE_COLORS[name] || '#7a90b0'; }

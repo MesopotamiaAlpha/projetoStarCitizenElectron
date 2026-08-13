@@ -1,16 +1,15 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Plus, Trash2, Edit3, Save, X, Search, CheckCircle2,
   Star, Package, ChevronDown, ChevronUp, AlertTriangle,
   Minus, RefreshCw, Archive, Lightbulb
 } from 'lucide-react';
 import { searchUexItems } from '../data/uexItemsDB';
+import { calcWikeloFavors } from '../data/wikelo';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 const MISSIONS_KEY = 'sc_wikelo_missions_v1';
 const INV_KEY      = 'sc_inventory_v1';
-const SCRIPT_ITEMS = ['Mg Scrip', 'Concuil Script'];
-const SCRIPT_RATIO = 50;
 
 function loadMissions() {
   try { return JSON.parse(localStorage.getItem(MISSIONS_KEY)) || []; } catch { return []; }
@@ -24,20 +23,20 @@ function loadInventory() {
   } catch { return []; }
 }
 
-// Wikelo Favors totais do inventário
-function calcWikeloFavors() {
-  const items = loadInventory();
-  return items.reduce((total, i) =>
-    SCRIPT_ITEMS.some(s => (i.name||'').toLowerCase() === s.toLowerCase())
-      ? total + Math.floor((i.quantity||0) / SCRIPT_RATIO)
-      : total, 0);
+async function fetchInventoryItems() {
+  try {
+    if (window.electronAPI?.inventoryGetAll) {
+      const items = await window.electronAPI.inventoryGetAll();
+      return items || [];
+    }
+  } catch { /* usa o fallback local abaixo */ }
+  return loadInventory();
 }
 
 // Buscar quantidade de item no inventário pelo nome exato
-function getInventoryQty(name) {
-  const items = loadInventory();
-  const found = items.find(i => (i.name||'').toLowerCase() === name.toLowerCase());
-  return found ? (found.quantity || 0) : 0;
+function getInventoryQty(name, items = []) {
+  const found = items.find(i => (i.name||'').trim().toLowerCase() === name.trim().toLowerCase());
+  return found ? (Number(found.quantity) || 0) : 0;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,7 +92,7 @@ function InventoryModal({ itemName, invQty, neededQty, onUseInventory, onSkip })
 }
 
 // ── Formulário de item da missão ──────────────────────────────────────────────
-function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
+function ItemForm({ initial, onSave, onCancel, onInventoryCheck, inventoryItems = [] }) {
   const [name,     setName]     = useState(initial?.name || '');
   const [needed,   setNeeded]   = useState(String(initial?.needed || 1));
   const [unit,     setUnit]     = useState(initial?.unit || 'un');
@@ -121,7 +120,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
     setName(item.name);
     setSuggs([]); setShowSugg(false);
     // Verificar inventário
-    const invQty = getInventoryQty(item.name);
+    const invQty = getInventoryQty(item.name, inventoryItems);
     if (invQty > 0) {
       onInventoryCheck(item.name, invQty, parseInt(needed)||1, (useInv) => {
         onSave({ name:item.name, needed:parseInt(needed)||1, collected:useInv?Math.min(invQty,parseInt(needed)||1):0, unit, notes, from_inventory:useInv?Math.min(invQty,parseInt(needed)||1):0 });
@@ -189,7 +188,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck }) {
 }
 
 // ── Card de item dentro da missão ─────────────────────────────────────────────
-function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
+function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems }) {
   const [editMode, setEditMode] = useState(false);
   const [delConf,  setDelConf]  = useState(false);
   const [adjVal,   setAdjVal]   = useState('');
@@ -214,6 +213,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
   if (editMode) return (
     <ItemForm
       initial={item}
+      inventoryItems={inventoryItems}
       onInventoryCheck={(name, invQty, neededQty, cb) => cb(false)}
       onSave={updated => { onUpdate(missionId, updated); setEditMode(false); }}
       onCancel={() => setEditMode(false)}
@@ -299,7 +299,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete }) {
 }
 
 // ── Card de missão ────────────────────────────────────────────────────────────
-function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete, onEditTitle }) {
+function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete, onEditTitle, inventoryItems }) {
   const [expanded,   setExpanded]   = useState(false);
   const [showForm,   setShowForm]   = useState(false);
   const [editTitle,  setEditTitle]  = useState(false);
@@ -394,10 +394,12 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
               key={item.id} item={item} missionId={mission.id}
               onUpdate={onUpdateItem}
               onDelete={onDeleteItem}
+              inventoryItems={inventoryItems}
             />
           ))}
           {showForm && (
             <ItemForm
+              inventoryItems={inventoryItems}
               onInventoryCheck={handleInventoryCheck}
               onSave={handleAddItem}
               onCancel={()=>setShowForm(false)}
@@ -417,12 +419,21 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function WikeloTrackerPage() {
   const [missions,    setMissions]    = useState(() => loadMissions());
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newTitle,    setNewTitle]    = useState('');
   const [search,      setSearch]      = useState('');
   const [filterDone,  setFilterDone]  = useState('all');
 
-  const wfTotal = useMemo(() => calcWikeloFavors(), [missions]); // re-calcula ao re-render
+  useEffect(() => {
+    let active = true;
+    fetchInventoryItems().then(items => {
+      if (active) setInventoryItems(items);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const wfTotal = useMemo(() => calcWikeloFavors(inventoryItems), [inventoryItems]);
 
   function persist(updated) { setMissions(updated); saveMissions(updated); }
 
@@ -569,6 +580,7 @@ export default function WikeloTrackerPage() {
           filtered.map(m => (
             <MissionCard
               key={m.id} mission={m}
+              inventoryItems={inventoryItems}
               onUpdateItem={handleUpdateItem}
               onDeleteItem={handleDeleteItem}
               onAddItem={handleAddItem}
