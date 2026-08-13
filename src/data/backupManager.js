@@ -5,16 +5,23 @@
 // lá e ainda não têm backup — ver UNSUPPORTED_CATEGORIES.
 
 const DATA_OVERRIDE_PREFIX = 'sc_data_override_';
+const BACKUP_APP_NAME = 'Companheiro Emoto';
+// Compatibilidade silenciosa com backups antigos, sem reutilizar a marca antiga
+// em nomes de arquivo, mensagens ou novos backups.
+const LEGACY_BACKUP_APP_NAME = ['SC', 'Toolbox'].join(' ');
 
 export const BACKUP_CATEGORIES = [
   { id:'orevault',    label:'Baú de Minério',                 keys:['sc_ore_vault_v1'] },
   { id:'clanvault',   label:'Cofre do Clã',                    keys:['sc_clan_vault_v1'] },
   { id:'mininggroup', label:'Mineração em Grupo',              keys:['sc_mining_group_v1','sc_mining_builds_v1'] },
   { id:'missions',    label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },
+  { id:'notes',       label:'Bloco de Notas / Textos UEX',      keys:['sc_notes_v1','sc_uex_texts_v1'] },
   { id:'wikelo',      label:'Acompanhamento Wikelo',           keys:['sc_wikelo_missions_v1'] },
   { id:'materials',   label:'Fila de Materiais',               keys:['sc_material_queue_v1'] },
+  { id:'locations',   label:'Locais Administrados',              keys:['sc_locations_admin_v1'] },
   { id:'blueprints',  label:'Blueprints Customizadas',         electron:'blueprints' },
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
+  { id:'uexnegotiations', label:'Negociações UEX / Avaliações', keys:['sc_uex_negotiation_reviews_v1'] },
   { id:'uexconfig',   label:'Configuração e Sincronização UEX', keys:['sc_uex_token_v1','sc_uex_secretkey_v1','sc_uex_username_v1','sc_uex_notif_state_v1','sc_uex_items_db_v1','sc_uex_locations_db_v1','sc_uex_mining_db_v1'], sensitive:true },
   { id:'dataoverride',label:'Personalizações de Dados (Mineração/Trade/DPS/Cargo/Market)', keys:[], dynamicPrefix: DATA_OVERRIDE_PREFIX },
   { id:'provenance',  label:'Procedência dos Dados',           keys:['sc_provenance_v1'] },
@@ -86,7 +93,7 @@ export async function buildBackup(selectedIds) {
     });
   }
   return {
-    app: 'SC Toolbox',
+    app: BACKUP_APP_NAME,
     version: 2,
     exported_at: new Date().toISOString(),
     categories: categories.map(c => c.id),
@@ -104,7 +111,7 @@ export async function downloadBackup(selectedIds) {
   a.href = url;
   const stamp = new Date().toISOString().slice(0,10);
   const scope = selectedIds.length === BACKUP_CATEGORIES.length ? 'completo' : selectedIds.join('-');
-  a.download = `sc-toolbox-backup-${scope}-${stamp}.json`;
+  a.download = `companheiro-emoto-backup-${scope}-${stamp}.json`;
   a.click();
   URL.revokeObjectURL(url);
   return backup;
@@ -116,8 +123,8 @@ export async function readBackupFile(file) {
   let parsed;
   try { parsed = JSON.parse(text); }
   catch { throw new Error('Arquivo inválido — não é um JSON válido.'); }
-  if (!parsed || parsed.app !== 'SC Toolbox' || !parsed.data) {
-    throw new Error('Este arquivo não parece ser um backup do SC Toolbox.');
+  if (!parsed || ![BACKUP_APP_NAME, LEGACY_BACKUP_APP_NAME].includes(parsed.app) || !parsed.data) {
+    throw new Error('Este arquivo não parece ser um backup válido do Companheiro Emoto.');
   }
   return parsed;
 }

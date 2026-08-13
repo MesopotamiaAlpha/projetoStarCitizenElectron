@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Pickaxe, Plus, Trash2, Edit3, Save, X, Search,
   MapPin, Star, CheckCircle2, Package, FlaskConical,
@@ -6,8 +6,23 @@ import {
   Gem, Minus, ArrowLeft, Camera, Download, Copy,
   Diamond, Sprout
 } from 'lucide-react';
-import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry } from '../data/oreVault';
-import { buildLocationFlatList } from '../data/uexLocationsDB';
+import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry } from '../data/oreVault';
+import TransferModal from '../components/TransferModal';
+import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
+import { getOreColor as getSharedOreColor } from '../data/oreColors';
+import {
+  CARGO_UNITS,
+  normalizeCargoUnit,
+  isCargoUnit,
+  areCargoUnitsCompatible,
+  toCargoBase,
+  fromCargoBase,
+  roundCargo,
+  formatCargoNumber,
+  cargoInputStep,
+  parseCargoInput,
+  cargoEquivalentTotal,
+} from '../data/cargoUnits';
 
 // ── Lista completa de minérios do Star Citizen (atualizada SCMDB/SCMINER 2026) ──
 const ORE_DATABASE = {
@@ -122,34 +137,25 @@ const RARITY_COLORS = {
   common:'#7a90b0', uncommon:'#38bdf8', rare:'#fbbf24', epic:'#a29bfe', legendary:'#fb7185'
 };
 
-const ORE_COLORS = {
-  'Titanium':'#74b9ff','Copper':'#fdcb6e','Orotite':'#a29bfe','Caranite':'#fd79a8',
-  'Steel':'#b2bec3','Laranite':'#fd79a8','Taranite':'#74b9ff','Bexalite':'#a29bfe',
-  'Quantainium':'#34d399','Gold':'#fbbf24','Diamond':'#dfe6e9','Tungsten':'#dfe6e9',
-  'Aluminium':'#b2bec3','Iron':'#636e72','Inert Material':'#7a90b0','Aphorite':'#fdcb6e',
-  'Dolivine':'#55efc4','Hadanite':'#ff7675','Agricium':'#00cec9','Borase':'#fd79a8',
-  'Hephaestanite':'#e17055','Corundum':'#81ecec','Titanium':'#74b9ff','Lindinium':'#a29bfe',
-  'Ouratite':'#ffeaa7','Riccite':'#ff7675','Savrilium':'#fb7185','Stileron':'#e84393',
-  'Beryl':'#34d399','Silicon':'#b2bec3','Quartz':'#dfe6e9','Ice':'#81ecec',
-  'Aslarite':'#74b9ff','Torite':'#fb923c','Tin':'#b2bec3','Mg Scrip':'#a29bfe',
-  'Council Scrip':'#a29bfe',
-  'Concuil Script':'#a29bfe',
-};
-function getOreColor(name) { return ORE_COLORS[name] || '#7a90b0'; }
-
-const LOCATIONS_STATIC = [
-  'Yela Asteroid Belt','Aaron Halo','Daymar','Cellin','Aberdeen','Arial',
-  'Ita','Magda','Calliope','Clio','Euterpe','Hurston','microTech',
-  'Port Tressler','ARC-L1','HUR-L3','HUR-L5','MIC-L1',
-  'Pyro I','Pyro II','Pyro III','Pyro IV','Pyro V','Pyro VI',
-  'Ruin Station','Levski (Nyx)','Delamar',
-  'Hangar Pessoal','Nave Principal','Bunker Loot','Desmontagem','Outro',
-];
+function getOreColor(name) { return getSharedOreColor(name); }
 
 const QUALITY_PRESETS = ['Grade A','Grade B','Grade C','Pristine','High','Medium','Low','Raw'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function ptNum(v) { return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:3}); }
+function ptNum(v, unit = '') {
+  return formatCargoNumber(v, isCargoUnit(unit) ? 9 : 3);
+}
+
+function mergeOreQuantities(existing, incoming) {
+  const existingUnit = normalizeCargoUnit(existing.unit || 'un');
+  const incomingUnit = normalizeCargoUnit(incoming.unit || 'un');
+  if (areCargoUnitsCompatible(existingUnit, incomingUnit)) {
+    const unit = existingUnit;
+    const totalBase = toCargoBase(existing.quantity, existingUnit) + toCargoBase(incoming.quantity, incomingUnit);
+    return { quantity: fromCargoBase(totalBase, unit), unit };
+  }
+  return { quantity: Number(existing.quantity || 0) + Number(incoming.quantity || 0), unit: existingUnit };
+}
 function ptDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -167,7 +173,8 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
         <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:16,lineHeight:1.6}}>
           Você já tem <strong style={{color:'var(--text-primary)'}}>{existing.ore_name}</strong>
           {existing.quality ? <span> com qualidade <strong style={{color:'var(--accent-gold)'}}>{existing.quality}</strong></span> : ''} registrado
-          ({ptNum(existing.quantity)} {existing.unit} em {existing.location||'—'}).
+          (              {ptNum(existing.quantity, existing.unit)} {existing.unit} em {existing.location||'—'}).
+
           <br/>O que deseja fazer?
         </div>
 
@@ -175,13 +182,13 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
           <div style={{padding:'10px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:7}}>
             <div style={{fontSize:10,fontWeight:700,color:'var(--accent-green)',textTransform:'uppercase',marginBottom:5}}>Somar ao existente</div>
             <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-              {ptNum(existing.quantity)} + {ptNum(newEntry.quantity)} = <strong style={{color:'var(--accent-green)'}}>{ptNum(existing.quantity + newEntry.quantity)} {existing.unit}</strong>
+              {ptNum(existing.quantity, existing.unit)} {existing.unit} + {ptNum(newEntry.quantity, newEntry.unit)} {newEntry.unit} = <strong style={{color:'var(--accent-green)'}}>{(() => { const merged = mergeOreQuantities(existing, newEntry); return `${ptNum(merged.quantity, merged.unit)} ${merged.unit}`; })()}</strong>
             </div>
           </div>
           <div style={{padding:'10px',background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:7}}>
             <div style={{fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',marginBottom:5}}>Novo registro separado</div>
             <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-              Cria entrada independente com {ptNum(newEntry.quantity)} {newEntry.unit}
+              Cria entrada independente com {ptNum(newEntry.quantity, newEntry.unit)} {newEntry.unit}
             </div>
           </div>
         </div>
@@ -199,16 +206,16 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
 }
 
 // ── OreForm ───────────────────────────────────────────────────────────────────
-function OreForm({ initial, onSave, onCancel, preselectedOre }) {
+function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion = 0 }) {
   const empty = { id:null, ore_name:preselectedOre||'', quantity:'', unit:'un', quality:'', location:'', refined:false, notes:'' };
-  const [d, setD] = useState(() => initial ? {...initial, quantity:String(initial.quantity||'')} : empty);
+  const [d, setD] = useState(() => initial ? {...initial, unit:normalizeCargoUnit(initial.unit || 'un'), quantity:String(initial.quantity ?? '')} : empty);
   const [showQP, setShowQP] = useState(false);
   const [error, setError]   = useState('');
   const set = (k,v) => setD(p=>({...p,[k]:v}));
 
   const oreInfo = getOreInfo(d.ore_name);
   const oreCat  = getOreCategory(d.ore_name);
-  const LOCATIONS = useMemo(() => buildLocationFlatList(LOCATIONS_STATIC), []);
+  const LOCATIONS = useMemo(() => buildManagedLocationOptions(), [locationsVersion]);
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
   const SS = {...IS,appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 7px center',paddingRight:26};
@@ -216,9 +223,9 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
 
   function handleSave() {
     if (!d.ore_name.trim()) { setError('Nome do minério obrigatório.'); return; }
-    const qty = parseFloat(String(d.quantity).replace(',','.'));
-    if (!qty || qty <= 0) { setError('Quantidade deve ser maior que zero.'); return; }
-    onSave({...d, ore_name:d.ore_name.trim(), quantity:qty});
+    const qty = parseCargoInput(d.quantity, d.unit);
+    if (!Number.isFinite(qty) || qty <= 0) { setError('Quantidade deve ser maior que zero.'); return; }
+    onSave({...d, unit:normalizeCargoUnit(d.unit || 'un'), ore_name:d.ore_name.trim(), quantity:isCargoUnit(d.unit) ? roundCargo(qty) : qty});
   }
 
   return (
@@ -250,14 +257,13 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
         </div>
         <div>
           <label style={LS}>Quantidade *</label>
-          <input style={IS} type="number" min="0.001" step="0.001" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder="ex: 16"/>
+          <input style={IS} type="text" inputMode="decimal" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder={isCargoUnit(d.unit) ? 'ex: 12.911' : 'ex: 16'}/>
         </div>
         <div>
           <label style={LS}>Unidade</label>
           <select style={SS} value={d.unit} onChange={e=>set('unit',e.target.value)}>
             <option value="un">un</option>
-            <option value="SCU">SCU</option>
-            <option value="cSCU">cSCU</option>
+            {CARGO_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
             <option value="kg">kg</option>
           </select>
         </div>
@@ -283,7 +289,12 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
           <label style={LS}>Local onde guardou</label>
           <select style={SS} value={d.location} onChange={e=>set('location',e.target.value)}>
             <option value="">— Selecionar —</option>
-            {LOCATIONS.map(l=><option key={l}>{l}</option>)}
+            {d.location && !LOCATIONS.some(option => option.location_name === d.location) && (
+              <option value={d.location}>{d.location} (legado)</option>
+            )}
+            {LOCATIONS.map(option => (
+              <option key={option.key} value={option.location_name}>{option.label}</option>
+            ))}
           </select>
         </div>
         <button onClick={()=>set('refined',!d.refined)} style={{display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:d.refined?'rgba(52,211,153,0.1)':'transparent',border:`1px solid ${d.refined?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`,borderRadius:5,color:d.refined?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',whiteSpace:'nowrap',marginBottom:2}}>
@@ -310,8 +321,9 @@ function OreForm({ initial, onSave, onCancel, preselectedOre }) {
 }
 
 // ── OreCard com +/- inline ────────────────────────────────────────────────────
-function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
+function OreCard({ entry, onEdit, onDelete, onAdjustQty, transferDestinations, onTransfer }) {
   const [delConf,  setDelConf]  = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [adjMode,  setAdjMode]  = useState(false);
   const [adjVal,   setAdjVal]   = useState('');
   const [adjType,  setAdjType]  = useState('add'); // add | sub
@@ -320,7 +332,7 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
   const oreCat  = getOreCategory(entry.ore_name);
 
   function applyAdj() {
-    const n = parseFloat(adjVal);
+    const n = parseCargoInput(adjVal, entry.unit);
     if (!n || n <= 0) return;
     const newQty = adjType==='add' ? entry.quantity+n : Math.max(0, entry.quantity-n);
     onAdjustQty(entry.id, newQty);
@@ -350,13 +362,18 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
         </div>
         {/* Quantidade */}
         <div style={{textAlign:'right',flexShrink:0}}>
-          <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{ptNum(entry.quantity)}</div>
+          <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{ptNum(entry.quantity, entry.unit)}</div>
           <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{entry.unit}</div>
         </div>
         {/* Ações */}
         <div style={{display:'flex',gap:4,flexShrink:0}}>
+          {/* Transferir */}
+          <button onClick={()=>setShowTransfer(true)} disabled={Number(entry.quantity)<=0} title="Transferir para..."
+            style={{width:26,height:26,borderRadius:4,border:'1px solid rgba(56,189,248,0.25)',background:'rgba(56,189,248,0.07)',color:'var(--accent-primary)',cursor:Number(entry.quantity)>0?'pointer':'not-allowed',display:'flex',alignItems:'center',justifyContent:'center',opacity:Number(entry.quantity)>0?1:0.5}}>
+            <MapPin size={11}/>
+          </button>
           {/* +/- toggle */}
-          <button onClick={()=>{setAdjMode(!adjMode);setAdjVal('');}} title="Ajustar quantidade"
+          <button onClick={()=>{setAdjMode(!adjMode);setAdjVal('');}} title={`Ajustar quantidade em ${entry.unit || 'un'}`}
             style={{width:26,height:26,borderRadius:4,border:`1px solid ${adjMode?'rgba(56,189,248,0.4)':'var(--border-normal)'}`,background:adjMode?'rgba(56,189,248,0.1)':'rgba(255,255,255,0.03)',color:adjMode?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700}}>
             ±
           </button>
@@ -378,28 +395,36 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
 
       {/* Painel de ajuste inline */}
       {adjMode && (
-        <div style={{marginTop:8,padding:'8px 10px',background:'rgba(56,189,248,0.05)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:6,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <div style={{marginTop:8,padding:'9px 10px',background:'rgba(56,189,248,0.05)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:6,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <div style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Ajustar quantidade</span>
+            <span style={{fontSize:10,color:'var(--text-secondary)',fontFamily:'Share Tech Mono,monospace'}}>Atual: {ptNum(entry.quantity, entry.unit)} {entry.unit || 'un'} · todos os valores abaixo estão em {entry.unit || 'un'}</span>
+          </div>
           {/* Toggle add/sub */}
           <div style={{display:'flex',borderRadius:5,overflow:'hidden',border:'1px solid var(--border-subtle)'}}>
             <button onClick={()=>setAdjType('add')} style={{padding:'4px 10px',background:adjType==='add'?'rgba(52,211,153,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:adjType==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
-              + Adicionar
+              + Adicionar {entry.unit || 'un'}
             </button>
             <button onClick={()=>setAdjType('sub')} style={{padding:'4px 10px',background:adjType==='sub'?'rgba(251,113,133,0.12)':'transparent',border:'none',color:adjType==='sub'?'var(--accent-red)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
-              − Remover
+              − Remover {entry.unit || 'un'}
             </button>
           </div>
           {/* Atalhos rápidos */}
           {[1,5,10,25,50].map(n=>(
             <button key={n} onClick={()=>onAdjustQty(entry.id, adjType==='add'?entry.quantity+n:Math.max(0,entry.quantity-n))}
               style={{padding:'3px 8px',background:adjType==='add'?'rgba(52,211,153,0.08)':'rgba(251,113,133,0.08)',border:`1px solid ${adjType==='add'?'rgba(52,211,153,0.2)':'rgba(251,113,133,0.2)'}`,borderRadius:4,color:adjType==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontFamily:'Share Tech Mono,monospace'}}>
-              {adjType==='add'?'+':'-'}{n}
+              {adjType==='add'?'+':'-'}{n} {entry.unit || 'un'}
             </button>
           ))}
           {/* Input manual */}
-          <input type="number" min="0.001" step="0.001" value={adjVal} onChange={e=>setAdjVal(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&applyAdj()}
-            placeholder="Outro..."
-            style={{width:80,padding:'4px 7px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none',textAlign:'center'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:0,border:'1px solid var(--border-subtle)',borderRadius:4,overflow:'hidden',background:'var(--bg-base)'}}>
+            <input type="text" inputMode="decimal" value={adjVal} onChange={e=>setAdjVal(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&applyAdj()}
+              placeholder={`Quantidade em ${entry.unit || 'un'}`}
+              aria-label={`Quantidade para ${adjType==='add'?'adicionar':'remover'} em ${entry.unit || 'un'}`}
+              style={{width:115,padding:'4px 7px',background:'transparent',border:'none',color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none',textAlign:'center'}}/>
+            <span style={{padding:'4px 7px',borderLeft:'1px solid var(--border-subtle)',color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{entry.unit || 'un'}</span>
+          </div>
           <button onClick={applyAdj} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',background:adjType==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)',border:`1px solid ${adjType==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`,borderRadius:4,color:adjType==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
             <CheckCircle2 size={10}/> OK
           </button>
@@ -407,6 +432,18 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty }) {
             <X size={10}/>
           </button>
         </div>
+      )}
+      {showTransfer && (
+        <TransferModal
+          itemName={entry.ore_name}
+          quantity={entry.quantity}
+          unit={entry.unit}
+          decimal={isCargoUnit(entry.unit) || entry.unit === 'kg'}
+          destinations={transferDestinations}
+          currentKey={entry.location || ''}
+          onCancel={()=>setShowTransfer(false)}
+          onConfirm={({destination, quantity})=>{onTransfer(entry, destination, quantity);setShowTransfer(false);}}
+        />
       )}
     </div>
   );
@@ -498,7 +535,7 @@ async function generateVaultImage(summary) {
       ctx.textAlign = 'right';
       ctx.fillStyle = g.color;
       ctx.font = '800 16px "Share Tech Mono", monospace';
-      ctx.fillText(ptNum(it.total), WIDTH-PAD, y+6);
+      ctx.fillText(ptNum(it.total, it.unit), WIDTH-PAD, y+6);
       ctx.fillStyle = '#7a90b0';
       ctx.font = '600 9px Exo 2, sans-serif';
       ctx.fillText((it.unit||'un').toUpperCase(), WIDTH-PAD, y+24);
@@ -514,7 +551,7 @@ async function generateVaultImage(summary) {
   y += 14;
   ctx.fillStyle = '#3d5070';
   ctx.font = '600 10px Exo 2, sans-serif';
-  ctx.fillText('Gerado por SC Toolbox — Star Citizen Companion App', PAD, y);
+  ctx.fillText('Gerado por Companheiro Emoto — Star Citizen Companion App', PAD, y);
 
   return canvas.toDataURL('image/png');
 }
@@ -586,14 +623,39 @@ export default function OreVaultPage() {
   // Exportar imagem
   const [exportDataUrl, setExportDataUrl] = useState(null);
   const [generatingImg, setGeneratingImg] = useState(false);
+  const [locationsVersion, setLocationsVersion] = useState(0);
+
+  useEffect(() => {
+    const refreshLocations = () => setLocationsVersion(version => version + 1);
+    window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    return () => window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+  }, []);
+
+  const transferDestinations = useMemo(
+    () => buildManagedLocationOptions(),
+    [locationsVersion]
+  );
 
   function refresh() { setVault(loadVault()); }
+
+  function handleTransfer(entry, destination, quantity) {
+    const result = transferOreEntry(entry.id, destination.value || destination.label || destination, quantity);
+    if (!result.success) {
+      console.error(result.message);
+      return;
+    }
+    refresh();
+  }
 
   // ── Ajuste de quantidade inline (sem reabrir form) ──
   function handleAdjustQty(id, newQty) {
     const v = loadVault();
-    v.entries = v.entries.map(e => e.id===id ? {...e, quantity:newQty, updated_at:new Date().toISOString()} : e)
-                         .filter(e => e.quantity > 0);
+    v.entries = v.entries.map(e => {
+      if (e.id !== id) return e;
+      const unit = normalizeCargoUnit(e.unit || 'un');
+      const quantity = isCargoUnit(unit) ? roundCargo(newQty) : Number(newQty) || 0;
+      return { ...e, unit, quantity, updated_at:new Date().toISOString() };
+    }).filter(e => Number(e.quantity) > 0);
     saveVault(v);
     refresh();
   }
@@ -606,7 +668,9 @@ export default function OreVaultPage() {
       const dup = v.entries.find(e =>
         e.ore_name.toLowerCase() === entry.ore_name.toLowerCase() &&
         (e.quality||'').toLowerCase() === (entry.quality||'').toLowerCase() &&
-        e.unit === entry.unit
+        (areCargoUnitsCompatible(e.unit, entry.unit)
+          ? true
+          : normalizeCargoUnit(e.unit || 'un') === normalizeCargoUnit(entry.unit || 'un'))
       );
       if (dup) {
         setDupData({ existing: dup, newEntry: entry });
@@ -624,7 +688,8 @@ export default function OreVaultPage() {
 
   function handleMerge() {
     if (!dupData) return;
-    const merged = { ...dupData.existing, quantity: dupData.existing.quantity + dupData.newEntry.quantity, updated_at: new Date().toISOString() };
+    const quantities = mergeOreQuantities(dupData.existing, dupData.newEntry);
+    const merged = { ...dupData.existing, ...quantities, updated_at: new Date().toISOString() };
     addOreEntry(merged);
     refresh();
     setDupData(null); setShowForm(false); setEditEntry(null); setPreOre(null);
@@ -669,16 +734,20 @@ export default function OreVaultPage() {
     return list;
   }, [vault, selCategory, selOre, search, sortBy]);
 
-  // Resumo geral por nome (para painel esquerdo)
+  // Resumo geral por nome. Entradas mistas de SCU/cSCU/mSCU/μSCU são
+  // convertidas para a primeira unidade de carga cadastrada antes da soma.
   const summary = useMemo(() => {
     const map = {};
     (vault.entries||[]).forEach(e => {
-      if (!map[e.ore_name]) map[e.ore_name] = {name:e.ore_name, total:0, unit:e.unit, entries:0, refined:0};
-      map[e.ore_name].total   += e.quantity||0;
-      map[e.ore_name].entries += 1;
+      if (!map[e.ore_name]) map[e.ore_name] = {name:e.ore_name, entries:[], unit:normalizeCargoUnit(e.unit || 'un'), refined:0};
+      map[e.ore_name].entries.push(e);
+      map[e.ore_name].unit = normalizeCargoUnit(map[e.ore_name].unit || e.unit || 'un');
       if (e.refined) map[e.ore_name].refined++;
     });
-    return Object.values(map).sort((a,b)=>b.total-a.total);
+    return Object.values(map).map(item => {
+      const total = cargoEquivalentTotal(item.entries, item.unit);
+      return { name:item.name, total:total.total, unit:total.unit, entries:item.entries.length, refined:item.refined };
+    }).sort((a,b)=>b.total-a.total);
   }, [vault]);
 
   // Quantos itens por categoria
@@ -701,8 +770,8 @@ export default function OreVaultPage() {
       name,
       hasEntries: inVault.has(name),
       count: (vault.entries||[]).filter(e=>e.ore_name===name).length,
-      total: (vault.entries||[]).filter(e=>e.ore_name===name).reduce((a,e)=>a+(e.quantity||0),0),
-      unit:  (vault.entries||[]).find(e=>e.ore_name===name)?.unit||'un',
+      total: (() => { const oreEntries = (vault.entries||[]).filter(e=>e.ore_name===name); return cargoEquivalentTotal(oreEntries, oreEntries[0]?.unit || 'un').total; })(),
+      unit:  (() => { const oreEntries = (vault.entries||[]).filter(e=>e.ore_name===name); return cargoEquivalentTotal(oreEntries, oreEntries[0]?.unit || 'un').unit; })(),
       info:  getOreInfo(name),
     }));
   }, [selCategory, vault]);
@@ -766,7 +835,7 @@ export default function OreVaultPage() {
                     <div style={{fontSize:9,color:'var(--text-muted)'}}>{s.entries} entrada{s.entries!==1?'s':''}{s.refined>0?` · ${s.refined} ref.`:''}</div>
                   </div>
                   <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color}}>{ptNum(s.total)}</div>
+                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color}}>{ptNum(s.total, s.unit)}</div>
                     <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{s.unit}</div>
                   </div>
                 </button>
@@ -788,7 +857,7 @@ export default function OreVaultPage() {
 
           {/* Formulário */}
           {(showForm||editEntry) && (
-            <OreForm initial={editEntry} preselectedOre={preOre} onSave={handleSave} onCancel={()=>{setShowForm(false);setEditEntry(null);setPreOre(null);}}/>
+            <OreForm initial={editEntry} preselectedOre={preOre} locationsVersion={locationsVersion} onSave={handleSave} onCancel={()=>{setShowForm(false);setEditEntry(null);setPreOre(null);}}/>
           )}
 
           {/* Breadcrumb */}
@@ -881,7 +950,7 @@ export default function OreVaultPage() {
                       </div>
                       {hasEntries ? (
                         <div>
-                          <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,lineHeight:1}}>{ptNum(total)}</div>
+                          <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,lineHeight:1}}>{ptNum(total, unit)}</div>
                           <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{unit} · {count} entrada{count!==1?'s':''}</div>
                         </div>
                       ) : (
@@ -924,7 +993,9 @@ export default function OreVaultPage() {
                     <OreCard key={e.id} entry={e}
                       onEdit={entry=>{setEditEntry(entry);setShowForm(false);}}
                       onDelete={handleDelete}
-                      onAdjustQty={handleAdjustQty}/>
+                      onAdjustQty={handleAdjustQty}
+                      transferDestinations={transferDestinations}
+                      onTransfer={handleTransfer}/>
                   ))}
                 </div>
               )}
@@ -942,7 +1013,9 @@ export default function OreVaultPage() {
                   <OreCard key={e.id} entry={e}
                     onEdit={entry=>{setEditEntry(entry);setShowForm(false);}}
                     onDelete={handleDelete}
-                    onAdjustQty={handleAdjustQty}/>
+                    onAdjustQty={handleAdjustQty}
+                    transferDestinations={transferDestinations}
+                    onTransfer={handleTransfer}/>
                 ))}
               </div>
             </div>

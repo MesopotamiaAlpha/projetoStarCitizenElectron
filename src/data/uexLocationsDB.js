@@ -1,3 +1,5 @@
+import { loadManagedLocations, LOCATION_SOURCE_NAMES } from './locations';
+
 // ── Banco local de localizações da UEX ────────────────────────────────────────
 // Sincronizado manualmente na tela "UEX API (Live)" → aba Localizações.
 // Usado para enriquecer os seletores de local/tipo-de-local em todo o app
@@ -53,14 +55,24 @@ function classifyStation(name = '') {
  */
 export function buildLocationTree(staticBase = {}) {
   const db = loadUexLocationsDB();
+  const managed = loadManagedLocations();
+  const managedNames = new Set(managed.map(location => String(location.name || '').trim().toLowerCase()));
+  const hiddenKeys = new Set(managed.filter(location => location.active === false).map(location => `${String(location.system || '').trim().toLowerCase()}::${String(location.name || '').trim().toLowerCase()}`));
+  // Se um local da lista inicial foi excluído definitivamente, ele também deve
+  // deixar de aparecer nas listas estáticas antigas do projeto.
+  const removedSeedNames = new Set(LOCATION_SOURCE_NAMES.filter(name => !managedNames.has(String(name).trim().toLowerCase())).map(name => String(name).trim().toLowerCase()));
+  const shouldHide = (system, name) => hiddenKeys.has(`${String(system || '').trim().toLowerCase()}::${String(name || '').trim().toLowerCase()}`) || removedSeedNames.has(String(name || '').trim().toLowerCase());
   const tree = {};
-  // Clona a base estática
+  // Clona a base estática, respeitando exclusões e desativações administradas.
   Object.entries(staticBase).forEach(([sys, types]) => {
     tree[sys] = {};
-    Object.entries(types).forEach(([type, names]) => { tree[sys][type] = [...names]; });
+    Object.entries(types).forEach(([type, names]) => {
+      tree[sys][type] = names.filter(name => !shouldHide(sys, name));
+    });
   });
 
   function addTo(system, type, name) {
+    if (shouldHide(system, name)) return;
     if (!system || !name) return;
     if (!tree[system]) tree[system] = {};
     if (!tree[system][type]) tree[system][type] = [];
@@ -73,6 +85,12 @@ export function buildLocationTree(staticBase = {}) {
   (db.outposts  || []).forEach(o => addTo(o.star_system_name, 'Posto Avançado / Base', o.name));
   (db.stations  || []).forEach(s => addTo(s.star_system_name, classifyStation(s.name), s.name));
   (db.terminals || []).forEach(t => addTo(t.star_system_name, 'Terminal', t.name));
+
+  // A lista administrada pelo usuário é mesclada sem remover os dados antigos.
+  // Assim, registros já salvos e backups continuam válidos.
+  managed.filter(location => location.active !== false).forEach(location => {
+    addTo(location.system, location.type, location.name);
+  });
 
   Object.values(tree).forEach(types => Object.keys(types).forEach(t => types[t].sort((a,b)=>a.localeCompare(b))));
   return tree;

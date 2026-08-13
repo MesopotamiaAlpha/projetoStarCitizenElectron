@@ -6,6 +6,7 @@
 const TOKEN_KEY     = 'sc_uex_token_v1';
 const SECRET_KEY    = 'sc_uex_secretkey_v1';
 const USERNAME_KEY  = 'sc_uex_username_v1';
+const GOOGLE_TRANSLATE_KEY = 'sc_google_translate_api_key_v1';
 const STATE_KEY      = 'sc_uex_notif_state_v1'; // { lastCheck, seenMessageIds:[], seenNotifIds:[] }
 
 export function loadToken()      { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
@@ -13,6 +14,29 @@ export function loadSecretKey()  { try { return localStorage.getItem(SECRET_KEY)
 export function saveSecretKey(v) { localStorage.setItem(SECRET_KEY, v); }
 export function clearSecretKey() { localStorage.removeItem(SECRET_KEY); }
 export function loadUsername()   { try { return localStorage.getItem(USERNAME_KEY) || ''; } catch { return ''; } }
+export function loadGoogleTranslateApiKey() {
+  try { return localStorage.getItem(GOOGLE_TRANSLATE_KEY) || ''; } catch { return ''; }
+}
+export function saveGoogleTranslateApiKey(value) {
+  const key = String(value || '').trim();
+  if (key) localStorage.setItem(GOOGLE_TRANSLATE_KEY, key);
+  else localStorage.removeItem(GOOGLE_TRANSLATE_KEY);
+}
+
+/**
+ * Constrói a URL pública correta do anúncio UEX.
+ * A API retorna o listing_slug, mas o site exige /marketplace/item/info/{slug}/.
+ */
+export function buildUexListingUrl(listingSlug) {
+  const fallback = 'https://uexcorp.space/marketplace/';
+  const raw = String(listingSlug || '').trim();
+  if (!raw) return fallback;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const clean = raw.replace(/^\/+|\/+$/g, '');
+  if (clean.startsWith('marketplace/item/info/')) return `https://uexcorp.space/${clean}/`;
+  if (clean.startsWith('item/info/')) return `https://uexcorp.space/marketplace/${clean}/`;
+  return `https://uexcorp.space/marketplace/item/info/${clean}/`;
+}
 
 function loadState() {
   try {
@@ -27,6 +51,49 @@ function loadState() {
   }
 }
 function saveState(state) { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+
+function normalizedText(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function notificationMessageText(value) {
+  const normalized = normalizedText(value);
+  // Algumas notificações vêm com "usuario: mensagem", enquanto a mensagem
+  // da negociação contém somente o texto depois dos dois-pontos.
+  const separator = normalized.indexOf(':');
+  return separator >= 0 ? normalized.slice(separator + 1).trim() : normalized;
+}
+
+export function isCrossFeedDuplicate(message, notification) {
+  const messageText = normalizedText(message?.message);
+  const notificationText = notificationMessageText(notification?.message);
+  if (!messageText || !notificationText || messageText !== notificationText) return false;
+
+  const messageUser = normalizedText(message?.fromUser || message?.user_username);
+  const notificationUser = notificationMessageText(notification?.fromUser || notification?.user_username);
+  if (notificationUser && messageUser && notificationUser !== messageUser && !notificationMessageText(notification?.message).startsWith(`${messageUser}:`)) return false;
+
+  const messageTime = Number(message?.dateAdded || message?.date_added || 0);
+  const notificationTime = Number(notification?.dateAdded || notification?.date_added || 0);
+  return !messageTime || !notificationTime || Math.abs(messageTime - notificationTime) <= 5 * 60 * 1000;
+}
+
+function stableId(value) {
+  return value === null || value === undefined || value === '' ? '' : String(value).trim();
+}
+
+export function messageIdentity(message, negotiationHash = '') {
+  const hash = stableId(negotiationHash || message?.negotiationHash) || 'unknown';
+  const id = stableId(message?.id);
+  if (id) return `message:${hash}:${id}`;
+  return `message:${hash}:${stableId(message?.date_added || message?.dateAdded)}:${normalizedText(message?.user_username || message?.fromUser)}:${normalizedText(message?.message)}`;
+}
+
+export function notificationIdentity(notification) {
+  const id = stableId(notification?.id);
+  if (id) return `notification:${id}`;
+  return `notification:${stableId(notification?.date_added || notification?.dateAdded)}:${normalizedText(notification?.redir)}:${normalizedText(notification?.message)}`;
+}
 
 // ── Low-level fetch wrapper (Electron IPC obrigatório p/ estes endpoints) ───
 async function uexAuthFetch(endpoint) {
@@ -71,6 +138,37 @@ export async function sendNegotiationMessage(hash, message) {
   throw new Error(result.message || 'Erro ao enviar mensagem para a UEX');
 }
 
+/** Traduz texto entre os idiomas suportados pelo tradutor gratuito e pelo fallback Google. */
+export async function translateText(text, source = 'pt', target = 'en') {
+  const sourceText = String(text || '').trim();
+  if (!sourceText) throw new Error('Escreva um texto antes de traduzir.');
+  if (!window.electronAPI) throw new Error('A tradução só funciona no app Electron.');
+
+  if (window.electronAPI.mymemoryTranslate) {
+    const freeResult = await window.electronAPI.mymemoryTranslate({ text: sourceText, source, target });
+    if (freeResult?.success && freeResult.translation) return freeResult.translation;
+
+    const googleApiKey = loadGoogleTranslateApiKey();
+    if (!googleApiKey) throw new Error(freeResult?.message || 'O limite gratuito do MyMemory foi atingido.');
+  }
+
+  const apiKey = loadGoogleTranslateApiKey();
+  if (!apiKey || !window.electronAPI.googleTranslate) {
+    throw new Error('O MyMemory não respondeu e não há uma chave Google Cloud configurada como fallback.');
+  }
+  const result = await window.electronAPI.googleTranslate({ text: sourceText, source, target, apiKey });
+  if (result?.success && result.translation) return result.translation;
+  throw new Error(result?.message || 'Não foi possível traduzir a mensagem.');
+}
+
+export function translatePortugueseToEnglish(text) {
+  return translateText(text, 'pt', 'en');
+}
+
+export function translateEnglishToPortuguese(text) {
+  return translateText(text, 'en', 'pt');
+}
+
 /** Notificações gerais da conta UEX (sino amplo). */
 export async function fetchUserNotifications() {
   const data = await uexAuthFetch('user_notifications');
@@ -98,17 +196,27 @@ export async function checkForUpdates() {
     ? activeNegotiations
     : activeNegotiations.filter(n => (n.date_modified || 0) * 1000 >= state.lastCheck - 5 * 60 * 1000);
 
+  const seenMessageIds = new Set((state.seenMessageIds || []).filter(id => id !== null && id !== undefined && id !== '').map(String));
+  const seenNotifIds = new Set((state.seenNotifIds || []).filter(id => id !== null && id !== undefined && id !== '').map(String));
   const newMessages = [];
+  const emittedMessageIds = new Set();
   for (const neg of recentlyActive) {
     let msgs = [];
     try { msgs = await fetchNegotiationMessages(neg.hash); } catch { continue; }
     for (const m of msgs) {
       if (!m.message) continue; // ignora eventos internos sem texto
       const isMine = myUsername && (m.user_username || '').trim().toLowerCase() === myUsername;
-      const alreadySeen = state.seenMessageIds.includes(m.id);
+      const identity = messageIdentity(m, neg.hash);
+      const contentIdentity = messageIdentity({ ...m, id: '' }, neg.hash);
+      const legacyId = stableId(m.id);
+      const alreadySeen = seenMessageIds.has(identity) || seenMessageIds.has(contentIdentity) || (legacyId && seenMessageIds.has(legacyId));
       if (isMine || alreadySeen) continue;
-      if (!firstRun) {
+      seenMessageIds.add(identity);
+      seenMessageIds.add(contentIdentity);
+      if (!firstRun && !emittedMessageIds.has(contentIdentity)) {
+        emittedMessageIds.add(contentIdentity);
         newMessages.push({
+          key: identity,
           id: m.id,
           negotiationHash: neg.hash,
           listingTitle: m.listing_title,
@@ -118,38 +226,51 @@ export async function checkForUpdates() {
           dateAdded: (m.date_added || 0) * 1000,
         });
       }
-      state.seenMessageIds.push(m.id);
     }
   }
 
   const newNotifications = [];
+  const emittedNotificationIds = new Set();
   for (const n of notifications) {
-    const alreadySeen = state.seenNotifIds.includes(n.id);
+    const identity = notificationIdentity(n);
+    const contentIdentity = notificationIdentity({ ...n, id: '' });
+    const legacyId = stableId(n.id);
+    const alreadySeen = seenNotifIds.has(identity) || seenNotifIds.has(contentIdentity) || (legacyId && seenNotifIds.has(legacyId));
     if (alreadySeen) continue;
-    if (!firstRun && !n.date_read) {
+    seenNotifIds.add(identity);
+    seenNotifIds.add(contentIdentity);
+    if (!firstRun && !n.date_read && !emittedNotificationIds.has(contentIdentity)) {
+      emittedNotificationIds.add(contentIdentity);
       newNotifications.push({
+        key: identity,
         id: n.id,
         message: n.message,
         redir: n.redir,
         dateAdded: (n.date_added || 0) * 1000,
       });
     }
-    state.seenNotifIds.push(n.id);
   }
 
   // Mantém as listas de "já visto" de um tamanho razoável.
-  state.seenMessageIds = state.seenMessageIds.slice(-500);
-  state.seenNotifIds = state.seenNotifIds.slice(-500);
+  state.seenMessageIds = Array.from(seenMessageIds).slice(-500);
+  state.seenNotifIds = Array.from(seenNotifIds).slice(-500);
   state.lastCheck = Date.now();
   saveState(state);
 
   newMessages.sort((a, b) => b.dateAdded - a.dateAdded);
   newNotifications.sort((a, b) => b.dateAdded - a.dateAdded);
 
+  // A UEX pode publicar a mesma mensagem em dois feeds: mensagens da
+  // negociação e notificações gerais. O sino deve exibir somente a versão
+  // contextualizada da negociação, que contém remetente e anúncio.
+  const filteredNotifications = newNotifications.filter(notification =>
+    !newMessages.some(message => isCrossFeedDuplicate(message, notification))
+  );
+
   return {
     newMessages,
-    newNotifications,
-    totalUnread: newMessages.length + newNotifications.length,
+    newNotifications: filteredNotifications,
+    totalUnread: newMessages.length + filteredNotifications.length,
     negotiations,
   };
 }

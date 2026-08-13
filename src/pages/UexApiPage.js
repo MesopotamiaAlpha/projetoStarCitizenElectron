@@ -6,10 +6,11 @@ import {
   Download, Info , Star, Filter, Key, Eye, EyeOff, Save, Lock, X
 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from '../data/provenance';
-import { saveUexItemsDB, loadUexItemsDB } from '../data/uexItemsDB';
+import { saveUexItemsDB, loadUexItemsDB, normalizeUexNumber, normalizeUexItemName, getUexItemAveragePrice } from '../data/uexItemsDB';
 import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
 import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
+import { loadGoogleTranslateApiKey, saveGoogleTranslateApiKey } from '../data/uexNegotiations';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
@@ -63,7 +64,9 @@ const TABS = [
 function TokenConfigPanel({ onTokenChange }) {
   const [token,      setToken]     = React.useState(loadToken);
   const [secretKey,  setSecretKey] = React.useState(loadSecretKey);
+  const [googleTranslateKey, setGoogleTranslateKey] = React.useState(loadGoogleTranslateApiKey);
   const [showToken,  setShowToken] = React.useState(false);
+  const [showGoogleKey, setShowGoogleKey] = React.useState(false);
   const [testStatus, setTestStatus]= React.useState(null); // null | 'testing' | 'ok' | 'error'
   const [testMsg,    setTestMsg]   = React.useState('');
   const [saved,      setSaved]     = React.useState(false);
@@ -73,6 +76,7 @@ function TokenConfigPanel({ onTokenChange }) {
   function handleSave() {
     saveToken(token.trim());
     saveSecretKey(secretKey.trim());
+    saveGoogleTranslateApiKey(googleTranslateKey.trim());
     setSaved(true);
     onTokenChange && onTokenChange(token.trim());
     setTimeout(() => setSaved(false), 2000);
@@ -206,6 +210,35 @@ function TokenConfigPanel({ onTokenChange }) {
                   fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
                 }}
               />
+            </div>
+          </div>
+
+          {/* Google Cloud Translation */}
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '12px 0 6px' }}>
+            A tradução automática usa primeiro o <strong>MyMemory</strong>, sem chave e sem pré-pagamento, com limite gratuito de aproximadamente 5.000 caracteres por dia e até 500 bytes por consulta. A chave Google abaixo é opcional e serve apenas como fallback quando o limite gratuito for atingido.
+            Se desejar configurar o fallback, obtenha a chave no <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>Google Cloud Console</a>, ative a Cloud Translation API e restrinja a chave ao serviço de tradução.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Globe size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}/>
+              <input
+                type={showGoogleKey ? 'text' : 'password'}
+                value={googleTranslateKey}
+                onChange={e => setGoogleTranslateKey(e.target.value)}
+                placeholder="Chave Google opcional — fallback após limite MyMemory..."
+                style={{
+                  width: '100%', padding: '9px 40px 9px 32px', boxSizing: 'border-box',
+                  background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 6, color: 'var(--text-primary)',
+                  fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
+                }}
+              />
+              <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} style={{
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-muted)', display: 'flex', alignItems: 'center',
+              }}>
+                {showGoogleKey ? <EyeOff size={13}/> : <Eye size={13}/>}</button>
             </div>
           </div>
 
@@ -502,9 +535,13 @@ function ItensTab() {
     setLoadingCat(true); setError(''); setData([]); setSelected(null);
     try {
       const itens = await uexFetch(`items?id_category=${catId}`);
-      setData(itens || []);
-      if (itens?.length) {
-        setBatchProvenance('item', itens.map(i => i.name), SOURCES.UEX_API, {
+      const normalizedItems = (itens || []).map(item => ({
+        ...item,
+        name: normalizeUexItemName(item?.name),
+      }));
+      setData(normalizedItems);
+      if (normalizedItems.length) {
+        setBatchProvenance('item', normalizedItems.map(i => i.name), SOURCES.UEX_API, {
           endpoint: 'items', gameVersion: '4.8.1',
         });
       }
@@ -960,7 +997,11 @@ function ItemDBSyncButton() {
   const [phase,    setPhase]    = useState('');
   const [syncInfo, setSyncInfo] = useState(() => {
     const db = loadUexItemsDB();
-    return db.updatedAt ? { count: db.itemCount, updatedAt: db.updatedAt } : null;
+    return db.updatedAt ? {
+      count: db.itemCount,
+      priceCount: db.items.filter(item => getUexItemAveragePrice(item) > 0).length,
+      updatedAt: db.updatedAt,
+    } : null;
   });
   const [error, setError] = useState('');
   const [priceWarning, setPriceWarning] = useState('');
@@ -970,7 +1011,12 @@ function ItemDBSyncButton() {
     try {
       const allItems = [];
       const seenIds  = new Set();
-      const priceMap = {}; // id_item -> { price_avg, price_max, price_min }
+      const priceMap = {}; // id_item -> estatísticas separadas de compra/venda
+      const priceUuidMap = {}; // item_uuid -> estatísticas, fallback estável do item
+      const priceNameMap = {}; // item_name normalizado -> estatísticas, último fallback
+      const normalizePriceName = value => String(value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
       // 1. Buscar categorias
       const catRes = await uexFetch('categories');
@@ -992,7 +1038,7 @@ function ItemDBSyncButton() {
                 seenIds.add(item.id);
                 allItems.push({
                   id:           item.id,
-                  name:         item.name,
+                  name:         normalizeUexItemName(item.name),
                   category:     item.category,
                   section:      item.section,
                   size:         item.size,
@@ -1021,38 +1067,77 @@ function ItemDBSyncButton() {
       try {
         const prices = await uexFetch('items_prices_all');
         if (prices && Array.isArray(prices)) {
-          // Agrupar por id_item e calcular média/max/min entre todos os terminais
-          prices.forEach(p => {
-            const id = p.id_item;
-            if (!id) return;
-            if (!priceMap[id]) priceMap[id] = { total: 0, count: 0, max: 0, min: Infinity };
-            const val = p.price_sell || p.price_buy || 0;
-            if (val > 0) {
-              priceMap[id].total += val;
-              priceMap[id].count++;
-              if (val > priceMap[id].max) priceMap[id].max = val;
-              if (val < priceMap[id].min) priceMap[id].min = val;
+          // Agrupar por id_item e também por item_uuid. O ID numérico pode
+          // mudar em atualizações da UEX; o UUID é o fallback estável.
+          const addPriceRow = (target, key, buy, sell) => {
+            if (!key) return;
+            if (!target[key]) {
+              target[key] = {
+                buyTotal: 0, buyCount: 0, buyMax: 0, buyMin: Infinity,
+                sellTotal: 0, sellCount: 0, sellMax: 0, sellMin: Infinity,
+              };
             }
+            if (buy > 0) {
+              target[key].buyTotal += buy;
+              target[key].buyCount++;
+              if (buy > target[key].buyMax) target[key].buyMax = buy;
+              if (buy < target[key].buyMin) target[key].buyMin = buy;
+            }
+            if (sell > 0) {
+              target[key].sellTotal += sell;
+              target[key].sellCount++;
+              if (sell > target[key].sellMax) target[key].sellMax = sell;
+              if (sell < target[key].sellMin) target[key].sellMin = sell;
+            }
+          };
+          prices.forEach(p => {
+            const buy = normalizeUexNumber(p.price_buy);
+            const sell = normalizeUexNumber(p.price_sell);
+            if (p.id_item) addPriceRow(priceMap, String(p.id_item), buy, sell);
+            if (p.item_uuid) addPriceRow(priceUuidMap, String(p.item_uuid).toLowerCase(), buy, sell);
+            const priceName = normalizePriceName(p.item_name);
+            if (priceName) addPriceRow(priceNameMap, priceName, buy, sell);
           });
         } else {
           priceFetchError = 'A UEX não retornou uma lista de preços válida.';
         }
       } catch (e) { priceFetchError = e.message; }
 
-      // 4. Enriquecer itens com preços
+      // 4. Enriquecer itens com preços.
+      // Para o valor do Inventário, priorizamos a média de venda; quando a UEX
+      // não possui venda registrada, usamos a média de compra como fallback.
       const enriched = allItems.map(item => {
-        const p = priceMap[item.id];
-        const priceAvg = p && p.count > 0 ? Math.round(p.total / p.count) : (item.price_buy || item.price_sell || 0);
+        const normalizedItemName = normalizePriceName(item.name);
+        const p = priceMap[String(item.id)]
+          || (item.uuid ? priceUuidMap[String(item.uuid).toLowerCase()] : null)
+          || priceNameMap[normalizedItemName];
+        const hasSell = p && p.sellCount > 0;
+        const hasBuy = p && p.buyCount > 0;
+        const sellAvg = hasSell ? Math.round(p.sellTotal / p.sellCount) : 0;
+        const buyAvg = hasBuy ? Math.round(p.buyTotal / p.buyCount) : 0;
+        const fallback = normalizeUexNumber(item.price_sell) || normalizeUexNumber(item.price_buy);
+        const priceAvg = sellAvg || buyAvg || fallback;
+        const selected = hasSell
+          ? { max: p.sellMax, min: p.sellMin }
+          : hasBuy
+          ? { max: p.buyMax, min: p.buyMin }
+          : { max: 0, min: 0 };
         return {
           ...item,
           price_avg: priceAvg,
-          price_max: p ? p.max : 0,
-          price_min: p && p.min !== Infinity ? p.min : 0,
+          price_sell_avg: sellAvg,
+          price_buy_avg: buyAvg,
+          price_max: selected.max,
+          price_min: selected.min,
         };
       });
 
       const db = saveUexItemsDB(enriched);
-      setSyncInfo({ count: db.itemCount, updatedAt: db.updatedAt });
+      setSyncInfo({
+        count: db.itemCount,
+        priceCount: enriched.filter(item => getUexItemAveragePrice(item) > 0).length,
+        updatedAt: db.updatedAt,
+      });
       if (priceFetchError) setPriceWarning(`Itens sincronizados, mas os preços de mercado não puderam ser carregados: ${priceFetchError}`);
       setPhase('');
     } catch (err) {
@@ -1078,7 +1163,7 @@ function ItemDBSyncButton() {
       </button>
       {syncInfo?.count > 0 && !syncing && (
         <span style={{ fontSize:10,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace' }}>
-          {syncInfo.count.toLocaleString('pt-BR')} itens · {ptDate(syncInfo.updatedAt)}
+          {syncInfo.count.toLocaleString('pt-BR')} itens · {syncInfo.priceCount||0} com preço médio · {ptDate(syncInfo.updatedAt)}
         </span>
       )}
       {error && <span style={{ fontSize:10,color:'var(--accent-red)' }}>{error}</span>}

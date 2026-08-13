@@ -21,10 +21,10 @@ const MISSION_TYPES = ['Bounty Hunt','Delivery','Carga Run','Mining','Salvage','
 const FACTIONS      = ['Foxwell Enforcement','Headhunters','Covalex','Shubin Interstellar','Ling Family','InterSec','Rayari','Mile Eckhart','Nine Tails','UEE Navy','Advocacy','CDF','Hurston Security','Levski Security','Free','Outro'];
 const SYSTEMS       = ['Stanton','Pyro','Nyx','Terra'];
 const DIFFICULTIES  = ['Easy','Médio','Hard','Very Hard','Elite'];
-const STATUSES      = ['Active','Completed','Failed','Abandoned','Pending','Bugged'];
+const STATUSES      = ['Active','Completed','Failed','Abandoned','Pending','Bugged','Saiu da carteira'];
 const MONTHS_PT     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-const STATUS_COLORS = { Active:'var(--accent-primary)',Completed:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055' };
+const STATUS_COLORS = { Active:'var(--accent-primary)',Completed:'var(--accent-green)',Failed:'var(--accent-red)',Abandoned:'var(--text-muted)',Pending:'var(--accent-gold)',Bugged:'#e17055','Saiu da carteira':'var(--accent-red)' };
 const DIFF_COLORS   = { Easy:'var(--accent-green)',Médio:'var(--accent-primary)',Hard:'var(--accent-gold)','Very Hard':'#fb923c',Elite:'var(--accent-red)' };
 const TYPE_ICONS    = { 'Bounty Hunt':Crosshair,'FPS Combat':Crosshair,'Delivery':Package,'Carga Run':Package,'Mining':Star,'Salvage':Star,'Escort':Users,'Investigation':Search,'PVP':Crosshair,'Base Assault':AlertTriangle,'Drug Run':Package,'Mercenary':Users,'Blockade Run':Crosshair };
 
@@ -76,11 +76,141 @@ function ptMoney(v) {
   if (!v && v!==0) return '0';
   return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:3});
 }
+function isWalletOut(mission) { return mission?.status === 'Saiu da carteira'; }
+function walletOutAmount(mission) { return isWalletOut(mission) ? Math.abs(Number(mission.reward) || 0) : 0; }
+function earnedAmount(mission) { return mission?.status === 'Completed' ? Math.max(0, Number(mission.reward) || 0) : 0; }
+function financialDateStr(mission) { return isWalletOut(mission) ? localDateStr(mission.wallet_out_at || mission.created_at) : localDateStr(mission.created_at); }
+function missionBelongsToDate(mission, date) {
+  return financialDateStr(mission) === date;
+}
 function parseMoney(str) {
   if (!str) return 0;
   const raw = String(str).replace(/\./g,'').replace(',','.');
   const n = parseFloat(raw);
   return isNaN(n) ? 0 : n;
+}
+
+function roundLootValue(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function equalLootPercentages(memberCount) {
+  if (!memberCount) return {};
+  const base = Math.floor((100 / memberCount) * 100) / 100;
+  return Array.from({ length: memberCount }).reduce((result, _, index) => {
+    result[index] = index === memberCount - 1
+      ? roundLootValue(100 - base * (memberCount - 1))
+      : roundLootValue(base);
+    return result;
+  }, {});
+}
+
+function normalizeLootMode(loot) {
+  const savedMode = loot?.divisionMode || loot?.distribution_mode;
+  if (loot?.distribution_version === 2) {
+    if (savedMode === 'equal' || savedMode === 'split') return 'equal';
+    if (savedMode === 'percentage') return 'percentage';
+    if (savedMode === 'manual' || savedMode === 'free' || savedMode === 'manual-free') return 'manual';
+  }
+  if (savedMode === 'equal' || savedMode === 'split') return 'equal';
+  if (savedMode === 'percentage') return 'percentage';
+  if (savedMode === 'free' || savedMode === 'manual-free') return 'manual';
+  if (savedMode === 'manual') {
+    const hasPercentageData = (loot?.members || []).some(member => member.loot_share_pct !== null && member.loot_share_pct !== undefined)
+      || (loot?.items || []).some(item => item.percentages && Object.keys(item.percentages).length > 0);
+    return hasPercentageData ? 'percentage' : 'manual';
+  }
+  const hasLegacyManualAssignments = (loot?.items || []).some(item => item.assignMode === 'manual' && item.assignments && Object.keys(item.assignments).length > 0);
+  return hasLegacyManualAssignments ? 'manual' : 'equal';
+}
+
+function getLootPercentages(item, members) {
+  if (!members.length) return {};
+  if (item?.assignMode === 'equal' || item?.assignMode === 'split') {
+    const equal = equalLootPercentages(members.length);
+    return members.reduce((result, member, index) => {
+      result[member.id] = equal[index] || 0;
+      return result;
+    }, {});
+  }
+
+  if (item?.assignMode === 'manual' || item?.assignMode === 'free') {
+    const quantity = Number(item.qty) || 0;
+    return members.reduce((result, member) => {
+      const amount = Math.max(0, Math.min(quantity, Number(item.assignments?.[member.id]) || 0));
+      result[member.id] = quantity > 0 ? roundLootValue(amount / quantity * 100) : 0;
+      return result;
+    }, {});
+  }
+
+  const hasMemberPercentages = members.some(member => member.loot_share_pct !== null && member.loot_share_pct !== undefined);
+  if (hasMemberPercentages) {
+    return members.reduce((result, member) => {
+      result[member.id] = Math.max(0, Math.min(100, Number(member.loot_share_pct) || 0));
+      return result;
+    }, {});
+  }
+
+  const stored = item.percentages && typeof item.percentages === 'object' ? item.percentages : null;
+  if (stored) {
+    return members.reduce((result, member) => {
+      result[member.id] = Math.max(0, Math.min(100, Number(stored[member.id]) || 0));
+      return result;
+    }, {});
+  }
+
+  // Compatibilidade: versões anteriores salvavam valores absolutos em assignments.
+  const legacyAssignments = item.assignments && typeof item.assignments === 'object' ? item.assignments : {};
+  const legacyTotal = Object.values(legacyAssignments).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  if (legacyTotal > 0 && Number(item.qty) > 0) {
+    return members.reduce((result, member) => {
+      result[member.id] = roundLootValue((Number(legacyAssignments[member.id]) || 0) / Number(item.qty) * 100);
+      return result;
+    }, {});
+  }
+
+  return members.reduce((result, member) => { result[member.id] = 0; return result; }, {});
+}
+
+function calculateItemShares(item, members) {
+  if (!members.length) return [];
+  const quantity = Number(item.qty) || 0;
+  if (item?.assignMode === 'manual' || item?.assignMode === 'free') {
+    return members.map(member => {
+      const amount = item.type === 'unit'
+        ? Math.max(0, Math.min(quantity, Math.floor(Number(item.assignments?.[member.id]) || 0)))
+        : Math.max(0, Math.min(quantity, roundLootValue(Number(item.assignments?.[member.id]) || 0)));
+      return { memberId: member.id, percentage: quantity > 0 ? roundLootValue(amount / quantity * 100) : 0, quantity: amount };
+    });
+  }
+  const percentages = getLootPercentages(item, members);
+  const totalPct = members.reduce((sum, member) => sum + (Number(percentages[member.id]) || 0), 0);
+  let assignedBeforeLast = 0;
+
+  return members.map((member, index) => {
+    const percentage = Number(percentages[member.id]) || 0;
+    const raw = quantity * percentage / 100;
+    const isLastAndValid = index === members.length - 1 && Math.abs(totalPct - 100) <= 0.01;
+    const share = isLastAndValid
+      ? (item.type === 'unit' ? Math.max(0, Math.round(quantity - assignedBeforeLast)) : roundLootValue(quantity - assignedBeforeLast))
+      : (item.type === 'unit' ? Math.max(0, Math.floor(raw)) : roundLootValue(raw));
+    assignedBeforeLast += share;
+    return { memberId: member.id, percentage, quantity: Math.max(0, share) };
+  });
+}
+
+function calculateLootDistribution(items, members) {
+  const totals = members.map(member => ({ id: member.id, name: member.name, totalAuec: 0, items: [] }));
+  for (const item of items || []) {
+    const shares = calculateItemShares(item, members);
+    shares.forEach(share => {
+      const target = totals.find(member => String(member.id) === String(share.memberId));
+      if (!target || share.quantity <= 0) return;
+      if (item.type === 'auec') target.totalAuec = roundLootValue(target.totalAuec + share.quantity);
+      target.items.push({ itemId: item.id, name: item.name, type: item.type, quantity: share.quantity, percentage: share.percentage });
+    });
+  }
+  return totals;
 }
 
 // ── Objective Library ─────────────────────────────────────────────────────────
@@ -104,10 +234,23 @@ function useObjLibrary() {
 // ── Loot Distribution Modal ───────────────────────────────────────────────────
 function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
   // Tripulantes nomeados
-  const [members, setMembers] = useState(() =>
-    initialLoot?.members ? initialLoot.members.map(m=>({...m})) : []
-  );
+  const [members, setMembers] = useState(() => {
+    if (!initialLoot?.members) return [];
+    const legacyItem = (initialLoot.items || []).find(item => item.assignMode === 'manual' && Number(item.qty) > 0);
+    return initialLoot.members.map(member => {
+      const storedPct = member.loot_share_pct !== undefined && member.loot_share_pct !== null
+        ? Number(member.loot_share_pct)
+        : legacyItem?.percentages?.[member.id] !== undefined
+        ? Number(legacyItem.percentages[member.id])
+        : legacyItem?.assignments?.[member.id] !== undefined
+        ? (Number(legacyItem.assignments[member.id]) / Number(legacyItem.qty) * 100)
+        : null;
+      return {...member, loot_share_pct: storedPct === null ? null : roundLootValue(storedPct)};
+    });
+  });
   const [memberInput, setMemberInput] = useState('');
+  const [validationError, setValidationError] = useState('');
+  const [divisionMode, setDivisionMode] = useState(() => normalizeLootMode(initialLoot));
 
   // Itens de loot
   const [items, setItems] = useState(() =>
@@ -122,7 +265,8 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
   function addMember() {
     const name = memberInput.trim();
     if (!name || members.find(m=>m.name.toLowerCase()===name.toLowerCase())) return;
-    setMembers(prev => [...prev, { id: Date.now(), name, delivered: false }]);
+    const member = { id: Date.now(), name, delivered: false, loot_share_pct: divisionMode === 'percentage' ? 0 : null };
+    setMembers(prev => [...prev, member]);
     setMemberInput('');
   }
   function removeMember(id) {
@@ -130,8 +274,10 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
     // Remover assignments deste membro dos itens
     setItems(prev => prev.map(it => {
       const a = {...(it.assignments||{})};
+      const p = {...(it.percentages||{})};
       delete a[id];
-      return {...it, assignments: a};
+      delete p[id];
+      return {...it, assignments: a, percentages: p};
     }));
   }
 
@@ -159,15 +305,44 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
       return {...i, qtyDisplay: disp};
     }));
   }
-  function setAssignMode(id, mode) {
-    setItems(prev => prev.map(i => i.id !== id ? i : {...i, assignMode: mode, assignments: {}}));
+  function setManualAssignment(itemId, memberId, val, type) {
+    const parsed = type === 'auec' ? parseMoney(val) : Math.max(0, parseInt(val, 10) || 0);
+    setValidationError('');
+    setItems(prev => prev.map(item => item.id === itemId ? {
+      ...item,
+      assignMode: 'manual',
+      assignments: {...(item.assignments || {}), [memberId]: parsed},
+    } : item));
   }
-  function setAssignment(itemId, memberId, val) {
-    setItems(prev => prev.map(i => {
-      if (i.id !== itemId) return i;
-      const parsed = i.type === 'auec' ? parseMoney(val) : (parseInt(val,10)||0);
-      return {...i, assignments: {...(i.assignments||{}), [memberId]: parsed}};
-    }));
+  function setMemberPercentage(memberId, val) {
+    const parsed = Math.max(0, Math.min(100, Number(String(val).replace(',', '.')) || 0));
+    setValidationError('');
+    setMembers(prev => prev.map(member => member.id === memberId ? {...member, loot_share_pct: parsed} : member));
+    setItems(prev => prev.map(item => item.assignMode === 'percentage' ? {
+      ...item,
+      percentages: {...(item.percentages||{}), [memberId]: parsed},
+    } : item));
+  }
+  function applyEqualDivision() {
+    setValidationError('');
+    setDivisionMode('equal');
+    setMembers(prev => prev.map(member => ({...member, loot_share_pct: null})));
+    setItems(prev => prev.map(item => ({...item, assignMode:'equal', assignments:{}, percentages:{}})));
+  }
+  function activatePercentageDivision() {
+    setValidationError('');
+    const current = members.length > 0 && members.some(member => member.loot_share_pct !== null && member.loot_share_pct !== undefined)
+      ? members.reduce((result, member) => { result[member.id] = Number(member.loot_share_pct) || 0; return result; }, {})
+      : equalLootPercentages(members.length);
+    setDivisionMode('percentage');
+    setMembers(prev => prev.map(member => ({...member, loot_share_pct: current[member.id] || 0})));
+    setItems(prev => prev.map(item => ({...item, assignMode:'percentage', percentages:{...current}, assignments:{}})));
+  }
+  function activateManualDivision() {
+    setValidationError('');
+    setDivisionMode('manual');
+    setMembers(prev => prev.map(member => ({...member, loot_share_pct: null})));
+    setItems(prev => prev.map(item => ({...item, assignMode:'manual', percentages:{}, assignments:{}})));
   }
 
   // ── Cálculos ──
@@ -177,17 +352,48 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
     return Math.floor((item.qty||0) / members.length);
   }
 
-  const totalAuec = items.filter(i=>i.type==='auec').reduce((a,i)=>a+(i.qty||0),0);
-  const perPersonAuec = members.length > 0 ? Math.floor(totalAuec / members.length) : 0;
+  const totalAuec = items.filter(i=>i.type==='auec').reduce((a,i)=>a+(Number(i.qty)||0),0);
+  const activeItems = items.filter(i => String(i.name || '').trim() || Number(i.qty) > 0);
+  const distributionItems = activeItems.map(item => ({...item, assignMode: divisionMode}));
+  const totalPct = divisionMode === 'percentage' ? members.reduce((sum, member) => sum + (Number(member.loot_share_pct) || 0), 0) : 100;
+  const percentagesValid = divisionMode !== 'percentage' || Math.abs(totalPct - 100) <= 0.01;
+  const manualInvalidItems = divisionMode === 'manual' ? activeItems.filter(item => {
+    const assigned = Object.values(item.assignments || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+    return Number(item.qty) > 0 && assigned > Number(item.qty) + 0.01;
+  }) : [];
+  const distribution = calculateLootDistribution(distributionItems, members);
+  const perPersonAuec = members.length > 0 ? roundLootValue(totalAuec / members.length) : 0;
 
   function handleSave() {
+    if (members.length > 0 && activeItems.some(item => Number(item.qty) > 0) && !percentagesValid) {
+      setValidationError(`A soma das porcentagens deve ser 100%. Atualmente está em ${totalPct.toFixed(2)}%.`);
+      return;
+    }
+    if (manualInvalidItems.length > 0) {
+      setValidationError(`A distribuição manual ultrapassa a quantidade do item: ${manualInvalidItems.map(item => item.name || '(sem nome)').join(', ')}.`);
+      return;
+    }
+    setValidationError('');
+    const normalizedItems = activeItems.map(item => {
+      const normalized = {...item, name: String(item.name || '').trim() || '(sem nome)', assignMode: divisionMode};
+      const percentages = getLootPercentages(normalized, members);
+      const assignments = calculateItemShares(normalized, members).reduce((result, share) => {
+        result[share.memberId] = share.quantity;
+        return result;
+      }, {});
+      return {...normalized, percentages, assignments};
+    });
     const loot = {
-      members: members.map(m => ({...m})),
-      items: items.filter(i => i.name.trim() || i.qty > 0).map(i => ({
-        id: i.id, name: i.name.trim()||'(sem nome)', type: i.type,
-        qty: i.qty, assignMode: i.assignMode, assignments: i.assignments||{},
+      members: members.map(m => ({...m, loot_share_pct: divisionMode === 'percentage' ? Number(m.loot_share_pct) || 0 : null})),
+      items: normalizedItems.map(i => ({
+        id: i.id, name: i.name, type: i.type, qty: Number(i.qty) || 0,
+        assignMode: i.assignMode, assignments: i.assignments||{}, percentages: i.percentages||{},
         hasQuality: i.hasQuality||false, quality: i.quality||'',
       })),
+      divisionMode,
+      distribution_mode: divisionMode,
+      distribution_version: 2,
+      distribution,
       totalAuec,
       perPersonAuec,
       registered_at: initialLoot?.registered_at || localISOString(),
@@ -196,7 +402,7 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
     onSave(loot);
   }
 
-  const hasContent = members.length > 0 || items.some(i => i.name.trim() || i.qty > 0);
+  const hasContent = members.length > 0 || activeItems.length > 0;
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}}>
@@ -247,7 +453,60 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
           </div>
         </div>
 
-        {/* ── SEÇÃO 2: Itens ── */}
+        {/* ── SEÇÃO 2: MODO DE DISTRIBUIÇÃO ── */}
+        {members.length > 0 && (
+          <div style={{marginBottom:18,padding:'12px',background:'rgba(56,189,248,0.04)',border:'1px solid rgba(56,189,248,0.18)',borderRadius:8}}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
+              <Divide size={11}/> Forma de distribuição da premiação
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+              <button onClick={applyEqualDivision} style={{...BTN,background:divisionMode==='equal'?'rgba(52,211,153,0.12)':'transparent',border:`1px solid ${divisionMode==='equal'?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`,color:divisionMode==='equal'?'var(--accent-green)':'var(--text-muted)'}}>
+                <Divide size={11}/> Divisão por Igual
+              </button>
+              <button onClick={activatePercentageDivision} style={{...BTN,background:divisionMode==='percentage'?'rgba(56,189,248,0.12)':'transparent',border:`1px solid ${divisionMode==='percentage'?'rgba(56,189,248,0.4)':'var(--border-subtle)'}`,color:divisionMode==='percentage'?'var(--accent-primary)':'var(--text-muted)'}}>
+                <Edit3 size={11}/> Divisão por Porcentagem
+              </button>
+              <button onClick={activateManualDivision} style={{...BTN,background:divisionMode==='manual'?'rgba(167,139,250,0.12)':'transparent',border:`1px solid ${divisionMode==='manual'?'rgba(167,139,250,0.4)':'var(--border-subtle)'}`,color:divisionMode==='manual'?'var(--accent-purple)':'var(--text-muted)'}}>
+                <Edit3 size={11}/> Divisão Manual
+              </button>
+            </div>
+            {divisionMode === 'equal' && (
+              <div style={{display:'flex',flexDirection:'column',gap:6,fontSize:11,color:'var(--text-secondary)'}}>
+                <span>Todo o loot será distribuído igualmente entre os participantes.</span>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {members.map((member,index) => {
+                    const pct = equalLootPercentages(members.length)[index] || 0;
+                    return <span key={member.id} style={{padding:'3px 8px',borderRadius:5,background:'rgba(52,211,153,0.07)',border:'1px solid rgba(52,211,153,0.18)'}}>{member.name}: <strong style={{color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace'}}>{pct.toFixed(2)}%</strong></span>;
+                  })}
+                </div>
+              </div>
+            )}
+            {divisionMode === 'percentage' && (
+              <div>
+                <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:7}}>Informe manualmente a porcentagem de cada participante. A soma precisa fechar em 100%.</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:6}}>
+                  {members.map(member => (
+                    <label key={member.id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 7px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:5}}>
+                      <span style={{flex:1,minWidth:0,fontSize:11,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{member.name}</span>
+                      <input type="number" min="0" max="100" step="0.01" value={member.loot_share_pct ?? ''} onChange={e=>setMemberPercentage(member.id,e.target.value)} style={{width:72,padding:'4px 6px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--accent-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:11,textAlign:'right',outline:'none'}}/>
+                      <span style={{fontSize:10,color:'var(--text-muted)'}}>%</span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8,padding:'6px 8px',background:Math.abs(totalPct-100)<=0.01?'rgba(52,211,153,0.07)':'rgba(251,191,36,0.08)',border:`1px solid ${Math.abs(totalPct-100)<=0.01?'rgba(52,211,153,0.22)':'rgba(251,191,36,0.28)'}`,borderRadius:5,fontSize:11,color:Math.abs(totalPct-100)<=0.01?'var(--accent-green)':'var(--accent-gold)'}}>
+                  {Math.abs(totalPct-100)<=0.01 ? <CheckCircle2 size={12}/> : <AlertTriangle size={12}/>} Soma das porcentagens: <strong>{totalPct.toFixed(2)}%</strong>{Math.abs(totalPct-100)>0.01 && <span> — ajuste para fechar em 100% antes de salvar.</span>}
+                </div>
+              </div>
+            )}
+            {divisionMode === 'manual' && (
+              <div style={{fontSize:11,color:'var(--text-secondary)',lineHeight:1.5}}>
+                Informe livremente quanto cada participante receberá em cada item. Você não precisa usar porcentagens nem dividir tudo igualmente.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SEÇÃO 3: Itens ── */}
         <div style={{marginBottom:16}}>
           <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
             <Package size={10}/> Itens / Loot ({items.length})
@@ -299,57 +558,43 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                 )}
               </div>
 
-              {/* Modo de distribuição (só aparece se há tripulantes e quantidade) */}
-              {members.length > 0 && item.qty > 0 && (
-                <div>
-                  <div style={{display:'flex',gap:6,marginBottom:8}}>
-                    <button onClick={()=>setAssignMode(item.id,'split')}
-                      style={{...BTN, background:item.assignMode==='split'?'rgba(52,211,153,0.12)':'transparent', border:`1px solid ${item.assignMode==='split'?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='split'?'var(--accent-green)':'var(--text-muted)'}}>
-                      <Divide size={10}/> Divisão Automática
-                    </button>
-                    <button onClick={()=>setAssignMode(item.id,'manual')}
-                      style={{...BTN, background:item.assignMode==='manual'?'rgba(56,189,248,0.12)':'transparent', border:`1px solid ${item.assignMode==='manual'?'rgba(56,189,248,0.4)':'var(--border-subtle)'}`, color:item.assignMode==='manual'?'var(--accent-primary)':'var(--text-muted)'}}>
-                      <Edit3 size={10}/> Manual por Pessoa
-                    </button>
+              {/* Distribuição deste item */}
+              {members.length > 0 && item.qty > 0 && divisionMode !== 'manual' && (
+                <div style={{padding:'8px 9px',background:'rgba(255,255,255,0.025)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                    {divisionMode === 'equal' ? 'Divisão por igual' : 'Divisão por porcentagem'} · {item.type === 'auec' ? `${ptMoney(item.qty)} aUEC` : `${item.qty} un.`}
                   </div>
-
-                  {item.assignMode === 'split' ? (
-                    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                      {members.map(m => (
-                        <div key={m.id} style={{padding:'4px 10px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.15)',borderRadius:6,fontSize:11}}>
-                          <span style={{color:'var(--text-secondary)'}}>{m.name}: </span>
-                          <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-green)',fontWeight:700}}>
-                            {item.type==='auec' ? `${ptMoney(splitPerPerson(item))} aUEC` : `${splitPerPerson(item)} un.`}
-                          </span>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:5}}>
+                    {members.map((member,index) => {
+                      const pct = divisionMode === 'percentage' ? Number(member.loot_share_pct) || 0 : equalLootPercentages(members.length)[index] || 0;
+                      const amount = item.type === 'unit' ? Math.floor(Number(item.qty) * pct / 100) : roundLootValue(Number(item.qty) * pct / 100);
+                      return (
+                        <div key={member.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:5,padding:'4px 6px',background:'rgba(56,189,248,0.05)',borderRadius:4}}>
+                          <span style={{fontSize:10,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{member.name}</span>
+                          <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--accent-primary)',fontWeight:700,whiteSpace:'nowrap'}}>{pct.toFixed(2)}% · {item.type === 'auec' ? `${ptMoney(amount)} aUEC` : `${amount} un.`}</span>
                         </div>
-                      ))}
-                      {item.qty % members.length !== 0 && (
-                        <div style={{fontSize:10,color:'var(--accent-gold)',padding:'4px 8px',alignSelf:'center'}}>
-                          ⚠ Resto: {item.type==='auec'?`${ptMoney(item.qty % members.length)} aUEC`:`${item.qty % members.length} un.`}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:6}}>
-                        Total: {item.type==='auec'?`${ptMoney(item.qty)} aUEC`:`${item.qty} un.`} —
-                        Atribuído: {item.type==='auec'
-                          ? `${ptMoney(Object.values(item.assignments||{}).reduce((a,v)=>a+v,0))} aUEC`
-                          : `${Object.values(item.assignments||{}).reduce((a,v)=>a+v,0)} un.`}
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:6}}>
-                        {members.map(m => (
-                          <div key={m.id} style={{display:'flex',alignItems:'center',gap:6}}>
-                            <span style={{fontSize:11,color:'var(--text-secondary)',minWidth:60,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.name}</span>
-                            <input style={{...IS,flex:1,fontSize:11,fontFamily:'Share Tech Mono,monospace',padding:'4px 7px'}}
-                              placeholder={item.type==='auec'?'aUEC':'un.'}
-                              value={item.assignments?.[m.id] > 0 ? (item.type==='auec'?ptMoney(item.assignments[m.id]):item.assignments[m.id]) : ''}
-                              onChange={e=>setAssignment(item.id, m.id, e.target.value)}/>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {members.length > 0 && item.qty > 0 && divisionMode === 'manual' && (
+                <div style={{padding:'8px 9px',background:'rgba(167,139,250,0.04)',border:'1px solid rgba(167,139,250,0.22)',borderRadius:6}}>
+                  <div style={{fontSize:10,color:'var(--accent-purple)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                    Divisão manual · informe o valor de cada participante · total do item: {item.type === 'auec' ? `${ptMoney(item.qty)} aUEC` : `${item.qty} un.`}
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:6}}>
+                    {members.map(member => (
+                      <label key={member.id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 7px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:5}}>
+                        <span style={{flex:1,minWidth:0,fontSize:10,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{member.name}</span>
+                        <input type="text" inputMode="decimal" value={item.assignments?.[member.id] > 0 ? (item.type === 'auec' ? ptMoney(item.assignments[member.id]) : item.assignments[member.id]) : ''} onChange={e=>setManualAssignment(item.id, member.id, e.target.value, item.type)} placeholder={item.type === 'auec' ? 'aUEC' : 'un.'} style={{width:82,padding:'4px 6px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--accent-purple)',fontFamily:'Share Tech Mono,monospace',fontSize:11,textAlign:'right',outline:'none'}}/>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{marginTop:6,fontSize:10,color:manualInvalidItems.some(candidate => candidate.id === item.id) ? 'var(--accent-red)' : 'var(--text-muted)'}}>
+                    Distribuído: {item.type === 'auec' ? `${ptMoney(Object.values(item.assignments || {}).reduce((sum, value) => sum + (Number(value) || 0), 0))} aUEC` : `${Object.values(item.assignments || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)} un.`}
+                    {manualInvalidItems.some(candidate => candidate.id === item.id) && ' — o total distribuído ultrapassa o total do item.'}
+                  </div>
                 </div>
               )}
             </div>
@@ -376,15 +621,27 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
                 <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>Tripulantes</div>
               </div>
               <div>
-                <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-green)'}}>{ptMoney(perPersonAuec)}</div>
-                <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>Por Pessoa</div>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:'var(--accent-green)'}}>{divisionMode === 'manual' ? '—' : ptMoney(perPersonAuec)}</div>
+                <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>{divisionMode === 'equal' ? 'Por Pessoa' : divisionMode === 'percentage' ? 'Média' : 'Manual Livre'}</div>
               </div>
             </div>
+            {distribution.length > 0 && (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:5,marginTop:10}}>
+                {distribution.map(member => {
+                  const memberIndex = members.findIndex(m => String(m.id) === String(member.id));
+                  const pct = divisionMode === 'percentage' ? Number(members.find(m => String(m.id) === String(member.id))?.loot_share_pct) || 0 : (equalLootPercentages(members.length)[memberIndex] || 0);
+                  const label = divisionMode === 'manual' ? 'Manual' : `${pct.toFixed(2)}%`;
+                  return <div key={member.id} style={{display:'flex',justifyContent:'space-between',gap:6,padding:'5px 7px',background:'rgba(255,255,255,0.03)',borderRadius:5,fontSize:10}}><span style={{color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{member.name} · {label}</span><strong style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-green)',whiteSpace:'nowrap'}}>{ptMoney(member.totalAuec)} aUEC</strong></div>;
+                })}
+              </div>
+            )}
           </div>
         )}
 
+        {validationError && <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:9,padding:'7px 9px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.28)',borderRadius:5,color:'var(--accent-red)',fontSize:11}}><AlertTriangle size={12}/>{validationError}</div>}
+
         {/* Botões */}
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',flexWrap:'wrap'}}>
           {onSkip && (
             <button onClick={onSkip} style={{...BTN,padding:'8px 16px',background:'transparent',border:'1px solid var(--border-subtle)',color:'var(--text-secondary)'}}>
               Sem Loot
@@ -431,7 +688,10 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
 
   function handleSave() {
     if(!data.title.trim()){setError('Título obrigatório.');return;}
-    const saved={...data,id:data.id||Date.now(),
+    const normalizedReward = Math.abs(Number(data.reward) || 0);
+    if(data.status==='Saiu da carteira' && normalizedReward <= 0){setError('Informe o valor que saiu da carteira.');return;}
+    const saved={...data,reward:normalizedReward,id:data.id||Date.now(),
+      wallet_out_at:data.status==='Saiu da carteira'?(data.wallet_out_at||localISOString()):null,
       completed_at:data.status==='Completed'&&!data.completed_at?localISOString():data.completed_at};
     onSave(saved);
   }
@@ -477,13 +737,15 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:9,marginBottom:9}}>
         <div><label style={LS}>Localização</label><input style={IS} value={data.location||''} onChange={e=>set('location',e.target.value)} placeholder="Ex: Yela Belt, Lorville bunker..."/></div>
         <div>
-          <label style={LS}>Recompensa (aUEC)</label>
+          <label style={{...LS,color:data.status==='Saiu da carteira'?'var(--accent-red)':LS.color}}>{data.status==='Saiu da carteira'?'Valor que saiu da carteira (aUEC)':'Recompensa (aUEC)'}</label>
           <input style={IS} type="text" inputMode="numeric" value={rewardDisplay}
             onChange={e=>{setRewardDisplay(e.target.value);set('reward',parseMoney(e.target.value));}}
             onBlur={()=>setRewardDisplay(data.reward>0?ptMoney(data.reward):'')}
             placeholder="ex: 1.500.000"
           />
-          {data.reward>0&&data.crew_needed>1&&(
+          {data.status==='Saiu da carteira' ? (
+            <div style={{marginTop:3,fontSize:10,color:'var(--accent-red)'}}>Valor que será subtraído do total líquido do dia.</div>
+          ) : data.reward>0&&data.crew_needed>1&&(
             <div style={{marginTop:3,fontSize:11,color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace'}}>
               ÷{data.crew_needed} = {ptMoney(Math.floor(data.reward/data.crew_needed))}/pessoa
             </div>
@@ -581,11 +843,15 @@ function LootPanel({ loot, mission, onUpdate }) {
   const memberCount    = loot.members?.length || 0;
   const deliveredCount = (loot.members||[]).filter(m => delivered[m.id]).length;
   const pendingCount   = memberCount - deliveredCount;
+  const savedDistribution = Array.isArray(loot.distribution)
+    ? loot.distribution
+    : calculateLootDistribution(loot.items || [], loot.members || []);
+  const savedDistributionMode = normalizeLootMode(loot);
 
   // ── Calcular status de atribuição de cada item ──
   function itemAssignmentStatus(item) {
     if (!memberCount) return 'no-members'; // sem tripulantes cadastrados
-    if (item.assignMode === 'split') return 'assigned'; // divisão automática = sempre atribuído
+    if (item.assignMode === 'equal' || item.assignMode === 'split' || item.assignMode === 'percentage') return 'assigned'; // divisões calculadas
     // manual: verificar se alguém tem valor > 0
     const totalAssigned = Object.values(item.assignments||{}).reduce((a,v)=>a+(v||0),0);
     if (totalAssigned === 0) return 'unassigned';
@@ -605,6 +871,7 @@ function LootPanel({ loot, mission, onUpdate }) {
         <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
           <Gift size={11} style={{color:'var(--accent-green)'}}/>
           <span style={{fontSize:10,fontWeight:700,color:'var(--accent-green)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Distribuição de Loot</span>
+          <span style={{fontSize:9,padding:'1px 6px',borderRadius:5,background:savedDistributionMode==='equal'?'rgba(52,211,153,0.1)':savedDistributionMode==='percentage'?'rgba(56,189,248,0.1)':'rgba(167,139,250,0.12)',color:savedDistributionMode==='equal'?'var(--accent-green)':savedDistributionMode==='percentage'?'var(--accent-primary)':'var(--accent-purple)',border:'1px solid var(--border-subtle)',fontWeight:700}}>{savedDistributionMode==='equal'?'POR IGUAL':savedDistributionMode==='percentage'?'PORCENTUAL':'MANUAL LIVRE'}</span>
           {memberCount > 0 && deliveredCount === memberCount && (
             <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'rgba(52,211,153,0.15)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.3)',fontWeight:700}}>✓ Tudo entregue</span>
           )}
@@ -634,8 +901,8 @@ function LootPanel({ loot, mission, onUpdate }) {
               <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-gold)',fontWeight:700}}>{ptMoney(loot.totalAuec)} aUEC</span>
             </span>
             <span style={{fontSize:11,color:'var(--text-secondary)'}}>
-              <span style={{color:'var(--text-muted)'}}>Por pessoa: </span>
-              <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-green)',fontWeight:700}}>{ptMoney(loot.perPersonAuec)} aUEC</span>
+              <span style={{color:'var(--text-muted)'}}>{savedDistributionMode === 'equal' ? 'Por pessoa: ' : 'Modo: '}</span>
+              <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-green)',fontWeight:700}}>{savedDistributionMode === 'equal' ? `${ptMoney(loot.perPersonAuec)} aUEC` : savedDistributionMode === 'percentage' ? 'percentual' : 'manual livre'}</span>
             </span>
           </div>
         )}
@@ -714,11 +981,9 @@ function LootPanel({ loot, mission, onUpdate }) {
                       <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color: hasIssue ? (isUnassigned?'var(--accent-red)':'var(--accent-gold)') : 'var(--accent-gold)',fontWeight:700}}>
                         {item.type==='auec' ? `${ptMoney(item.qty)} aUEC` : `${item.qty} un.`}
                       </span>
-                      {item.assignMode==='split' && memberCount > 0 && (
+                      {(item.assignMode==='equal' || item.assignMode==='split' || item.assignMode==='percentage') && memberCount > 0 && (
                         <div style={{fontSize:10,color:'var(--text-muted)',marginTop:1}}>
-                          ÷{memberCount} = {item.type==='auec'
-                            ? `${ptMoney(Math.floor(item.qty/memberCount))} aUEC`
-                            : `${Math.floor(item.qty/memberCount)} un.`} /pessoa
+                          {item.assignMode==='percentage' ? 'Distribuído por porcentagem' : `÷${memberCount} = ${item.type==='auec' ? `${ptMoney(Math.floor(item.qty/memberCount))} aUEC` : `${Math.floor(item.qty/memberCount)} un.`} /pessoa`}
                         </div>
                       )}
                     </div>
@@ -741,8 +1006,10 @@ function LootPanel({ loot, mission, onUpdate }) {
 
                 // O que esta pessoa recebe
                 const recebeItems = (loot.items||[]).map(item => {
-                  if (item.assignMode==='split') {
-                    const v = Math.floor((item.qty||0)/(memberCount||1));
+                  if (item.assignMode==='equal' || item.assignMode==='split' || item.assignMode==='percentage') {
+                    const v = item.assignments?.[m.id] !== undefined
+                      ? Number(item.assignments[m.id]) || 0
+                      : Math.floor((item.qty||0)/(memberCount||1));
                     return v > 0 ? (item.type==='auec' ? `${ptMoney(v)} aUEC` : `${v}× ${item.name}`) : null;
                   } else {
                     const v = (item.assignments||{})[m.id] || 0;
@@ -788,6 +1055,21 @@ function LootPanel({ loot, mission, onUpdate }) {
                           <span style={{fontSize:9,padding:'1px 5px',borderRadius:4,background:'rgba(251,146,60,0.12)',color:'var(--accent-gold)',border:'1px solid rgba(251,146,60,0.3)',fontWeight:700}}>PENDENTE</span>
                         )}
                       </div>
+                      {(() => {
+                        const memberResult = savedDistribution.find(result => String(result.id) === String(m.id));
+                        const memberIndex = (loot.members || []).findIndex(member => String(member.id) === String(m.id));
+                        const percentage = savedDistributionMode === 'percentage'
+                          ? Number(m.loot_share_pct) || 0
+                          : (equalLootPercentages(memberCount)[memberIndex] || 0);
+                        const participationLabel = savedDistributionMode === 'manual'
+                          ? `Manual · ${ptMoney(memberResult?.totalAuec || 0)} aUEC`
+                          : `${percentage.toFixed(2)}% · ${ptMoney(memberResult?.totalAuec || 0)} aUEC`;
+                        return memberResult && (memberResult.totalAuec > 0 || percentage > 0 || savedDistributionMode === 'manual') ? (
+                          <div style={{fontSize:10,color:'var(--accent-green)',marginTop:3,marginLeft:19,fontFamily:'Share Tech Mono,monospace'}}>
+                            Participação: {participationLabel}
+                          </div>
+                        ) : null;
+                      })()}
                       {recebeItems.length > 0 && (
                         <div style={{fontSize:10,marginTop:3,marginLeft:19,display:'flex',flexWrap:'wrap',gap:4}}>
                           {recebeItems.map((r,ri) => (
@@ -859,8 +1141,8 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
 
   return (
     <div style={{
-      background:mission.status==='Completed'?'rgba(52,211,153,0.04)':mission.status==='Failed'?'rgba(251,113,133,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':'var(--bg-card)',
-      border:`1px solid ${mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':'var(--border-subtle)'}`,
+      background:mission.status==='Completed'?'rgba(52,211,153,0.04)':mission.status==='Failed'?'rgba(251,113,133,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':isWalletOut(mission)?'rgba(251,113,133,0.04)':'var(--bg-card)',
+      border:`1px solid ${mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':isWalletOut(mission)?'rgba(251,113,133,0.25)':'var(--border-subtle)'}`,
       borderRadius:8,overflow:'hidden',marginBottom:6,
     }}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 13px',cursor:'pointer'}} onClick={()=>setExpandired(!expanded)}>
@@ -883,10 +1165,10 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
           </div>
         </div>
         <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3,flexShrink:0}}>
-          {mission.reward>0&&(
+          {Math.abs(Number(mission.reward)||0)>0&&(
             <div style={{textAlign:'right'}}>
-              <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-gold)'}}>{ptMoney(mission.reward)} aUEC</div>
-              {mission.crew_needed>1&&<div style={{fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--text-muted)'}}>÷{mission.crew_needed} = {ptMoney(Math.floor(mission.reward/mission.crew_needed))}/p</div>}
+              <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:isWalletOut(mission)?'var(--accent-red)':'var(--accent-gold)'}}>{isWalletOut(mission)?'-':''}{ptMoney(Math.abs(Number(mission.reward)||0))} aUEC</div>
+              {isWalletOut(mission) ? <div style={{fontSize:9,color:'var(--accent-red)',textTransform:'uppercase'}}>saiu da carteira</div> : mission.crew_needed>1&&<div style={{fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--text-muted)'}}>÷{mission.crew_needed} = {ptMoney(Math.floor(mission.reward/mission.crew_needed))}/p</div>}
             </div>
           )}
           <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
@@ -944,11 +1226,12 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
 
 // ── Day Summary Card ──────────────────────────────────────────────────────────
 function DaySummary({ date, missions, losses, compact=false }) {
-  const earned  = missions.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
-  const failed  = missions.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0);
-  const bugged  = missions.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0);
-  const lost    = losses.filter(l=>l.date===date).reduce((a,l)=>a+(l.amount||0),0);
-  const net     = earned - lost;
+  const earned  = missions.reduce((a,m)=>a+earnedAmount(m),0);
+  const walletOut = missions.reduce((a,m)=>a+walletOutAmount(m),0);
+  const failed  = missions.filter(m=>m.status==='Failed').reduce((a,m)=>a+(Number(m.reward)||0),0);
+  const bugged  = missions.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(Number(m.reward)||0),0);
+  const lost    = losses.filter(l=>l.date===date).reduce((a,l)=>a+(Number(l.amount)||0),0);
+  const net     = earned - walletOut - lost;
   const total   = missions.length;
   const done    = missions.filter(m=>m.status==='Completed').length;
   const active  = missions.filter(m=>m.status==='Active').length;
@@ -964,6 +1247,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
         {earned>0&&<span style={{fontSize:11,color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace'}}>+{ptMoney(earned)}</span>}
         {failed>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>❌ {ptMoney(failed)}</span>}
         {bugged>0&&<span style={{fontSize:11,color:'#e17055',fontFamily:'Share Tech Mono,monospace'}}>🐛 {ptMoney(bugged)}</span>}
+        {walletOut>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💳 -{ptMoney(walletOut)}</span>}
         {lost>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💸 -{ptMoney(lost)}</span>}
         <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)'}}>
           NET {isGood?'+':''}{ptMoney(net)}
@@ -984,6 +1268,7 @@ function DaySummary({ date, missions, losses, compact=false }) {
           {earned>0&&<span style={{fontSize:11,color:'var(--accent-green)',fontFamily:'Share Tech Mono,monospace',fontWeight:700}}>+{ptMoney(earned)} aUEC</span>}
           {failed>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>❌ -{ptMoney(failed)}</span>}
           {bugged>0&&<span style={{fontSize:11,color:'#e17055',fontFamily:'Share Tech Mono,monospace'}}>🐛 -{ptMoney(bugged)}</span>}
+          {walletOut>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💳 -{ptMoney(walletOut)}</span>}
           {lost>0&&<span style={{fontSize:11,color:'var(--accent-red)',fontFamily:'Share Tech Mono,monospace'}}>💸 -{ptMoney(lost)}</span>}
           <span style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:800,color:isGood?'var(--accent-green)':'var(--accent-red)',marginLeft:4}}>
             NET: {isGood?'+':''}{ptMoney(net)} aUEC
@@ -1092,7 +1377,8 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
   const sel = missions.filter(m => selected.has(m.id));
   if (sel.length === 0) return null;
 
-  const totalReward    = sel.reduce((a,m) => a+(m.reward||0), 0);
+  const totalReward    = sel.reduce((a,m) => a+earnedAmount(m), 0);
+  const totalWalletOut = sel.reduce((a,m) => a+walletOutAmount(m), 0);
   const totalTime      = sel.reduce((a,m) => a+(m.timer_elapsed||0), 0);
   const completedN     = sel.filter(m=>m.status==='Completed').length;
   const failedN        = sel.filter(m=>m.status==='Failed').length;
@@ -1129,9 +1415,10 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
       </div>
 
       {/* Métricas principais */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:12}}>
         {[
           { label:'Recompensa Total', value:`${ptMoney(totalReward)} aUEC`, color:'var(--accent-gold)', sub: completedN > 0 ? `${ptMoney(earnedCompleted)} concluídas` : null },
+          { label:'Saídas da Carteira', value:`-${ptMoney(totalWalletOut)} aUEC`, color:'var(--accent-red)', sub: totalWalletOut > 0 ? 'pagamentos' : null },
           { label:'Tempo Total',      value: totalTime > 0 ? fmtDuration(totalTime) : '—',        color:'var(--accent-primary)', sub: totalTime>0&&sel.length>1 ? `~${fmtDuration(Math.round(totalTime/sel.length))}/missão` : null },
           { label:'Concluídas',       value: completedN,  color:'var(--accent-green)',  sub: sel.length > 0 ? `${Math.round(completedN/sel.length*100)}% taxa` : null },
           { label:'Falhas + Bugs',    value: failedN + buggedN, color: failedN+buggedN>0?'var(--accent-red)':'var(--text-muted)', sub: activeN > 0 ? `${activeN} ativa${activeN!==1?'s':''}` : null },
@@ -1398,7 +1685,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const [selected,setSelected]     = useState(new Set());
   const [showReuse,setShowReuse]   = useState(false);
   const today = todayStr();
-  const todayMissions = missions.filter(m=>localDateStr(m.created_at)===today);
+  const todayMissions = missions.filter(m=>missionBelongsToDate(m,today));
   const filtered = filterStatus==='all' ? todayMissions : todayMissions.filter(m=>m.status===filterStatus);
 
   function handleSave(m) { onSave(m); setShowForm(false); setEditM(null); }
@@ -1537,7 +1824,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
   const [editM, setEditM] = useState(null);
   function handleSaveEdit(m) { onSave(m); setEditM(null); }
 
-  const dates=useMemo(()=>[...new Set(missions.map(m=>localDateStr(m.created_at)).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
+  const dates=useMemo(()=>[...new Set(missions.map(financialDateStr).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
   const years=useMemo(()=>[...new Set(dates.map(d=>Number(d.slice(0,4))))].sort((a,b)=>b-a),[dates]);
   const [selYear,setSelYear]=useState(()=>years[0]||new Date().getFullYear());
   const [selMonth,setSelMonth]=useState(()=>new Date().getMonth());
@@ -1545,7 +1832,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
 
   const monthsWithData=useMemo(()=>[...new Set(dates.filter(d=>Number(d.slice(0,4))===selYear).map(d=>Number(d.slice(5,7))-1))],[dates,selYear]);
   const monthDatas=useMemo(()=>dates.filter(d=>Number(d.slice(0,4))===selYear&&Number(d.slice(5,7))-1===selMonth),[dates,selYear,selMonth]);
-  const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>localDateStr(m.created_at)===selDay):[],[selDay,missions]);
+  const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>missionBelongsToDate(m,selDay)):[],[selDay,missions]);
   const selectedDayLosses=useMemo(()=>selDay?losses.filter(l=>l.date===selDay):[],[selDay,losses]);
 
   const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
@@ -1572,10 +1859,11 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
           <div>
             <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{monthDatas.length} dia{monthDatas.length!==1?'s':''} com missões</div>
             {monthDatas.map(date=>{
-              const dayM=missions.filter(m=>localDateStr(m.created_at)===date);
-              const earned=dayM.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
-              const lost=losses.filter(l=>l.date===date).reduce((a,l)=>a+(l.amount||0),0);
-              const net=earned-lost;
+              const dayM=missions.filter(m=>missionBelongsToDate(m,date));
+              const earned=dayM.reduce((a,m)=>a+earnedAmount(m),0);
+              const walletOut=dayM.reduce((a,m)=>a+walletOutAmount(m),0);
+              const lost=losses.filter(l=>l.date===date).reduce((a,l)=>a+(Number(l.amount)||0),0);
+              const net=earned-walletOut-lost;
               const isSelected=selDay===date;
               return (
                 <button key={date} onClick={()=>setSelDay(isSelected?null:date)} style={{
@@ -1593,6 +1881,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
                   <div style={{display:'flex',gap:8,fontSize:10,color:'var(--text-muted)'}}>
                     <span>{dayM.length} missão(ões)</span>
                     {earned>0&&<span style={{color:'var(--accent-green)'}}>+{ptMoney(earned)}</span>}
+                    {walletOut>0&&<span style={{color:'var(--accent-red)'}}>💳 -{ptMoney(walletOut)}</span>}
                     {lost>0&&<span style={{color:'var(--accent-red)'}}>-{ptMoney(lost)}</span>}
                   </div>
                 </button>
@@ -1665,28 +1954,30 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
 function StatsTab({ missions, losses }) {
   const [period,setPeriod]=useState(30);
   const cutdef=useMemo(()=>{const d=new Date();d.setDate(d.getDate()-period);return localDateStr(d);},[period]);
-  const inAlcance=useMemo(()=>missions.filter(m=>localDateStr(m.created_at)>=cutdef),[missions,cutdef]);
+  const inAlcance=useMemo(()=>missions.filter(m=>financialDateStr(m)>=cutdef),[missions,cutdef]);
 
   const dailyData=useMemo(()=>{
     const days=[];
     for(let i=period-1;i>=0;i--){
       const d=new Date();d.setDate(d.getDate()-i);
       const ds=localDateStr(d);
-      const dm=missions.filter(m=>localDateStr(m.created_at)===ds);
-      const earned=dm.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
-      const failed=dm.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0);
-      const bugged=dm.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0);
-      const lost=losses.filter(l=>l.date===ds).reduce((a,l)=>a+(l.amount||0),0);
-      days.push({date:ds,label:`${d.getDate()}/${d.getMonth()+1}`,earned,failed,bugged,lost,net:earned-lost,count:dm.length,completed:dm.filter(m=>m.status==='Completed').length});
+      const dm=missions.filter(m=>missionBelongsToDate(m,ds));
+      const earned=dm.reduce((a,m)=>a+earnedAmount(m),0);
+      const walletOut=missions.filter(m=>isWalletOut(m)&&financialDateStr(m)===ds).reduce((a,m)=>a+walletOutAmount(m),0);
+      const failed=dm.filter(m=>m.status==='Failed').reduce((a,m)=>a+(Number(m.reward)||0),0);
+      const bugged=dm.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(Number(m.reward)||0),0);
+      const lost=losses.filter(l=>l.date===ds).reduce((a,l)=>a+(Number(l.amount)||0),0);
+      days.push({date:ds,label:`${d.getDate()}/${d.getMonth()+1}`,earned,walletOut,failed,bugged,lost,net:earned-walletOut-lost,count:dm.length,completed:dm.filter(m=>m.status==='Completed').length});
     }
     return days;
   },[missions,losses,period]);
 
-  const totalEarned =inAlcance.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
-  const totalFailed =inAlcance.filter(m=>m.status==='Failed').reduce((a,m)=>a+(m.reward||0),0);
-  const totalBugged =inAlcance.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(m.reward||0),0);
-  const totalLost   =losses.filter(l=>l.date>=cutdef).reduce((a,l)=>a+(l.amount||0),0);
-  const netTotal    =totalEarned-totalLost;
+  const totalEarned =inAlcance.reduce((a,m)=>a+earnedAmount(m),0);
+  const totalWalletOut=missions.filter(m=>isWalletOut(m)&&financialDateStr(m)>=cutdef).reduce((a,m)=>a+walletOutAmount(m),0);
+  const totalFailed =inAlcance.filter(m=>m.status==='Failed').reduce((a,m)=>a+(Number(m.reward)||0),0);
+  const totalBugged =inAlcance.filter(m=>m.status==='Bugged').reduce((a,m)=>a+(Number(m.reward)||0),0);
+  const totalLost   =losses.filter(l=>l.date>=cutdef).reduce((a,l)=>a+(Number(l.amount)||0),0);
+  const netTotal    =totalEarned-totalWalletOut-totalLost;
   const completedN  =inAlcance.filter(m=>m.status==='Completed').length;
   const successRate =inAlcance.length>0?Math.round(completedN/inAlcance.length*100):0;
   const avgReward   =completedN>0?Math.round(totalEarned/completedN):0;
@@ -1704,6 +1995,7 @@ function StatsTab({ missions, losses }) {
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
         {[
           {l:'Ganho Total',       v:`${ptMoney(totalEarned)} aUEC`, c:'var(--accent-green)',   s:'missões concluídas'},
+          {l:'Saídas da Carteira',v:`${ptMoney(totalWalletOut)} aUEC`,c:'var(--accent-red)',     s:'pagamentos e compras'},
           {l:'Perdas Manuais',    v:`${ptMoney(totalLost)} aUEC`,   c:'var(--accent-red)',     s:'fora de missões'},
           {l:'Falhas (não ganho)',v:`${ptMoney(totalFailed)} aUEC`, c:'#fb923c',               s:'sua responsabilidade'},
           {l:'Bugadas (perdido)', v:`${ptMoney(totalBugged)} aUEC`, c:'#e17055',               s:'bug do jogo'},
@@ -1728,6 +2020,7 @@ function StatsTab({ missions, losses }) {
           <DonutStat value={inAlcance.filter(m=>m.status==='Bugged').length}     total={inAlcance.length} label="Bugadas"     color="#e17055"/>
           <DonutStat value={inAlcance.filter(m=>m.status==='Abandoned').length}  total={inAlcance.length} label="Abandonadas" color="var(--text-muted)"/>
           <DonutStat value={inAlcance.filter(m=>m.status==='Pending').length}    total={inAlcance.length} label="Pendentes"   color="var(--accent-gold)"/>
+          <DonutStat value={inAlcance.filter(m=>m.status==='Saiu da carteira').length} total={inAlcance.length} label="Saídas" color="var(--accent-red)"/>
         </div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
@@ -1743,7 +2036,7 @@ function StatsTab({ missions, losses }) {
           <div className="modal-section-title"><DollarSign size={11}/> Resultado Líquido (NET)</div>
           <BarChart data={dailyData} valueKey="net" labelKey="label" color="var(--accent-primary)" height={100}/>
           <div style={{display:'flex',gap:10,marginTop:5,fontSize:10,color:'var(--text-muted)'}}>
-            <span>+{ptMoney(totalEarned)}</span><span style={{color:'var(--accent-red)'}}>-{ptMoney(totalLost)}</span>
+            <span>+{ptMoney(totalEarned)}</span><span style={{color:'var(--accent-red)'}}>-{ptMoney(totalWalletOut)} carteira</span><span style={{color:'var(--accent-red)'}}>-{ptMoney(totalLost)} perdas</span>
             <span style={{color:netTotal>=0?'var(--accent-green)':'var(--accent-red)',fontWeight:700}}>NET: {ptMoney(netTotal)}</span>
           </div>
         </div>
@@ -1803,7 +2096,8 @@ export default function MissionTrackerPage() {
     const mission = missions.find(m => m.id === id);
     const updated = missions.map(m => m.id === id ? {
       ...m, status,
-      completed_at: status === 'Completed' ? localISOString() : m.completed_at,
+      completed_at: status === 'Completed' ? localISOString() : status === 'Saiu da carteira' ? null : m.completed_at,
+      wallet_out_at: status === 'Saiu da carteira' ? localISOString() : null,
       objectives: status === 'Completed' ? (m.objectives||[]).map(o=>({...o,done:true})) : m.objectives,
     } : m);
     persistMissions(updated);

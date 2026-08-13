@@ -2,12 +2,49 @@
 // Stored in localStorage, shared between BlueprintPage and MaterialTrackerPage
 
 const KEY = 'sc_material_queue_v1';
+const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
 
 export function loadQueue() {
   try { return JSON.parse(localStorage.getItem(KEY)) || { queuedBlueprints:[], collectedMaterials:{} }; }
   catch { return { queuedBlueprints:[], collectedMaterials:{} }; }
 }
 export function saveQueue(q) { localStorage.setItem(KEY, JSON.stringify(q)); }
+
+// Ordem manual dos materiais no Tracking. Mantida separada da fila para não alterar dados antigos.
+export function loadMaterialOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MATERIAL_ORDER_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
+  } catch { return []; }
+}
+
+export function saveMaterialOrder(order) {
+  const normalized = Array.isArray(order) ? order.filter(Boolean).map(String) : [];
+  localStorage.setItem(MATERIAL_ORDER_KEY, JSON.stringify([...new Set(normalized)]));
+  return normalized;
+}
+
+export function normalizeQualityMin(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+// Uma chave diferente para Iron Q≥800 e Iron sem exigência de qualidade.
+export function materialKey(materialName, qualityMin = 0) {
+  return `${String(materialName || '').trim().toLowerCase()}::q${normalizeQualityMin(qualityMin)}`;
+}
+
+function legacyMaterialKey(materialName) {
+  return String(materialName || '').trim().toLowerCase();
+}
+
+function getCollectedAmount(queue, materialName, qualityMin = 0) {
+  const key = materialKey(materialName, qualityMin);
+  if (queue.collectedMaterials?.[key] !== undefined) return Number(queue.collectedMaterials[key]) || 0;
+  // Compatibilidade: somente materiais sem exigência podem herdar coletas antigas.
+  if (normalizeQualityMin(qualityMin) === 0) return Number(queue.collectedMaterials?.[legacyMaterialKey(materialName)]) || 0;
+  return 0;
+}
 
 // Add a blueprint to the crafting queue
 export function queueBlueprint(bp, quantity = 1) {
@@ -26,7 +63,7 @@ export function queueBlueprint(bp, quantity = 1) {
       ingredients: (bp.ingredients || []).map(i => ({
         material_name: i.material_name,
         quantity:      i.quantity,
-        quality_min:   i.quality_min || 0,
+        quality_min:   normalizeQualityMin(i.quality_min),
         unit:          i.unit || 'un',
       })),
     });
@@ -53,20 +90,78 @@ export function updateQueuedQty(bpId, quantity) {
   return q;
 }
 
-// Mark N units of a material as collected
-export function collectMaterial(materialName, amountCollected) {
+// Normalizar quantidade para unidade base (sempre armazenamos em cSCU se SCU/cSCU)
+// Isso garante que coletas em SCU e cSCU se somem corretamente
+function toBase(amount, unit) {
+  if (unit === 'SCU')  return amount * 100; // 1 SCU = 100 cSCU
+  if (unit === 'cSCU') return amount;
+  return amount; // 'un', 'kg', etc: usa direto
+}
+function fromBase(amount, unit) {
+  if (unit === 'SCU')  return amount / 100;
+  if (unit === 'cSCU') return amount;
+  return amount;
+}
+function baseUnit(unit) {
+  if (unit === 'SCU' || unit === 'cSCU') return 'cSCU';
+  return unit;
+}
+
+// Mark N units of a material as collected (unit must match the ingredient unit)
+export function collectMaterial(materialName, amountCollected, unit = 'un', qualityMin = 0) {
   const q = loadQueue();
-  const key = materialName.toLowerCase();
-  q.collectedMaterials[key] = (q.collectedMaterials[key] || 0) + amountCollected;
+  const key = materialKey(materialName, qualityMin);
+  // Normalizar para unidade base antes de somar
+  const inBase = toBase(Number(amountCollected) || 0, unit);
+  const current = getCollectedAmount(q, materialName, qualityMin);
+  q.collectedMaterials[key] = current + inBase;
+  q.collectedMaterials[key] = Math.max(0, q.collectedMaterials[key]);
+  q.collectedUnits = q.collectedUnits || {};
+  q.collectedUnits[key] = baseUnit(unit);
+  if (normalizeQualityMin(qualityMin) === 0) delete q.collectedMaterials[legacyMaterialKey(materialName)];
+  saveQueue(q);
+  return q;
+}
+
+// Subtrair quantidade coletada (correção de erro)
+export function uncollectMaterial(materialName, amount, unit = 'un', qualityMin = 0) {
+  const q = loadQueue();
+  const key = materialKey(materialName, qualityMin);
+  const inBase = toBase(Number(amount) || 0, unit);
+  const current = getCollectedAmount(q, materialName, qualityMin);
+  q.collectedMaterials[key] = Math.max(0, current - inBase);
+  if (normalizeQualityMin(qualityMin) === 0) delete q.collectedMaterials[legacyMaterialKey(materialName)];
+  saveQueue(q);
+  return q;
+}
+
+// Adicionar material manual à lista extra (não vem de blueprint)
+export function addManualMaterial(materialName, amount, unit = 'un', qualityMin = 0) {
+  const q = loadQueue();
+  if (!q.manualMaterials) q.manualMaterials = [];
+    const existing = q.manualMaterials.findIndex(m => materialKey(m.material_name, m.quality_min) === materialKey(materialName, qualityMin) && m.unit === unit);
+  if (existing >= 0) {
+    q.manualMaterials[existing].quantity += Number(amount) || 0;
+  } else {
+    q.manualMaterials.push({ material_name: materialName, quantity: Number(amount) || 0, unit, quality_min: normalizeQualityMin(qualityMin), addedAt: new Date().toISOString() });
+  }
+  saveQueue(q);
+  return q;
+}
+
+// Remover material manual
+export function removeManualMaterial(materialName) {
+  const q = loadQueue();
+  q.manualMaterials = (q.manualMaterials || []).filter(m => m.material_name.toLowerCase() !== materialName.toLowerCase());
   saveQueue(q);
   return q;
 }
 
 // Reset collected amount for a material
-export function resetMaterialCollected(materialName) {
+export function resetMaterialCollected(materialName, qualityMin = 0) {
   const q = loadQueue();
-  const key = materialName.toLowerCase();
-  delete q.collectedMaterials[key];
+  delete q.collectedMaterials[materialKey(materialName, qualityMin)];
+  if (normalizeQualityMin(qualityMin) === 0) delete q.collectedMaterials[legacyMaterialKey(materialName)];
   saveQueue(q);
   return q;
 }
@@ -77,32 +172,58 @@ export function calcShoppingList(queue) {
   const map = {};
   for (const bp of queue.queuedBlueprints) {
     for (const ing of bp.ingredients || []) {
-      const key = ing.material_name.toLowerCase();
+      const qualityMin = normalizeQualityMin(ing.quality_min);
+      const key = materialKey(ing.material_name, qualityMin);
       if (!map[key]) {
         map[key] = {
+          key,
           material_name: ing.material_name,
           needed_total:  0,
-          quality_min:   ing.quality_min || 0,
+          quality_min:   qualityMin,
           unit:          ing.unit || 'un',
           usedBy: [],
+          is_manual: false,
         };
       }
-      map[key].needed_total  += ing.quantity * (bp.quantity || 1);
-      map[key].quality_min    = Math.max(map[key].quality_min, ing.quality_min || 0);
+      map[key].needed_total  += Number(ing.quantity) * (Number(bp.quantity) || 1);
       // Manter a unidade mais "pesada" se houver conflito
       if (ing.unit === 'SCU' || ing.unit === 'cSCU' || ing.unit === 'kg') map[key].unit = ing.unit;
-      map[key].usedBy.push({ bpName: bp.bpName, qty: ing.quantity * (bp.quantity||1) });
+      map[key].usedBy.push({ bpName: bp.bpName, qty: Number(ing.quantity) * (Number(bp.quantity)||1), quality_min: qualityMin });
     }
   }
 
+  // Incluir materiais manuais na lista, também separados por qualidade mínima.
+  for (const m of (queue.manualMaterials || [])) {
+    const qualityMin = normalizeQualityMin(m.quality_min);
+    const key = materialKey(m.material_name, qualityMin);
+    if (!map[key]) {
+      map[key] = {
+        key,
+        material_name: m.material_name,
+        needed_total:  0,
+        quality_min:   qualityMin,
+        unit:          m.unit || 'un',
+        usedBy:        [],
+        is_manual:     true,
+      };
+    }
+    map[key].needed_total += Number(m.quantity) || 0;
+    map[key].is_manual = map[key].is_manual && true;
+    if (!map[key].unit && m.unit) map[key].unit = m.unit;
+  }
+
   return Object.values(map).map(item => {
-    const collected = queue.collectedMaterials[item.material_name.toLowerCase()] || 0;
-    const remaining = Math.max(0, item.needed_total - collected);
-    return { ...item, collected, remaining };
+    const collectedBase = getCollectedAmount(queue, item.material_name, item.quality_min);
+    const neededBase    = toBase(item.needed_total, item.unit);
+    const collected = fromBase(Math.min(collectedBase, neededBase), item.unit);
+    const needed    = item.needed_total;
+    const remaining = Math.max(0, needed - collected);
+    return { ...item, collected: parseFloat(collected.toFixed(4)), remaining: parseFloat(remaining.toFixed(4)) };
   }).sort((a,b) => b.remaining - a.remaining);
 }
 
 // Check if a blueprint is in the queue
+export { toBase, fromBase, baseUnit };
 export function isBlueprintQueued(bpId) {
   return loadQueue().queuedBlueprints.some(b => b.bpId === bpId);
 }
@@ -111,8 +232,11 @@ export function isBlueprintQueued(bpId) {
 export function clearCompleted() {
   const q = loadQueue();
   const list = calcShoppingList(q);
-  const done = list.filter(i => i.remaining === 0).map(i => i.material_name.toLowerCase());
-  for (const k of done) delete q.collectedMaterials[k];
+  const done = list.filter(i => i.remaining === 0);
+  for (const item of done) {
+    delete q.collectedMaterials[item.key];
+    if (normalizeQualityMin(item.quality_min) === 0) delete q.collectedMaterials[legacyMaterialKey(item.material_name)];
+  }
   saveQueue(q);
   return q;
 }

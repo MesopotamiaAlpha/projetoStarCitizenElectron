@@ -5,8 +5,9 @@ import {
   BarChart3, Filter, RefreshCw, Coins, Minus, Star
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
-import { searchUexItems, getUexItemByName, loadUexItemsDB } from '../data/uexItemsDB';
-import { buildLocationTree } from '../data/uexLocationsDB';
+import TransferModal from '../components/TransferModal';
+import { searchUexItems, loadUexItemsDB, getUexItemAveragePrice, normalizeUexNumber, normalizeUexItemName } from '../data/uexItemsDB';
+import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
 
@@ -15,14 +16,40 @@ import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
 // ─────────────────────────────────────────────────────────────────────────────
 const WIKELO_COLOR = '#a29bfe';
 
+// O Electron/SQLite pode devolver craft_status como texto JSON, enquanto o
+// fallback local já pode devolvê-lo como array. Todas as camadas passam por
+// esta função antes de acessar o valor com .map().
+export function normalizeCraftStatus(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) {
+    if (parsed && typeof parsed === 'object' && ('status' in parsed || 'bonus' in parsed)) parsed = [parsed];
+    else return [];
+  }
+  return parsed.filter(Boolean).map((row, index) => {
+    if (typeof row === 'string') return { id: `craft-${index}-${row}`, status: row, bonus: '' };
+    return {
+      id: row.id ?? `craft-${index}`,
+      status: String(row.status ?? ''),
+      bonus: String(row.bonus ?? ''),
+    };
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PAF Items — missão de satélites
 // ─────────────────────────────────────────────────────────────────────────────
 const PAF_COLOR = '#38bdf8';
 const PAF_ITEMS = {
   'Alignment Blade':  { ratio:3,  unit:'cartões', yields:'satélite (alinhamento)',  icon:'📡', description:'3 conjuntos = 1 satélite alinhado' },
-  'GP-XP Industrial Battery':            { ratio:3,  unit:'conjuntos',yields:'satélite (energia)',      icon:'🔋', description:'3 conjuntos = 1 satélite ligado' },
-  'Cartão de Ativação do Lazer': { ratio:1, unit:'cartão', yields:'lazer ativado',        icon:'🔫', description:'1 cartão = 1 lazer ativado' },
+  'GP-XP Industrial Battery': { ratio:3, unit:'conjuntos', yields:'satélite (energia)', icon:'🔋', description:'3 conjuntos = 1 satélite ligado' },
+  'Laser Activation Keycard': { ratio:1, unit:'keycards', yields:'PAF completo', icon:'🔫', description:'1 Laser Activation Keycard = 1 PAF completo' },
+  // Mantido para reconhecer itens antigos cadastrados com o nome traduzido.
+  'Cartão de Ativação do Lazer': { ratio:1, unit:'keycards', yields:'PAF completo', icon:'🔫', description:'1 cartão = 1 PAF completo' },
 };
 const PAF_ITEM_NAMES = Object.keys(PAF_ITEMS);
 
@@ -34,13 +61,15 @@ function isPafItem(name) {
 // Calcular resumo PAF a partir de lista de itens do inventário
 export function calcPafSummary(inventoryItems) {
   const itens = inventoryItems || [];
-  const get = (name) => {
-    const item = itens.find(i => i.name?.toLowerCase() === name.toLowerCase());
-    return item?.quantity || 0;
+  const get = (...names) => {
+    const accepted = new Set(names.map(name => String(name).trim().toLowerCase()));
+    return itens
+      .filter(item => accepted.has(String(item.name || '').trim().toLowerCase()))
+      .reduce((total, item) => total + (Number(item.quantity) || 0), 0);
   };
   const alinhamento = get('Alignment Blade');
   const bateria     = get('GP-XP Industrial Battery');
-  const lazer       = get('Cartão de Ativação do Lazer');
+  const lazer       = get('Laser Activation Keycard', 'Cartão de Ativação do Lazer');
   const satsAlign   = Math.floor(alinhamento / 3);
   const satsEnergy  = Math.floor(bateria     / 3);
   const lazersReady = lazer;
@@ -164,6 +193,128 @@ function ScriptPanel({ item, onUpdate }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Ajustador genérico de quantidade — usado por todos os itens, não apenas scripts.
+// O callback é o mesmo fluxo persistente usado pelo painel de Wikelo Scrip.
+function QuantityAdjuster({ item, onUpdate, compact = false }) {
+  const [adding, setAdding] = useState('');
+  const [removing, setRemoving] = useState('');
+  const qty = Math.max(0, Number(item.quantity) || 0);
+
+  function updateBy(delta) {
+    onUpdate(item.id, Math.max(0, qty + delta));
+  }
+
+  function addCustom() {
+    const amount = Math.max(0, parseInt(adding, 10) || 0);
+    if (!amount) return;
+    updateBy(amount);
+    setAdding('');
+  }
+
+  function removeCustom() {
+    const amount = Math.max(0, parseInt(removing, 10) || 0);
+    if (!amount) return;
+    updateBy(-amount);
+    setRemoving('');
+  }
+
+  if (compact) {
+    const compactButton = {
+      width:24,
+      height:24,
+      padding:0,
+      display:'inline-flex',
+      alignItems:'center',
+      justifyContent:'center',
+      borderRadius:4,
+      cursor:'pointer',
+      fontWeight:800,
+      lineHeight:1,
+    };
+    return (
+      <div
+        className="inventory-quantity-adjuster inventory-quantity-adjuster-compact"
+        onClick={e=>e.stopPropagation()}
+        style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}
+        aria-label={`Ajustar quantidade de ${item.name || 'item'}`}
+      >
+        <button
+          type="button"
+          title="Remover 1"
+          aria-label="Remover 1"
+          onClick={()=>updateBy(-1)}
+          disabled={qty <= 0}
+          style={{...compactButton,background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.28)',color:'var(--accent-red)',opacity:qty<=0?0.4:1}}
+        >
+          <Minus size={12}/>
+        </button>
+        <button
+          type="button"
+          title="Adicionar 1"
+          aria-label="Adicionar 1"
+          onClick={()=>updateBy(1)}
+          style={{...compactButton,background:'rgba(52,211,153,0.08)',border:'1px solid rgba(52,211,153,0.28)',color:'var(--accent-green)'}}
+        >
+          <Plus size={12}/>
+        </button>
+      </div>
+    );
+  }
+
+  const inputStyle = {
+    width:76,
+    padding:'6px 8px',
+    background:'var(--bg-base)',
+    border:'1px solid var(--border-subtle)',
+    borderRadius:5,
+    color:'var(--text-primary)',
+    fontFamily:'Share Tech Mono,monospace',
+    fontSize:12,
+    outline:'none',
+    textAlign:'center',
+  };
+  const actionButton = {
+    display:'inline-flex',
+    alignItems:'center',
+    justifyContent:'center',
+    gap:5,
+    padding:'6px 10px',
+    borderRadius:5,
+    cursor:'pointer',
+    fontSize:11,
+    fontWeight:700,
+    fontFamily:'"Exo 2",sans-serif',
+    textTransform:'uppercase',
+  };
+
+  return (
+    <div className="inventory-quantity-adjuster" style={{marginBottom:14,padding:'11px 12px',background:'rgba(56,189,248,0.04)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:7}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Ajustar quantidade</span>
+        <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--text-secondary)'}}>{qty} {item.unit || 'un'}</span>
+      </div>
+      <div className="inventory-quantity-actions" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+        <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
+          <input type="number" min="1" placeholder="Qtd" value={adding} onChange={e=>setAdding(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustom()} style={inputStyle}/>
+          <button type="button" onClick={addCustom} style={{...actionButton,flex:1,background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',color:'var(--accent-green)'}}><Plus size={12}/> Somar</button>
+        </div>
+        <div style={{display:'flex',gap:5,alignItems:'center',flexWrap:'wrap'}}>
+          <input type="number" min="1" placeholder="Qtd" value={removing} onChange={e=>setRemoving(e.target.value)} onKeyDown={e=>e.key==='Enter'&&removeCustom() } style={inputStyle}/>
+          <button type="button" onClick={removeCustom} disabled={qty<=0} style={{...actionButton,flex:1,background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.3)',color:'var(--accent-red)',opacity:qty<=0?0.5:1}}><Minus size={12}/> Subtrair</button>
+        </div>
+      </div>
+      <div className="inventory-quantity-shortcuts" style={{display:'flex',gap:5,marginTop:8,flexWrap:'wrap'}}>
+        {[1,10,25,50,100].map(amount=>(
+          <React.Fragment key={amount}>
+            <button type="button" onClick={()=>updateBy(amount)} style={{...actionButton,padding:'3px 8px',fontSize:10,background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.18)',color:'var(--accent-green)'}}>+{amount}</button>
+            <button type="button" onClick={()=>updateBy(-amount)} disabled={qty<amount} style={{...actionButton,padding:'3px 8px',fontSize:10,background:'rgba(251,113,133,0.06)',border:'1px solid rgba(251,113,133,0.18)',color:'var(--accent-red)',opacity:qty<amount?0.4:1}}>-{amount}</button>
+          </React.Fragment>
+        ))}
       </div>
     </div>
   );
@@ -333,6 +484,16 @@ function getMockInvAPI() {
   };
 }
 
+function inventoryStackKey(item) {
+  return [
+    String(item.name || '').trim().toLowerCase(), item.category || '', item.subcategory || '',
+    item.unit || 'un', item.size || '', item.grade || '', item.manufacturer || '',
+    item.condition || '', Number(item.value_auec) || 0, item.is_contraband ? 1 : 0,
+    item.is_crafted ? 1 : 0, JSON.stringify(item.craft_status || []), item.notes || '',
+    item.container || '',
+  ].join('::');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ItemForm
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,7 +509,10 @@ const emptyItem = () => ({
 function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
 
 function ItemForm({ initial, onSave, onCancelar }) {
-  const [data, setData]       = useState(() => initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem());
+  const [data, setData] = useState(() => {
+    const base = initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem();
+    return { ...base, craft_status: normalizeCraftStatus(base.craft_status) };
+  });
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSugg, setShowSugg]       = useState(false);
@@ -375,7 +539,12 @@ function ItemForm({ initial, onSave, onCancelar }) {
 
   // Ao escolher uma sugestão — abre modal de importação
   function handleSelectSuggestion(uexItem) {
-    set('name', uexItem.name);
+    const averagePrice = getUexItemAveragePrice(uexItem);
+    setData(prev => ({
+      ...prev,
+      name: uexItem.name,
+      value_auec: averagePrice > 0 ? averagePrice : prev.value_auec,
+    }));
     setShowSugg(false);
     setSuggestions([]);
     setImportModal(uexItem);
@@ -434,19 +603,29 @@ function ItemForm({ initial, onSave, onCancelar }) {
     if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
     if (fields.includes('manufacturer') && uexItem.company_name) updates.manufacturer = uexItem.company_name;
     if (fields.includes('grade')        && uexItem.color)        updates.grade = uexItem.color;
-    // Preço: usar price_avg se disponível, senão price_buy ou price_sell
+    // Preço: usar a média salva no sync e os campos documentados como fallback.
     if (fields.includes('price')) {
-      const price = uexItem.price_avg || uexItem.price_buy || uexItem.price_sell || 0;
+      const price = getUexItemAveragePrice(uexItem);
       if (price > 0) updates.value_auec = price;
     }
     setData(p => ({ ...p, ...updates }));
     setImportModal(null);
   }
 
-  const LOCATIONS = useMemo(() => buildLocationTree(LOCATIONS_STATIC), []);
+  const importPrice = importModal ? getUexItemAveragePrice(importModal) : 0;
+  const [locationsVersion, setLocationsVersion] = useState(0);
+  useEffect(() => {
+    const refreshLocations = () => setLocationsVersion(version => version + 1);
+    window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    return () => window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+  }, []);
+  const LOCATIONS = useMemo(() => buildManagedLocationTree(), [locationsVersion]);
 
-  const locationTipos = data.system && LOCATIONS[data.system]
+  const locationTiposFromBase = data.system && LOCATIONS[data.system]
     ? Object.keys(LOCATIONS[data.system]) : [];
+  const locationTipos = data.location_type && !locationTiposFromBase.includes(data.location_type)
+    ? [data.location_type, ...locationTiposFromBase]
+    : locationTiposFromBase;
   const locationOptions = data.system && data.location_type && LOCATIONS[data.system]?.[data.location_type]
     ? LOCATIONS[data.system][data.location_type] : [];
   const subcatOptions = CATEGORIES[data.category] || [];
@@ -510,20 +689,25 @@ function ItemForm({ initial, onSave, onCancelar }) {
             </div>
 
             {/* Preço em destaque */}
-            {(importModal.price_avg||importModal.price_buy||importModal.price_sell||0) > 0 && (
+            {importPrice > 0 && (
               <div style={{marginBottom:12,padding:'10px 14px',background:'rgba(255,200,0,0.08)',border:'1px solid rgba(255,200,0,0.3)',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
                   <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:3}}>💰 Preço Médio UEX</div>
                   <div style={{fontFamily:'Michroma,sans-serif',fontSize:20,fontWeight:800,color:'var(--accent-gold)'}}>
-                    {(importModal.price_avg||importModal.price_buy||importModal.price_sell||0).toLocaleString('pt-BR')} aUEC
+                    {importPrice.toLocaleString('pt-BR')} aUEC
                   </div>
                 </div>
-                {importModal.price_max > 0 && (
+                {normalizeUexNumber(importModal.price_max) > 0 && (
                   <div style={{textAlign:'right',fontSize:10,color:'var(--text-muted)'}}>
-                    <div>Máx: <span style={{color:'var(--accent-green)'}}>{importModal.price_max.toLocaleString('pt-BR')}</span></div>
-                    <div>Mín: <span style={{color:'var(--accent-red)'}}>{(importModal.price_min||0).toLocaleString('pt-BR')}</span></div>
+                    <div>Máx: <span style={{color:'var(--accent-green)'}}>{normalizeUexNumber(importModal.price_max).toLocaleString('pt-BR')}</span></div>
+                    <div>Mín: <span style={{color:'var(--accent-red)'}}>{normalizeUexNumber(importModal.price_min).toLocaleString('pt-BR')}</span></div>
                   </div>
                 )}
+              </div>
+            )}
+            {importPrice <= 0 && (
+              <div style={{marginBottom:12,padding:'8px 10px',background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6,fontSize:10,color:'var(--accent-gold)',lineHeight:1.5}}>
+                Este item foi encontrado, mas ainda não possui preço médio no banco local. Execute novamente <strong>UEX API Live → Sync Banco de Itens</strong> para atualizar os preços.
               </div>
             )}
 
@@ -591,7 +775,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
                 💡 Sugestões da UEX — clique para preencher
               </div>
               {suggestions.map(s => {
-                const price = s.price_avg || s.price_buy || s.price_sell || 0;
+                const price = getUexItemAveragePrice(s);
                 return (
                   <button key={s.id} onMouseDown={()=>handleSelectSuggestion(s)} style={{
                     display:'flex',alignItems:'center',justifyContent:'space-between',
@@ -855,7 +1039,7 @@ function PafPanel({ item, allItems }) {
           {[
             { label:'Alinhamento', value:summary.satsAlign,   icon:'📡', color:'var(--accent-primary)', sub:`${summary.alinhamento} cartões` },
             { label:'Energia',     value:summary.satsEnergy,  icon:'🔋', color:'var(--accent-gold)',    sub:`${summary.bateria} baterias` },
-            { label:'Lazers',      value:summary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${summary.lazer} cartões` },
+            { label:'Lazers',      value:summary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${summary.lazer} keycard${summary.lazer!==1?'s':''}` },
             { label:'PAF Completo',value:summary.pafCompletos,icon:'🛰',  color:'var(--accent-green)',  sub:'mínimo dos 3' },
           ].map(({label,value,icon,color,sub})=>(
             <div key={label} style={{ textAlign:'center', padding:'8px 4px', background:'rgba(255,255,255,0.03)', border:`1px solid ${color}22`, borderRadius:6 }}>
@@ -874,13 +1058,16 @@ function PafPanel({ item, allItems }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ItemCard — card visual com modal de detalhes
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
+function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer }) {
   const [showDetail, setShowDetail] = useState(false);
+  const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
+  const craftStatus = normalizeCraftStatus(item.craft_status);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [delConf,    setDelConf]    = useState(false);
   const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
   const sysColor = SYSTEM_COLORS[item.system]     || 'var(--accent-primary)';
-  const isScript = isScriptItem(item.name);
-  const isPaf    = isPafItem(item.name);
+  const isScript = isScriptItem(displayName);
+  const isPaf    = isPafItem(displayName);
   const favors   = isScript ? Math.floor((item.quantity||0) / SCRIPT_RATIO) : 0;
   const resto    = isScript ? (item.quantity||0) % SCRIPT_RATIO : 0;
   const totalVal = (item.value_auec||0) * (item.quantity||1);
@@ -888,7 +1075,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
   return (
     <>
       {/* Card */}
-      <div onClick={()=>setShowDetail(true)} style={{
+      <div className="inventory-item-card" onClick={()=>setShowDetail(true)} style={{
         background: item.quantity === 0 ? 'rgba(255,255,255,0.01)' : 'var(--bg-card)',
         border:`1px solid ${item.quantity===0?'rgba(255,255,255,0.06)':item.is_contraband?'rgba(231,76,60,0.35)':isScript?'rgba(162,155,254,0.3)':'var(--border-subtle)'}`,
         borderTop:`3px solid ${item.quantity===0?'rgba(255,255,255,0.1)':item.is_contraband?'#e74c3c':isScript?WIKELO_COLOR:catColor}`,
@@ -900,8 +1087,8 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
       onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
 
         {/* Linha 1: nome + badges */}
-        <div style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
-          <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{item.name}</span>
+        <div className="inventory-item-card-header" style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
+          <span className="inventory-item-card-title" style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{displayName}</span>
           {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {item.is_crafted ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>⚒ CRAFT</span> : null}
@@ -910,34 +1097,52 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
         </div>
 
         {/* Linha 2: categoria + sistema */}
-        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-          <div style={{width:7,height:7,borderRadius:'50%',background:catColor,flexShrink:0}}/>
-          <span style={{fontSize:10,color:catColor,fontWeight:600}}>{item.category}</span>
-          {item.subcategory && <span style={{fontSize:10,color:'var(--text-muted)'}}>· {item.subcategory}</span>}
+        <div className="inventory-item-card-category-row" style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <div className="inventory-item-card-category-dot" style={{width:7,height:7,borderRadius:'50%',background:catColor,flexShrink:0}}/>
+          <span className="inventory-item-card-category" style={{fontSize:10,color:catColor,fontWeight:600}}>{item.category || 'Sem categoria'}</span>
+          {item.subcategory && <span className="inventory-item-card-subcategory" style={{fontSize:10,color:'var(--text-muted)'}}>· {item.subcategory}</span>}
         </div>
 
         {/* Linha 3: localização */}
         <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'var(--text-muted)'}}>
           <MapPin size={9} style={{color:sysColor,flexShrink:0}}/>
-          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.location_name}</span>
-          {item.container && <span style={{color:'var(--text-muted)',flexShrink:0}}>[{item.container}]</span>}
+          <span className="inventory-item-card-location-name" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.location_name || 'Local não informado'}</span>
+          {item.container && <span className="inventory-item-card-container" style={{color:'var(--text-muted)',flexShrink:0}}>[{item.container}]</span>}
         </div>
 
         {/* Linha 4: qty + valor */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto'}}>
-          <div>
-            {isScript ? (
-              <div>
-                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:WIKELO_COLOR,fontWeight:700}}>{item.quantity} un</span>
-                <div style={{fontSize:10,color:WIKELO_COLOR,opacity:0.8}}>{favors} favor{favors!==1?'s':''}{resto>0?` +${resto}`:''}</div>
-              </div>
-            ) : (
-              <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:item.quantity>1?'var(--accent-primary)':'var(--text-secondary)',fontWeight:600}}>{item.quantity} {item.unit}</span>
-            )}
+        <div className="inventory-item-card-footer" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto'}}>
+          <button onClick={e=>{e.stopPropagation();setShowTransfer(true);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 7px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:4,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:9,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}>
+            <MapPin size={10}/> Transferir
+          </button>
+          <div className="inventory-item-card-quantity" style={{display:'flex',alignItems:'center',gap:7,marginLeft:'auto'}}>
+            <QuantityAdjuster item={item} onUpdate={onScriptUpdate} compact/>
+            <div>
+              {isScript ? (
+                <div>
+                  <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:WIKELO_COLOR,fontWeight:700}}>{item.quantity} un</span>
+                  <div style={{fontSize:10,color:WIKELO_COLOR,opacity:0.8}}>{favors} favor{favors!==1?'s':''}{resto>0?` +${resto}`:''}</div>
+                </div>
+              ) : (
+                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:13,color:item.quantity>1?'var(--accent-primary)':'var(--text-secondary)',fontWeight:600}}>{item.quantity} {item.unit}</span>
+              )}
+            </div>
           </div>
-          {totalVal > 0 && <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)'}}>{totalVal.toLocaleString('pt-BR')} aUEC</span>}
+          {totalVal > 0 && <span className="inventory-item-card-value" style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)'}}>{totalVal.toLocaleString('pt-BR')} aUEC</span>}
         </div>
       </div>
+
+      {showTransfer && (
+        <TransferModal
+          itemName={displayName}
+          quantity={item.quantity}
+          unit={item.unit}
+          destinations={transferDestinations}
+          currentKey={`${item.system}::${item.location_type}::${item.location_name}`}
+          onCancel={()=>setShowTransfer(false)}
+          onConfirm={payload=>{onTransfer(item, payload);setShowTransfer(false);setShowDetail(false);}}
+        />
+      )}
 
       {/* Modal de detalhes */}
       {showDetail && (
@@ -948,7 +1153,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}>
-                  <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:17,fontWeight:700,color:'var(--text-primary)'}}>{item.name}</span>
+                  <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:17,fontWeight:700,color:'var(--text-primary)'}}>{displayName}</span>
                   {item.is_contraband && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700}}>⚠ CONTRABAND</span>}
                   {isScript && <span style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(162,155,254,0.15)',color:WIKELO_COLOR,border:`1px solid rgba(162,155,254,0.3)`,fontWeight:700}}>★ WIKELO FAVOR</span>}
                 </div>
@@ -966,6 +1171,8 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
                 <button onClick={()=>setShowDetail(false)} style={{width:30,height:30,borderRadius:5,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><X size={13}/></button>
               </div>
             </div>
+
+            <QuantityAdjuster item={item} onUpdate={onScriptUpdate}/>
 
             {/* Grid de atributos */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
@@ -987,11 +1194,11 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
               ))}
             </div>
 
-            {item.is_crafted && (item.craft_status?.length > 0) && (
+            {item.is_crafted && craftStatus.length > 0 && (
               <div style={{marginBottom:14,padding:'10px 12px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6}}>
                 <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>⚒️ Item Craftado</div>
                 <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                  {item.craft_status.map(row => (
+                  {craftStatus.map(row => (
                     <div key={row.id} style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
                       <span style={{color:'var(--text-secondary)'}}>{row.status}</span>
                       <span style={{color:'var(--accent-gold)',fontWeight:700,fontFamily:'Share Tech Mono,monospace'}}>{row.bonus}</span>
@@ -1022,7 +1229,8 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems }) {
             )}
 
             {/* Deletar */}
-            <div style={{display:'flex',justifyContent:'flex-end',gap:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
+                <div style={{display:'flex',justifyContent:'flex-end',gap:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
+                  <button onClick={()=>{setShowTransfer(true);setShowDetail(false);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}><MapPin size={11}/> Transferir para...</button>
               {delConf ? (
                 <>
                   <span style={{fontSize:12,color:'var(--accent-red)',alignSelf:'center'}}>Confirmar exclusão?</span>
@@ -1060,6 +1268,18 @@ export default function InventoryPage() {
   const [sortBy,       setSortBy]       = useState('name');
   const [viewMode,     setViewMode]     = useState('grid'); // grid | list
 
+  const [locationsVersion, setLocationsVersion] = useState(0);
+  useEffect(() => {
+    const refreshLocations = () => setLocationsVersion(version => version + 1);
+    window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    return () => window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+  }, []);
+
+  const transferDestinations = useMemo(
+    () => buildManagedLocationOptions(),
+    [locationsVersion]
+  );
+
   const invAPI = useMemo(() => {
     if (window.electronAPI) {
       return {
@@ -1077,8 +1297,13 @@ export default function InventoryPage() {
     setLoading(true);
     try {
       const all = await invAPI.getAll();
-      itensRef.current = all;
-      setItens(all);
+      const normalized = (Array.isArray(all) ? all : []).map(item => ({
+        ...item,
+        name: normalizeUexItemName(item.name),
+        craft_status: normalizeCraftStatus(item.craft_status),
+      }));
+      itensRef.current = normalized;
+      setItens(normalized);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }, [invAPI]);
@@ -1086,12 +1311,75 @@ export default function InventoryPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   async function handleSave(data) {
-    if (data.id) await invAPI.update(data);
-    else { await invAPI.create(data); setProvenance('item', data.name, SOURCES.MANUAL); }
+    const normalizedData = {
+    ...data,
+    name: normalizeUexItemName(data.name),
+    craft_status: normalizeCraftStatus(data.craft_status),
+  };
+    if (normalizedData.id) await invAPI.update(normalizedData);
+    else { await invAPI.create(normalizedData); setProvenance('item', normalizedData.name, SOURCES.MANUAL); }
     setShowForm(false); setEditItem(null);
     await loadData();
   }
   async function handleDelete(id) { await invAPI.delete(id); await loadData(); }
+
+  async function handleTransfer(item, { destination, quantity }) {
+    const sourceQuantity = Math.max(0, Number(item.quantity) || 0);
+    const amount = Math.max(0, Number(quantity) || 0);
+    if (!destination || amount <= 0 || amount > sourceQuantity) return;
+
+    const sourceRemaining = sourceQuantity - amount;
+    const destinationFields = {
+      system: destination.system,
+      location_type: destination.location_type,
+      location_name: destination.location_name,
+    };
+    const currentItems = itensRef.current;
+    const target = currentItems.find(other =>
+      other.id !== item.id &&
+      other.system === destination.system &&
+      other.location_type === destination.location_type &&
+      other.location_name === destination.location_name &&
+      inventoryStackKey(other) === inventoryStackKey(item)
+    );
+
+    const original = { ...item };
+    try {
+      if (sourceRemaining === 0 && !target) {
+        // Movimento integral sem duplicata: preserva o id e todos os metadados.
+        await invAPI.update({ ...item, ...destinationFields });
+      } else if (target) {
+        // Primeiro atualiza o destino; se a origem falhar, tenta desfazer o incremento.
+        const updatedTarget = { ...target, quantity:(Number(target.quantity)||0) + amount };
+        await invAPI.update(updatedTarget);
+        try {
+          if (sourceRemaining === 0) await invAPI.delete(item.id);
+          else await invAPI.update({ ...item, quantity:sourceRemaining });
+        } catch (sourceError) {
+          await invAPI.update(target);
+          throw sourceError;
+        }
+      } else {
+        // Movimento parcial: reduz a origem e cria uma entrada equivalente no destino.
+        await invAPI.update({ ...item, quantity:sourceRemaining });
+        try {
+          const transferred = { ...item, ...destinationFields, quantity:amount };
+          delete transferred.id;
+          delete transferred.created_at;
+          delete transferred.updated_at;
+          await invAPI.create(transferred);
+        } catch (destinationError) {
+          await invAPI.update(original);
+          throw destinationError;
+        }
+      }
+      await loadData();
+    } catch (e) {
+      console.error('Erro ao transferir item:', e);
+      await loadData();
+    }
+  }
+
   async function handleScriptUpdate(id, newQty) {
     const current = itensRef.current.find(i => i.id === id);
     if (!current) return;
@@ -1365,18 +1653,20 @@ export default function InventoryPage() {
                 <div style={{fontSize:12}}>{search.trim()?'Nenhum item encontrado para a busca.':'Nenhum item registrado aqui ainda.'}</div>
               </div>
             ) : viewMode === 'grid' ? (
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+              <div className="inventory-items-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
                 {displayItems.map(item=>(
                   <ItemCard key={item.id} item={item}
                     onEdit={i=>{setEditItem(i);setShowForm(false);}}
                     onDelete={handleDelete}
                     onScriptUpdate={handleScriptUpdate}
-                    allItems={itens}/>
+                    allItems={itens}
+                    transferDestinations={transferDestinations}
+                    onTransfer={handleTransfer}/>
                 ))}
               </div>
             ) : (
               /* Vista lista compacta */
-              <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              <div className="inventory-items-list" style={{display:'flex',flexDirection:'column',gap:4}}>
                 {displayItems.map(item=>{
                   const catColor = CATEGORY_COLORS[item.category]||'var(--text-muted)';
                   const isScript = isScriptItem(item.name);
@@ -1385,7 +1675,9 @@ export default function InventoryPage() {
                       onEdit={i=>{setEditItem(i);setShowForm(false);}}
                       onDelete={handleDelete}
                       onScriptUpdate={handleScriptUpdate}
-                      allItems={itens}/>
+                      allItems={itens}
+                      transferDestinations={transferDestinations}
+                      onTransfer={handleTransfer}/>
                   );
                 })}
               </div>
@@ -1399,14 +1691,16 @@ export default function InventoryPage() {
             <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
               Resultados para "{search}"
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+            <div className="inventory-items-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
               {displayItems.map(item=>(
                 <ItemCard key={item.id} item={item}
                   onEdit={i=>{setEditItem(i);setShowForm(false);}}
                   onDelete={handleDelete}
                   onScriptUpdate={handleScriptUpdate}
-                  allItems={itens}/>
-              ))}
+                  allItems={itens}
+                  transferDestinations={transferDestinations}
+                  onTransfer={handleTransfer}/>
+                ))}
             </div>
           </div>
         )}

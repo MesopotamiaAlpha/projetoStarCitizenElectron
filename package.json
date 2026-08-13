@@ -2,6 +2,7 @@
   "name": "companheiro-emoto",
   "version": "1.0.0",
   "description": "Companheiro Emoto — Star Citizen Companion App",
+  "author": "Companheiro Emoto",
   "main": "electron/main.js",
   "scripts": {
     "react-start": "cross-env BROWSER=none react-scripts start",
@@ -29,10 +30,15 @@
     "development": ["last 1 chrome version"]
   },
   "build": {
+    "extends": null,
     "appId": "com.sctracker.armor",
     "productName": "Companheiro Emoto",
-    "files": ["build/**/*", "electron/**/*", "node_modules/**/*"],
-    "directories": { "output": "dist" }
+    "asar": true,
+    "files": ["build/**/*", "electron/**/*", "node_modules/**/*", "!**/CompanheiroEmoto{,/**/*}", "!**/backup{,/**/*}"],
+    "directories": { "output": "dist" },
+    "win": { "target": ["nsis"] },
+    "mac": { "target": ["dmg"] },
+    "linux": { "target": ["AppImage"] }
   },
   "homepage": "./"
 }

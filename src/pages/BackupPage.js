@@ -153,7 +153,7 @@ function RestoreSection() {
         <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em' }}>RESTAURAR BACKUP</span>
       </div>
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:14 }}>
-        Escolha um arquivo de backup gerado anteriormente pelo SC Toolbox.
+        Escolha um arquivo de backup gerado anteriormente pelo Companheiro Emoto.
       </div>
 
       <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleFile} style={{ display:'none' }}/>
@@ -248,7 +248,7 @@ export default function BackupPage() {
           <div className="page-title" style={{ display:'flex',alignItems:'center',gap:10 }}>
             <Save size={20} style={{ color:'var(--accent-primary)' }}/> BACKUP & RESTAURAÇÃO
           </div>
-          <div className="page-subtitle">Exporte e restaure os dados do seu SC Toolbox</div>
+          <div className="page-subtitle">Exporte e restaure os dados do seu Companheiro Emoto</div>
         </div>
       </div>
 

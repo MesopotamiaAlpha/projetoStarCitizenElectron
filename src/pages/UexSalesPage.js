@@ -5,20 +5,21 @@ import {
   CheckCircle2, AlertTriangle, Archive, Star, Eye, ChevronDown,
   ChevronUp, Globe, Clock, Minus, Info, ExternalLink
 } from 'lucide-react';
+import {
+  loadUexSales, saveUexSales, loadUexCatalog, saveUexCatalog,
+} from '../data/uexSales';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
-const SALES_KEY    = 'sc_uex_sales_v1';
-const CATALOG_KEY  = 'sc_uex_catalog_v1';
 const TOKEN_KEY    = 'sc_uex_token_v1';
 const USERNAME_KEY = 'sc_uex_username_v1';
 
 function loadToken()    { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function loadUsername() { try { return localStorage.getItem(USERNAME_KEY) || ''; } catch { return ''; } }
 function saveUsername(u){ localStorage.setItem(USERNAME_KEY, u); }
-function loadSales()    { try { return JSON.parse(localStorage.getItem(SALES_KEY)) || []; } catch { return []; } }
-function saveSales(d)   { localStorage.setItem(SALES_KEY, JSON.stringify(d)); }
-function loadCatalog()  { try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || []; } catch { return []; } }
-function saveCatalog(d) { localStorage.setItem(CATALOG_KEY, JSON.stringify(d)); }
+const loadSales = loadUexSales;
+const saveSales = saveUexSales;
+const loadCatalog = loadUexCatalog;
+const saveCatalog = saveUexCatalog;
 
 // ── UEX API ───────────────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
@@ -43,20 +44,68 @@ async function uexFetch(endpoint, token = '') {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function ptMoney(v)  { return Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:0, maximumFractionDigits:0 }); }
 function ptDecimal(v){ return Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
+function toTimestampMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return numeric < 100000000000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function ptDate(ts)  {
-  if (!ts) return '—';
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const ms = toTimestampMs(ts);
+  if (!ms) return '—';
+  return new Date(ms).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
 function ptDateTime(ts) {
-  if (!ts) return '—';
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const ms = toTimestampMs(ts);
+  if (!ms) return '—';
+  return new Date(ms).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 function daysSince(ts) {
-  if (!ts) return 0;
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
+  const ms = toTimestampMs(ts);
+  if (!ms) return 0;
+  return Math.floor((Date.now() - ms) / 86400000);
+}
+
+function listingExpiryState(listing, now = Date.now()) {
+  const expirationMs = toTimestampMs(listing?.date_expiration);
+  if (!expirationMs) return { status:'unknown', days:null, expirationMs:null };
+  const difference = expirationMs - now;
+  if (difference <= 0) return { status:'expired', days:0, expirationMs };
+  const days = Math.ceil(difference / 86400000);
+  return { status: days <= 10 ? 'expiring' : 'active', days, expirationMs };
+}
+
+function normalizedListingValue(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function listingIdentityMatches(previous, fresh) {
+  const previousTitle = normalizedListingValue(previous?.title || previous?.name);
+  const freshTitle = normalizedListingValue(fresh?.title || fresh?.name);
+  if (!previousTitle || !freshTitle || previousTitle !== freshTitle) return false;
+  const previousLocation = normalizedListingValue(previous?.location);
+  const freshLocation = normalizedListingValue(fresh?.location);
+  if (previousLocation && freshLocation && previousLocation !== freshLocation) return false;
+  const previousQuality = normalizedListingValue(previous?.quality);
+  const freshQuality = normalizedListingValue(fresh?.quality);
+  if (previousQuality && freshQuality && previousQuality !== freshQuality) return false;
+  return true;
+}
+
+function sameRenewedListing(previous, fresh) {
+  if (!listingIdentityMatches(previous, fresh)) return false;
+  const previousState = listingExpiryState(previous);
+  const freshState = listingExpiryState(fresh);
+  return previousState.status === 'expired' && freshState.status !== 'expired';
 }
 
 // Detectar qualidade no título: "Caranite 716 Q" → 716
@@ -335,13 +384,17 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
     priceVariation = ((trend.price_avg_sell - trend.price_avg_month_sell) / trend.price_avg_month_sell) * 100;
   }
 
-  const expiresIn = item.date_expiration ? Math.max(0, Math.floor((item.date_expiration * 1000 - Date.now()) / 86400000)) : null;
-  const isExpiringSoon = expiresIn !== null && expiresIn <= 2;
+  const expiry = listingExpiryState(item);
+  const expiresIn = expiry.days;
+  const isExpired = expiry.status === 'expired';
+  const isExpiringSoon = expiry.status === 'expiring';
+  const expiryBorder = isExpired ? 'rgba(251,113,133,0.5)' : isExpiringSoon ? 'rgba(251,191,36,0.55)' : 'var(--border-subtle)';
+  const expiryBackground = isExpired ? 'rgba(251,113,133,0.045)' : isExpiringSoon ? 'rgba(251,191,36,0.045)' : 'var(--bg-card)';
 
   return (
     <div style={{
-      background:'var(--bg-card)',
-      border:`1px solid ${isExpiringSoon ? 'rgba(251,113,133,0.4)' : 'var(--border-subtle)'}`,
+      background:expiryBackground,
+      border:`1px solid ${expiryBorder}`,
       borderRadius:8, overflow:'hidden', marginBottom:6,
     }}>
       {/* Header row */}
@@ -352,9 +405,10 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
             <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
             {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
             {suggestedQ && !item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.06)', color:'rgba(255,200,0,0.7)', border:'1px solid rgba(255,200,0,0.2)', fontStyle:'italic' }}>Q sugerida: {suggestedQ}</span>}
-            {item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
+            {isExpired ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.35)', fontWeight:700 }}>⚠ ANÚNCIO EXPIRADO</span>
+              : item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
               : <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', border:'1px solid rgba(52,211,153,0.3)', fontWeight:700 }}>ATIVO</span>}
-            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
+            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,191,36,0.16)', color:'var(--accent-gold)', border:'1px solid rgba(251,191,36,0.4)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
           </div>
           <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
             {item.location && <span>📍 {item.location}</span>}
@@ -404,7 +458,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
                   ['Preço anterior', item.price_old ? `${ptMoney(item.price_old)} aUEC` : '—'],
                   ['Qualidade', item.quality || (suggestedQ ? `${suggestedQ} (sugerida do título)` : '—')],
                   ['Durabilidade', item.durability ? `${item.durability}%` : '—'],
-                  ['Expira em', expiresIn !== null ? `${expiresIn} dia${expiresIn!==1?'s':''}` : '—'],
+                  ['Expiração', isExpired ? 'Expirado' : expiresIn !== null ? `${expiresIn} dia${expiresIn!==1?'s':''}` : '—'],
                   ['Adicionado', ptDate(item.date_added)],
                 ].map(([k,v]) => (
                   <div key={k} style={{ display:'flex', justifyContent:'space-between', fontSize:11, padding:'2px 0', borderBottom:'1px solid var(--border-subtle)' }}>
@@ -536,10 +590,8 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
     }
     if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out && (i.in_stock === undefined || i.in_stock > 0));
     if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out || (i.in_stock !== undefined && i.in_stock <= 0));
-    if (filterStatus === 'expiring') list = list.filter(i => {
-      if (!i.date_expiration) return false;
-      return Math.floor((i.date_expiration * 1000 - Date.now()) / 86400000) <= 2;
-    });
+    if (filterStatus === 'expired')  list = list.filter(i => listingExpiryState(i).status === 'expired');
+    if (filterStatus === 'expiring') list = list.filter(i => listingExpiryState(i).status === 'expiring');
     if (sortBy === 'price_asc')  list = [...list].sort((a,b) => (a.price||0) - (b.price||0));
     if (sortBy === 'price_desc') list = [...list].sort((a,b) => (b.price||0) - (a.price||0));
     if (sortBy === 'date')       list = [...list].sort((a,b) => (b.date_added||0) - (a.date_added||0));
@@ -579,7 +631,8 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
           <option value="all">Todos</option>
           <option value="active">Ativos</option>
           <option value="soldout">Esgotados</option>
-          <option value="expiring">Expirando em breve</option>
+          <option value="expired">Anúncios expirados</option>
+          <option value="expiring">Expira em até 10 dias</option>
         </select>
         <select style={SS} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
           <option value="date">Mais recente</option>
@@ -861,6 +914,17 @@ export default function UexSalesPage() {
 
   // Sincronizar refs com state
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+  useEffect(() => {
+    const refreshFromNegotiation = () => {
+      const nextCatalog = loadCatalog();
+      const nextSales = loadSales();
+      catalogRef.current = nextCatalog;
+      setCatalog(nextCatalog);
+      setSales(nextSales);
+    };
+    window.addEventListener('sc_uex_sales_updated', refreshFromNegotiation);
+    return () => window.removeEventListener('sc_uex_sales_updated', refreshFromNegotiation);
+  }, []);
 
   function refreshCatalog(d) { catalogRef.current = d; setCatalog(d); saveCatalog(d); }
   function refreshSales(d)   { setSales(d); saveSales(d); }
@@ -873,31 +937,49 @@ export default function UexSalesPage() {
       const data = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
       if (!data || data.length === 0) { setSyncMsg('Nenhum anúncio encontrado para este username.'); setLoading(false); return; }
 
-      // Usar catalogRef.current para leitura mais recente (evita closure stale)
+      // Usar catalogRef.current para leitura mais recente (evita closure stale).
+      // A UEX pode criar um novo ID ao renovar o anúncio; por isso, depois de
+      // tentar o ID, fazemos uma correspondência segura por título, local e qualidade.
       const currentCatalog = catalogRef.current;
-      // Normalizar ids para string para evitar mismatch número/string
-      const existingIds = new Set(currentCatalog.map(i => String(i.id)));
-      const newListings = data.filter(l => !existingIds.has(String(l.id)));
+      const unusedFreshIndexes = new Set(data.map((_, index) => index));
+      const findFreshListing = cat => {
+        let index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && cat.id !== null && cat.id !== undefined && fresh.id !== null && fresh.id !== undefined && String(fresh.id) === String(cat.id));
+        if (index < 0 && !cat.is_manual) {
+          index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && listingIdentityMatches(cat, fresh));
+        }
+        if (index < 0) return null;
+        unusedFreshIndexes.delete(index);
+        return data[index];
+      };
 
-      // Atualizar sempre os existentes (preço, estoque API, etc.) preservando dados internos
+      // Atualiza preço, estoque e principalmente date_expiration da API,
+      // preservando os campos internos do usuário. Se o ID mudou por renovação,
+      // o registro antigo expirado é substituído pelo registro vigente.
+      let renewedCount = 0;
       const updatedExisting = currentCatalog.map(cat => {
-        const fresh = data.find(d => String(d.id) === String(cat.id));
+        const fresh = findFreshListing(cat);
         if (!fresh) return cat;
-        // Recalcular is_sold_out baseado no in_stock recebido da API
+        const renewed = sameRenewedListing(cat, fresh);
+        if (renewed) renewedCount += 1;
         const newInStock = fresh.in_stock !== undefined ? Number(fresh.in_stock) : (cat.in_stock || 0);
         return {
           ...cat,
           ...fresh,
+          id: fresh.id ?? cat.id,
           in_stock:       newInStock,
-          is_sold_out:    newInStock <= 0 ? 1 : 0, // forçar recálculo correto
-          internal_stock: cat.internal_stock,       // preservar estoque interno
-          notes:          cat.notes,                // preservar notas
+          is_sold_out:    newInStock <= 0 ? 1 : 0,
+          internal_stock: cat.internal_stock,
+          notes:          cat.notes,
+          imported_at:    cat.imported_at,
+          last_synced_at: new Date().toISOString(),
+          renewed_at:     renewed ? new Date().toISOString() : cat.renewed_at,
         };
       });
+      const newListings = data.filter((_, index) => unusedFreshIndexes.has(index));
       refreshCatalog(updatedExisting);
 
       if (newListings.length === 0) {
-        setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizados.`);
+        setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizado${updatedExisting.length!==1?'s':''}${renewedCount ? ` · ${renewedCount} anúncio${renewedCount!==1?'s':''} renovado${renewedCount!==1?'s':''} reconhecido${renewedCount!==1?'s':''}` : ''}.`);
       } else {
         setSyncMsg(`${newListings.length} novo${newListings.length!==1?'s':''} anúncio${newListings.length!==1?'s':''} encontrado${newListings.length!==1?'s':''}. Confirme cada um...`);
         // Guardar fila na ref E no state

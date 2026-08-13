@@ -15,11 +15,15 @@ import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
 import BackupPage         from './pages/BackupPage';
+import DataDirectoryPage  from './pages/DataDirectoryPage';
+import NotesPage          from './pages/NotesPage';
+import LocationsAdminPage from './pages/LocationsAdminPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import UexNotificationBell from './components/UexNotificationBell';
-import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save } from 'lucide-react';
+import CalculatorWidget from './components/CalculatorWidget';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -156,19 +160,34 @@ const NAV_GROUPS = [
   ]},
   { id:'sistema', label:'Sistema', pages:[
     { id:'backup', label:'Backup & Restauração', icon:Save },
+    { id:'data-directory', label:'Diretório de Dados', icon:FolderCog },
+    { id:'notes',  label:'Bloco de Notas',          icon:Edit3 },
+    { id:'locations', label:'Adicionar Local',       icon:Globe  },
   ]},
 ];
 const PAGES = NAV_GROUPS.flatMap(g => g.pages);
 const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
+const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sets,       setSets]       = useState([]);
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
   });
+
+  function toggleSidebar() {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
 
   function toggleGroup(groupId) {
     setCollapsedGroups(prev => {
@@ -226,11 +245,10 @@ export default function App() {
     </div>
   );
 
-  const ownedPct    = stats&&stats.totalPieces>0 ? Math.round((stats.ownedPieces/stats.totalPieces)*100) : 0;
   const customCount = sets.filter(s=>s.is_custom).length;
 
   return (
-    <div className="app">
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-logo">
           <EmotoIcon size={30} className="logo-icon" />
@@ -238,6 +256,9 @@ export default function App() {
             <span className="logo-main">EMOTO</span>
             <span className="logo-sub">COMPANHEIRO</span>
           </div>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'} aria-label={sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}>
+            {sidebarCollapsed ? <Menu size={18}/> : <PanelLeftClose size={17}/>}
+          </button>
         </div>
         <nav className="sidebar-nav">
           {NAV_GROUPS.map(group => {
@@ -249,7 +270,7 @@ export default function App() {
                   <ChevronDown size={12} className={`nav-group-chevron ${isCollapsed?'collapsed':''}`}/>
                 </button>
                 {!isCollapsed && group.pages.map(({id,label,icon:Icon})=>(
-                  <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)}>
+                  <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)} title={sidebarCollapsed ? label : undefined}>
                     <Icon size={16} />
                     <span>{label}</span>
                     {id==='custom'&&customCount>0 ? (
@@ -263,21 +284,6 @@ export default function App() {
             );
           })}
         </nav>
-        {stats && (
-          <div className="sidebar-stats">
-            <div className="stat-mini">
-              <span className="stat-mini-label">Peças Armadura</span>
-              <span className="stat-mini-value owned">{stats.ownedPieces}/{stats.totalPieces}</span>
-            </div>
-            <div className="stat-mini">
-              <span className="stat-mini-label">Sets Completos</span>
-              <span className="stat-mini-value">{stats.completeSets}/{stats.totalSets}</span>
-            </div>
-            <div className="progress-mini">
-              <div className="progress-mini-fill" style={{ width:`${ownedPct}%` }} />
-            </div>
-          </div>
-        )}
         <div className="sidebar-footer">
           <span className="version-badge">v1.0</span>
           <span className="game-version">SC 4.8.2</span>
@@ -302,9 +308,13 @@ export default function App() {
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
         {activePage==='backup'     && <BackupPage />}
+        {activePage==='data-directory' && <DataDirectoryPage />}
+        {activePage==='notes'      && <NotesPage />}
+        {activePage==='locations'   && <LocationsAdminPage />}
       </main>
 
       <UexNotificationBell onNavigate={goToPage} />
+      <CalculatorWidget />
     </div>
   );
 }

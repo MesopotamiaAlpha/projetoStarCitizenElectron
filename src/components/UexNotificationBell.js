@@ -1,9 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX } from 'lucide-react';
-import { loadToken, checkForUpdates } from '../data/uexNegotiations';
+import { loadToken, checkForUpdates, messageIdentity, notificationIdentity, isCrossFeedDuplicate } from '../data/uexNegotiations';
 
 const POLL_INTERVAL_MS = 90 * 1000; // 90s
 const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
+
+function dedupeNotificationItems(list) {
+  const messages = list.filter(item => item.kind === 'message');
+  const seen = new Set();
+  return list.filter(item => {
+    if (item.kind === 'notif' && messages.some(message => isCrossFeedDuplicate(message, item))) return false;
+    if (seen.has(item.key)) return false;
+    seen.add(item.key);
+    return true;
+  });
+}
 
 // Toca um "ding" de duas notas sintetizado — não depende de nenhum arquivo de áudio.
 function playNotificationSound() {
@@ -36,6 +47,7 @@ export default function UexNotificationBell({ onNavigate }) {
   const [hasToken, setHasToken] = useState(!!loadToken());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
   const wrapRef = useRef(null);
+  const checkingRef = useRef(false);
 
   function toggleMuted() {
     setMuted(prev => {
@@ -46,28 +58,31 @@ export default function UexNotificationBell({ onNavigate }) {
   }
 
   const runCheck = useCallback(async (silent = true) => {
+    if (checkingRef.current) return;
     if (!loadToken()) { setHasToken(false); return; }
+    checkingRef.current = true;
     setHasToken(true);
     setChecking(true);
     if (!silent) setError('');
     try {
       const { newMessages, newNotifications } = await checkForUpdates();
       const mapped = [
-        ...newMessages.map(m => ({ kind: 'message', key: `m${m.id}`, ...m })),
-        ...newNotifications.map(n => ({ kind: 'notif', key: `n${n.id}`, ...n })),
+        ...newMessages.map(m => ({ kind: 'message', key: m.key || messageIdentity(m, m.negotiationHash), ...m })),
+        ...newNotifications.map(n => ({ kind: 'notif', key: n.key || notificationIdentity(n), ...n })),
       ];
       if (mapped.length) {
         setItems(prev => {
           const existingKeys = new Set(prev.map(i => i.key));
           const freshOnes = mapped.filter(i => !existingKeys.has(i.key));
           if (freshOnes.length && !muted) playNotificationSound();
-          const merged = [...freshOnes, ...prev];
+          const merged = dedupeNotificationItems([...freshOnes, ...prev]);
           return merged.sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 50);
         });
       }
     } catch (e) {
       if (!silent) setError(e.message);
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
   }, [muted]);
@@ -107,7 +122,7 @@ export default function UexNotificationBell({ onNavigate }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: 16, right: 20, zIndex: 999 }}>
+    <div ref={wrapRef} style={{ position: 'fixed', top: 12, right: 12, zIndex: 999, pointerEvents: 'none' }}>
       <button
         onClick={() => {
           if (!hasToken) { onNavigate && onNavigate('uexapi'); return; }
@@ -118,7 +133,7 @@ export default function UexNotificationBell({ onNavigate }) {
           position: 'relative', width: 40, height: 40, borderRadius: 8,
           background: 'var(--bg-card)', border: '1px solid var(--border-normal)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', boxShadow: 'var(--shadow-card)',
+          cursor: 'pointer', boxShadow: 'var(--shadow-card)', pointerEvents: 'auto',
         }}
       >
         <Bell size={18} style={{ color: hasToken ? 'var(--text-primary)' : 'var(--text-muted)' }} />
@@ -143,7 +158,7 @@ export default function UexNotificationBell({ onNavigate }) {
           position: 'absolute', top: 48, right: 0, width: 360, maxHeight: 460,
           background: 'var(--bg-panel)', border: '1px solid var(--border-normal)',
           borderRadius: 10, boxShadow: 'var(--shadow-card)', overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
+          display: 'flex', flexDirection: 'column', pointerEvents: 'auto',
         }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',

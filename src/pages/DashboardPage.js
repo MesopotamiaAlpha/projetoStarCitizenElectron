@@ -24,16 +24,32 @@ const PAF_COLOR = '#38bdf8';
 function isScriptItemDash(name) {
   return isScriptItem(name);
 }
+const PAF_ITEM_NAMES_DASH = [
+  'Alignment Blade',
+  'GP-XP Industrial Battery',
+  'Laser Activation Keycard',
+  // Compatibilidade com registros antigos do Inventário.
+  'Cartão de Ativação do Lazer',
+];
+
+function normalizeInventoryName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
 function isPafItemDash(name) {
-  const PAF_NAMES = ['Alignment Blade','GP-XP Industrial Battery','Cartão de Ativação do Lazer'];
-  return PAF_NAMES.some(p => (name||'').trim().toLowerCase() === p.toLowerCase());
+  return PAF_ITEM_NAMES_DASH.some(p => normalizeInventoryName(name) === normalizeInventoryName(p));
 }
 
 function calcPafLocal(items) {
-  const get = (n) => (items.find(i => i.name?.toLowerCase() === n.toLowerCase())?.quantity || 0);
+  const get = (...names) => {
+    const accepted = new Set(names.map(normalizeInventoryName));
+    return (items || [])
+      .filter(item => accepted.has(normalizeInventoryName(item.name)))
+      .reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+  };
   const alinhamento = get('Alignment Blade');
   const bateria     = get('GP-XP Industrial Battery');
-  const lazer       = get('Cartão de Ativação do Lazer');
+  const lazer       = get('Laser Activation Keycard', 'Cartão de Ativação do Lazer');
   const satsAlign   = Math.floor(alinhamento / 3);
   const satsEnergy  = Math.floor(bateria     / 3);
   const lazersReady = lazer;
@@ -58,8 +74,9 @@ function readOreVault() {
 function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
-import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users } from 'lucide-react';
-import { isScriptItem, calcWikeloFavors } from '../data/wikelo';
+import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2 } from 'lucide-react';
+import { isScriptItem, isWikeloFavorItem, calcWikeloFavors } from '../data/wikelo';
+import { calcDchsExecutiveHangars } from '../data/dchsCards';
 
 const PIECE_ICONS  = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
 const PIECE_PT_PLU = { Helmet:'Capacetes', Torso:'Torsos', Arms:'Braços', Legs:'Pernas', Backpack:'Mochilas' };
@@ -120,11 +137,15 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
   useEffect(() => { fetchInventoryItems().then(setInventoryItems); }, []);
   const pafSummary     = useMemo(() => calcPafLocal(inventoryItems),  [inventoryItems]);
   const wfTotal        = useMemo(() => calcWikeloLocal(inventoryItems), [inventoryItems]);
+  const dchsSummary    = useMemo(() => calcDchsExecutiveHangars(inventoryItems), [inventoryItems]);
   // Mostrar widgets mesmo com valores zero — se o item existe, mostra
   const hasPafItems    = inventoryItems.some(i => isPafItemDash(i.name));
-  const hasScriptItems = inventoryItems.some(i => isScriptItemDash(i.name));
-  const hasPafData     = hasPafItems;
-  const hasWfData      = hasScriptItems;
+    const hasScriptItems = inventoryItems.some(i => isScriptItemDash(i.name));
+  const hasDirectFavors = inventoryItems.some(i => isWikeloFavorItem(i.name));
+  const hasPafData      = hasPafItems;
+  const hasWfData       = hasScriptItems || hasDirectFavors;
+  const hasDchsData     = dchsSummary.hasAnyCard;
+
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -370,7 +391,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
                   {[
                     { label:'Alinhamento',   value:pafSummary.satsAlign,   icon:'📡', color:'var(--accent-primary)', sub:`${pafSummary.alinhamento} cartões`, resto:pafSummary.restoAlign,  ratio:3 },
                     { label:'Energia',        value:pafSummary.satsEnergy,  icon:'🔋', color:'var(--accent-gold)',    sub:`${pafSummary.bateria} baterias`,    resto:pafSummary.restoBateria,ratio:3 },
-                    { label:'Lazers',         value:pafSummary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${pafSummary.lazer} cartões`,        resto:0,                      ratio:1 },
+                    { label:'Lazers',         value:pafSummary.lazersReady, icon:'🔫', color:'var(--accent-red)',     sub:`${pafSummary.lazer} keycard${pafSummary.lazer!==1?'s':''}`, resto:0,                      ratio:1 },
                     { label:'PAF Completo',   value:pafSummary.pafCompletos,icon:'🛰', color:'var(--accent-green)',  sub:'mín. dos 3',                          resto:0,                      ratio:0 },
                   ].map(({label,value,icon,color,sub,resto,ratio})=>(
                     <div key={label} style={{ textAlign:'center', padding:'10px 6px', background:`${color}08`, border:`1px solid ${color}25`, borderRadius:8 }}>
@@ -396,7 +417,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
                     <AlertTriangle size={12}/>
                     {pafSummary.satsAlign === 0 && pafSummary.satsEnergy === 0 && pafSummary.lazersReady === 0
                       ? 'Nenhum recurso PAF suficiente ainda.'
-                      : `Faltam recursos: ${pafSummary.satsAlign===0?'mais cartões de alinhamento ':''} ${pafSummary.satsEnergy===0?'mais baterias ':''} ${pafSummary.lazersReady===0?'mais cartões de lazer':''}`
+                      : `Faltam recursos: ${pafSummary.satsAlign===0?'mais cartões de alinhamento ':''} ${pafSummary.satsEnergy===0?'mais baterias ':''} ${pafSummary.lazersReady===0?'mais Laser Activation Keycard':''}`
                     }
                   </div>
                 ) : (
@@ -420,10 +441,50 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
                   <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Wikelo Favor{wfTotal!==1?'s':''} totais</div>
                 </div>
                 <div style={{ fontSize:10, color:'var(--text-muted)', textAlign:'center', lineHeight:1.5 }}>
-                  Contagem de Mg Scrip + Council Scrip<br/>no inventário de itens (50 = 1 favor)
+                  Scrip convertível + Favors já prontos<br/>50 Scrip = 1 favor; cada Wikelo Favor = 1
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Contador de Cartões DCHS / Hangares Executivos ── */}
+        {hasDchsData && (
+          <div style={{background:'var(--bg-card)',border:'1px solid rgba(251,191,36,0.28)',borderRadius:10,padding:'16px 18px',marginBottom:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <Building2 size={16} style={{color:'var(--accent-gold)'}}/>
+              <span style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.08em'}}>DCHS — HANGARES EXECUTIVOS</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'minmax(180px,0.9fr) 3fr',gap:14,alignItems:'stretch'}}>
+              <div style={{display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',textAlign:'center',padding:'14px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:8}}>
+                <div style={{fontFamily:'Michroma,sans-serif',fontSize:36,fontWeight:800,color:'var(--accent-gold)',lineHeight:1}}>{dchsSummary.executiveHangars}</div>
+                <div style={{fontSize:11,color:'var(--text-primary)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',marginTop:6}}>Hangar{dchsSummary.executiveHangars!==1?'es':''} Executivo{dchsSummary.executiveHangars!==1?'s':''}</div>
+                <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>1 conjunto completo = 1 hangar</div>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>Quantidade de cada cartão no Inventário</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(155px,1fr))',gap:7}}>
+                  {dchsSummary.cards.map(card => {
+                    const enoughForCurrent = card.quantity >= dchsSummary.completeSets;
+                    const readyForNext = card.quantity >= dchsSummary.completeSets + 1;
+                    const color = readyForNext ? 'var(--accent-green)' : enoughForCurrent ? 'var(--accent-gold)' : 'var(--accent-red)';
+                    return (
+                      <div key={card.code} style={{padding:'8px 9px',background:`${color}08`,border:`1px solid ${color}35`,borderRadius:6}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:5}}>
+                          <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,fontWeight:800,color}}>{card.code}</span>
+                          <span style={{fontFamily:'Michroma,sans-serif',fontSize:16,fontWeight:800,color}}>{card.quantity}</span>
+                        </div>
+                        <div style={{fontSize:9,color:'var(--text-secondary)',lineHeight:1.25,marginTop:3,minHeight:23}}>{card.shortName}</div>
+                        <div style={{fontSize:9,color:'var(--text-muted)',marginTop:3}}>{card.quantity===1?'1 cartão':`${card.quantity} cartões`}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{marginTop:9,padding:'7px 10px',background:dchsSummary.completeSets>0?'rgba(52,211,153,0.06)':'rgba(251,113,133,0.06)',border:`1px solid ${dchsSummary.completeSets>0?'rgba(52,211,153,0.2)':'rgba(251,113,133,0.2)'}`,borderRadius:6,fontSize:11,color:dchsSummary.completeSets>0?'var(--accent-green)':'var(--accent-red)'}}>
+                  {dchsSummary.completeSets>0 ? `Você possui ${dchsSummary.completeSets} conjunto${dchsSummary.completeSets!==1?'s':''} completo${dchsSummary.completeSets!==1?'s':''} e pode fazer ${dchsSummary.executiveHangars} hangar${dchsSummary.executiveHangars!==1?'es':''} executivo${dchsSummary.executiveHangars!==1?'s':''}.` : 'Ainda não há um conjunto completo dos sete cartões DCHS.'}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
