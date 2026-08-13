@@ -286,7 +286,6 @@ export default function App() {
         </nav>
         <div className="sidebar-footer">
           <span className="version-badge">v1.0</span>
-          <span className="game-version">SC 4.8.2</span>
         </div>
       </aside>
 

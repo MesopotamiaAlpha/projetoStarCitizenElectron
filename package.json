@@ -8,14 +8,14 @@
     "react-start": "cross-env BROWSER=none react-scripts start",
     "dev": "concurrently \"cross-env BROWSER=none react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
     "react-build": "react-scripts build",
-    "build": "npm run react-build && electron-builder",
+    "build": "npm run build:win",
+    "build:win": "npm run react-build && electron-builder --win",
     "electron": "electron ."
   },
   "dependencies": {
     "sql.js": "^1.12.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
     "lucide-react": "^0.383.0"
   },
   "devDependencies": {
@@ -23,7 +23,8 @@
     "cross-env": "^7.0.3",
     "electron": "^29.0.0",
     "electron-builder": "^24.9.1",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "react-scripts": "5.0.1"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
@@ -33,12 +34,21 @@
     "extends": null,
     "appId": "com.sctracker.armor",
     "productName": "Companheiro Emoto",
+    "artifactName": "Companheiro-Emoto-${version}.${ext}",
     "asar": true,
-    "files": ["build/**/*", "electron/**/*", "node_modules/**/*", "!**/CompanheiroEmoto{,/**/*}", "!**/backup{,/**/*}"],
+    "files": ["build/**/*", "electron/**/*", "!**/CompanheiroEmoto{,/**/*}", "!**/backup{,/**/*}", "!**/*.map"],
     "directories": { "output": "dist" },
-    "win": { "target": ["nsis"] },
-    "mac": { "target": ["dmg"] },
-    "linux": { "target": ["AppImage"] }
+    "win": {
+      "target": ["nsis", "zip"],
+      "icon": "electron-icons/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "publisherName": "Companheiro Emoto"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "homepage": "./"
 }
