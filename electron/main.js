@@ -5,7 +5,7 @@ const fs   = require('fs');
 const isDev = process.env.NODE_ENV === 'development';
 
 const APP_DIR_NAME = 'CompanheiroEmoto';
-const DB_FILE_NAME = 'sc_armor_tracker_v3.db';
+const DB_FILE_NAME = 'companheiro_emoto.db';
 const DATA_CONFIG_FILE = 'config.json';
 const TRANSIENT_DATA_NAMES = new Set([
   'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'Crashpad',
@@ -80,6 +80,19 @@ function copyFileIfMissing(source, target) {
   return true;
 }
 
+function findDatabaseFile(root) {
+  const locations = [path.join(root, 'dados'), root];
+  for (const directory of locations) {
+    if (!fs.existsSync(directory)) continue;
+    const candidate = fs.readdirSync(directory, { withFileTypes: true })
+      .filter(entry => entry.isFile() && path.extname(entry.name).toLowerCase() === '.db')
+      .map(entry => path.join(directory, entry.name))
+      .find(filePath => fs.existsSync(filePath));
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
 function copyDirectoryContents(sourceDir, targetDir, report, relative = '') {
   if (!fs.existsSync(sourceDir)) return;
   ensureDirectory(targetDir);
@@ -110,11 +123,9 @@ function migrateLegacyData(sourceRoot, targetRoot) {
 
   ensureDirectory(targetRoot);
   const targetDataDir = ensureDirectory(path.join(targetRoot, 'dados'));
-  const legacyDb = fs.existsSync(path.join(sourceRoot, 'dados', DB_FILE_NAME))
-    ? path.join(sourceRoot, 'dados', DB_FILE_NAME)
-    : path.join(sourceRoot, DB_FILE_NAME);
+  const legacyDb = findDatabaseFile(sourceRoot);
   const targetDb = path.join(targetDataDir, DB_FILE_NAME);
-  if (copyFileIfMissing(legacyDb, targetDb)) report.copied.push(path.join('dados', DB_FILE_NAME));
+  if (legacyDb && copyFileIfMissing(legacyDb, targetDb)) report.copied.push(path.join('dados', DB_FILE_NAME));
 
   // O Electron mantém localStorage, cookies, preferências e dados de sessão no
   // userData. Copiamos os arquivos persistentes para a pasta central, mas nunca
@@ -139,6 +150,14 @@ function migrateLegacyData(sourceRoot, targetRoot) {
     }
   }
   return report;
+}
+
+function migrateDatabaseInsideDataRoot(root) {
+  const dataDir = ensureDirectory(path.join(root, 'dados'));
+  const currentDb = path.join(dataDir, DB_FILE_NAME);
+  if (fs.existsSync(currentDb)) return false;
+  const legacyDb = findDatabaseFile(root);
+  return Boolean(legacyDb && copyFileIfMissing(legacyDb, currentDb));
 }
 
 function saveDb() {
@@ -181,6 +200,7 @@ async function configureDataDirectory() {
   const migrationWarning = dataMigration.warnings.slice();
   dataMigration = migrateLegacyData(legacyUserDataPath, dataRoot);
   dataMigration.warnings.unshift(...migrationWarning);
+  if (migrateDatabaseInsideDataRoot(dataRoot)) dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
   ensureDirectory(path.join(dataRoot, 'dados'));
   ensureDirectory(path.join(dataRoot, 'backup'));
   ensureDirectory(path.join(dataRoot, 'exportados'));
@@ -244,6 +264,7 @@ async function initDatabase() {
       wishlist      INTEGER DEFAULT 0,
       notes         TEXT DEFAULT '',
       obtained_date TEXT,
+      quantity      INTEGER DEFAULT 1,
       FOREIGN KEY (piece_id) REFERENCES armor_pieces(id)
     );
 
@@ -317,6 +338,10 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   // então adicionamos manualmente se ainda não existirem (SQLite ignora erro se já existir).
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN is_crafted INTEGER DEFAULT 0`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_status TEXT DEFAULT '[]'`); } catch(e) {}
+  // Migração idempotente: versões antigas não guardavam a quantidade de cada peça obtida.
+  // O DEFAULT 1 mantém exatamente o comportamento anterior para todos os registros existentes.
+  try { db.run(`ALTER TABLE user_pieces ADD COLUMN quantity INTEGER DEFAULT 1`); } catch(e) {}
+  db.run(`UPDATE user_pieces SET quantity=1 WHERE quantity IS NULL OR quantity < 1`);
   // Metadados de origem para distinguir blueprints importadas do SCMDB das manuais.
   try { db.run(`ALTER TABLE blueprints ADD COLUMN source TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE blueprints ADD COLUMN scmdb_tag TEXT DEFAULT ''`); } catch(e) {}
@@ -919,10 +944,19 @@ ipcMain.handle('update-piece-notes', (event,{pieceId,notes}) => {
 });
 ipcMain.handle('update-piece-quantity', async (event, id, quantity) => {
   try {
-    db.run('UPDATE armor_pieces SET quantity = ? WHERE id = ?',
-      [Math.max(0, Number(quantity)||0), id]);
-    return { success: true };
-  } catch(e) { return { success:false, message:e.message }; }
+    const pieceId = Number(id);
+    const nextQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+    if (!Number.isInteger(pieceId) || pieceId <= 0) {
+      return { success: false, message: 'Peça inválida.' };
+    }
+    const piece = queryOne('SELECT piece_id FROM user_pieces WHERE piece_id=?', [pieceId]);
+    if (!piece) return { success: false, message: 'Peça não encontrada.' };
+    db.run('UPDATE user_pieces SET quantity=? WHERE piece_id=?', [nextQuantity, pieceId]);
+    saveDb();
+    return { success: true, quantity: nextQuantity };
+  } catch(e) {
+    return { success:false, message:e.message };
+  }
 });
 ipcMain.handle('get-stats', () => {
   const totalSets   = queryOne('SELECT COUNT(*) as c FROM armor_sets').c;
@@ -1616,65 +1650,38 @@ ipcMain.handle('mymemory-translate', async (event, payload = {}) => {
   }
 });
 
-function googleTranslateRequest({ text, source = 'pt', target = 'en', apiKey }) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ q: text, source, target, format: 'text' });
-    const url = `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`;
-    const request = https.request(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Accept': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        'User-Agent': 'Companheiro-Emoto/1.0',
-      },
-    }, (response) => {
-      let data = '';
-      response.setEncoding('utf8');
-      response.on('data', chunk => { data += chunk; });
-      response.on('end', () => {
-        let json = null;
-        try { json = JSON.parse(data); } catch { /* resposta não JSON */ }
-        if (response.statusCode >= 200 && response.statusCode < 300 && json?.data?.translations?.[0]?.translatedText) {
-          resolve({ translation: json.data.translations[0].translatedText });
-          return;
-        }
-        const googleMessage = json?.error?.message || json?.error?.errors?.[0]?.message || `HTTP ${response.statusCode}`;
-        reject(new Error(`Google Cloud Translation: ${googleMessage}`));
-      });
-    });
-    request.on('error', reject);
-    request.setTimeout(12000, () => {
-      request.destroy();
-      reject(new Error('Timeout ao consultar o Google Cloud Translation.'));
-    });
-    request.write(body);
-    request.end();
-  });
-}
+const UEX_API_ORIGIN = 'https://api.uexcorp.uk';
+const UEX_API_PREFIX = '/2.0/';
+const MAX_UEX_ENDPOINT_LENGTH = 320;
+const MAX_UEX_BODY_BYTES = 1024 * 1024;
 
-ipcMain.handle('google-translate', async (event, payload = {}) => {
-  const text = String(payload.text || '').trim();
-  const source = String(payload.source || 'pt').trim().toLowerCase();
-  const target = String(payload.target || 'en').trim().toLowerCase();
-  const apiKey = String(payload.apiKey || process.env.GOOGLE_TRANSLATE_API_KEY || '').trim();
-  if (!text) return { success: false, message: 'Nenhum texto foi informado para tradução.' };
-  if (text.length > 5000) return { success: false, message: 'A mensagem é longa demais para a tradução rápida. Divida-a em partes menores.' };
-  if (!apiKey) return { success: false, message: 'Configure uma chave da Google Cloud Translation na aba UEX API (Live).' };
-  try {
-    const result = await googleTranslateRequest({ text, source, target, apiKey });
-    return { success: true, translation: result.translation };
-  } catch (error) {
-    return { success: false, message: error.message || 'Erro ao traduzir com o Google Cloud Translation.' };
+function normalizeUexEndpoint(endpoint) {
+  const value = String(endpoint || '').trim().replace(/^\/+/, '');
+  if (!value) throw new Error('Endpoint UEX não informado.');
+  if (value.length > MAX_UEX_ENDPOINT_LENGTH) throw new Error('Endpoint UEX excede o limite permitido.');
+  if (/^https?:\/\//i.test(value) || value.includes('..') || !/^[A-Za-z0-9_./?=&%:+-]+$/.test(value)) {
+    throw new Error('Endpoint UEX inválido ou não permitido.');
   }
-});
+  return value;
+}
 
 function uexRequest(endpoint, token, secretKey, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
-    const url = `https://api.uexcorp.uk/2.0/${endpoint}`;
-    const bodyStr = body ? JSON.stringify(body) : null;
+    let safeEndpoint;
+    try { safeEndpoint = normalizeUexEndpoint(endpoint); } catch (error) { reject(error); return; }
+    const url = `${UEX_API_ORIGIN}${UEX_API_PREFIX}${safeEndpoint}`;
+    const bodyStr = body == null ? null : JSON.stringify(body);
+    if (bodyStr && Buffer.byteLength(bodyStr, 'utf8') > MAX_UEX_BODY_BYTES) {
+      reject(new Error('Corpo da requisição UEX excede o limite permitido.'));
+      return;
+    }
+    const requestMethod = String(method || 'GET').toUpperCase();
+    if (!['GET', 'POST'].includes(requestMethod)) {
+      reject(new Error('Método de requisição UEX não permitido.'));
+      return;
+    }
     const options = {
-      method,
+      method: requestMethod,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -1762,7 +1769,8 @@ ipcMain.handle('uex-test-token', async (event, token) => {
   };
 });
 
-ipcMain.handle('uex-fetch', async (event, { endpoint, token, secretKey }) => {
+ipcMain.handle('uex-fetch', async (event, payload = {}) => {
+  const { endpoint, token, secretKey } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey);
     if (result.body && result.body.status === 'ok') {
@@ -1858,7 +1866,8 @@ ipcMain.handle('uex-image', async (event, rawUrl) => {
 });
 
 // POST genérico para a UEX (usado hoje para responder mensagens de negociação do Marketplace)
-ipcMain.handle('uex-post', async (event, { endpoint, token, secretKey, body }) => {
+ipcMain.handle('uex-post', async (event, payload = {}) => {
+  const { endpoint, token, secretKey, body } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey, 'POST', body);
     if (result.body && result.body.status === 'ok') {
@@ -1950,6 +1959,156 @@ function dataInfo() {
     migration: dataMigration,
   };
 }
+
+const NOTES_ATTACHMENTS_DIR = 'notas-anexos';
+const NOTE_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+const NOTE_ATTACHMENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,180}$/;
+const NOTE_ATTACHMENT_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.pdf']);
+const NOTE_ATTACHMENT_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml', 'application/pdf']);
+
+function getNotesAttachmentsRoot() {
+  if (!dataRoot) throw new Error('O diretório de dados ainda não foi inicializado.');
+  return ensureDirectory(path.join(dataRoot, NOTES_ATTACHMENTS_DIR));
+}
+
+function getSafeNotesAttachmentPath(storedName) {
+  const safeName = path.basename(String(storedName || ''));
+  if (!safeName || safeName !== String(storedName || '') || safeName.includes('..')) {
+    throw new Error('Anexo inválido.');
+  }
+  const root = path.resolve(getNotesAttachmentsRoot());
+  const target = path.resolve(root, safeName);
+  if (path.dirname(target) !== root) throw new Error('Caminho de anexo inválido.');
+  return target;
+}
+
+function isAllowedNoteAttachment(mimeType, fileName) {
+  const mime = String(mimeType || '').toLowerCase();
+  const extension = path.extname(String(fileName || '')).toLowerCase();
+  return NOTE_ATTACHMENT_EXTENSIONS.has(extension) && (NOTE_ATTACHMENT_MIMES.has(mime) || extension === '.pdf');
+}
+
+function safeAttachmentExtension(fileName, mimeType) {
+  const extension = path.extname(String(fileName || '')).toLowerCase();
+  if (NOTE_ATTACHMENT_EXTENSIONS.has(extension)) return extension === '.jpeg' ? '.jpg' : extension;
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime === 'application/pdf') return '.pdf';
+  const mimeExtensions = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'image/svg+xml': '.svg',
+  };
+  return mimeExtensions[mime] || '.bin';
+}
+
+function getAttachmentMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeByExtension = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+  };
+  return mimeByExtension[extension] || 'application/octet-stream';
+}
+
+function getAttachmentFilename(value) {
+  return typeof value === 'object' && value !== null
+    ? String(value.filename || value.storedName || '')
+    : String(value || '');
+}
+
+ipcMain.handle('notes-save-attachment', (event, payload = {}) => {
+  try {
+    const attachmentId = String(payload.id || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    const noteId = String(payload.noteId || 'nota');
+    const originalName = path.basename(String(payload.originalName || payload.name || 'arquivo'));
+    let mimeType = String(payload.mimeType || '').toLowerCase();
+    let data;
+    if (typeof payload.dataUrl === 'string' && payload.dataUrl.includes(',')) {
+      const header = payload.dataUrl.slice(0, payload.dataUrl.indexOf(','));
+      const headerMime = header.match(/^data:([^;]+);base64$/i)?.[1];
+      mimeType = mimeType || String(headerMime || '').toLowerCase();
+      data = Buffer.from(payload.dataUrl.slice(payload.dataUrl.indexOf(',') + 1), 'base64');
+    } else {
+      data = payload.data instanceof Uint8Array ? Buffer.from(payload.data) : Buffer.from(payload.data || []);
+    }
+    if (!NOTE_ATTACHMENT_ID_PATTERN.test(attachmentId) || !NOTE_ATTACHMENT_ID_PATTERN.test(noteId)) return { success: false, error: 'Identificador de anexo inválido.' };
+    if (!isAllowedNoteAttachment(mimeType, originalName)) return { success: false, error: 'Somente JPG, PNG, GIF, WEBP, BMP, SVG e PDF são permitidos.' };
+    if (!data.length || data.length > NOTE_ATTACHMENT_MAX_BYTES) return { success: false, error: 'O anexo deve ter entre 1 byte e 20 MB.' };
+
+    const storedName = `${noteId}_${attachmentId}${safeAttachmentExtension(originalName, mimeType)}`;
+    const target = getSafeNotesAttachmentPath(storedName);
+    fs.writeFileSync(target, data);
+    const addedAt = new Date().toISOString();
+    const attachment = { id: attachmentId, filename: storedName, originalName, mimeType, size: data.length, addedAt };
+    return { success: true, attachment, storedName, size: data.length, mimeType, name: originalName };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('notes-read-attachment', (event, storedName) => {
+  try {
+    const filename = getAttachmentFilename(storedName);
+    const filePath = getSafeNotesAttachmentPath(filename);
+    if (!fs.existsSync(filePath)) return { success: false, error: 'Anexo não encontrado.' };
+    const data = fs.readFileSync(filePath);
+    if (data.length > NOTE_ATTACHMENT_MAX_BYTES) return { success: false, error: 'Anexo excede o limite permitido.' };
+    const mimeType = getAttachmentMimeType(filePath);
+    const base64 = data.toString('base64');
+    return { success: true, base64, dataUrl: `data:${mimeType};base64,${base64}`, size: data.length, mimeType };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('notes-delete-attachment', (event, storedName) => {
+  try {
+    const filename = getAttachmentFilename(storedName);
+    const filePath = getSafeNotesAttachmentPath(filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('notes-open-attachment', async (event, storedName) => {
+  try {
+    const filename = getAttachmentFilename(storedName);
+    const filePath = getSafeNotesAttachmentPath(filename);
+    if (!fs.existsSync(filePath)) return { success: false, error: 'Anexo não encontrado.' };
+    const error = await shell.openPath(filePath);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('notes-download-attachment', async (event, payload = {}) => {
+  try {
+    const filePath = getSafeNotesAttachmentPath(getAttachmentFilename(payload));
+    if (!fs.existsSync(filePath)) return { success: false, error: 'Anexo não encontrado.' };
+    const defaultName = path.basename(String(payload.originalName || payload.name || path.basename(filePath))).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+    const result = await dialog.showSaveDialog({
+      title: 'Salvar anexo da nota',
+      defaultPath: defaultName || path.basename(filePath),
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+    fs.copyFileSync(filePath, result.filePath);
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 ipcMain.handle('data-get-info', () => dataInfo());
 
@@ -2081,6 +2240,29 @@ function createWindow() {
     backgroundColor:'#05070c',show:false,
     // icon: resolveAppIcon(),   ← comentada temporariamente
   });
+
+  const isInternalNavigation = (url) => {
+    if (isDev) return String(url || '').startsWith('http://localhost:3000');
+    return String(url || '').startsWith('file://');
+  };
+  const openExternalUrl = (rawUrl) => {
+    try {
+      const parsed = new URL(String(rawUrl || ''));
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+      shell.openExternal(parsed.toString()).catch(() => {});
+    } catch (_) {}
+  };
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isInternalNavigation(url)) openExternalUrl(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isInternalNavigation(url)) return;
+    event.preventDefault();
+    openExternalUrl(url);
+  });
+
   mainWindow.once('ready-to-show',()=>mainWindow.show());
   isDev ? mainWindow.loadURL('http://localhost:3000') : mainWindow.loadFile(path.join(__dirname,'../build/index.html'));
 }

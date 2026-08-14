@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2, Clock, Copy, Edit3, MessageSquare, Plus, Search,
   Save, Star, Tag, Trash2, X, BookOpen, ClipboardList, Pickaxe,
-  Package, Crosshair, Lightbulb, ShoppingCart, Handshake, FileText
+  Package, Crosshair, Lightbulb, ShoppingCart, Handshake, FileText, Paperclip
 } from 'lucide-react';
+import NoteAttachments from '../components/NoteAttachments';
+import { UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
 
 const NOTES_KEY = 'sc_notes_v1';
 const UEX_TEXTS_KEY = 'sc_uex_texts_v1';
@@ -71,6 +73,7 @@ function newEntry(kind) {
     pinned: false,
     created_at: now,
     updated_at: now,
+    attachments: [],
   };
 }
 
@@ -115,6 +118,7 @@ export default function NotesPage() {
   const [editing, setEditing] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [attachmentError, setAttachmentError] = useState('');
 
   const isUex = activeTab === 'uex';
   const storageKey = isUex ? UEX_TEXTS_KEY : NOTES_KEY;
@@ -142,6 +146,7 @@ export default function NotesPage() {
     if (isUex) setUexTexts(next);
     else setNotes(next);
     saveList(storageKey, next);
+    if (isUex) dispatchUexUiEvent(UEX_TEXTS_UPDATED_EVENT, { texts: next });
   }
 
   function createEntry() {
@@ -167,6 +172,7 @@ export default function NotesPage() {
       title: editing.title.trim(),
       content: editing.content || '',
       category: editing.category || categories[0],
+      attachments: Array.isArray(editing.attachments) ? editing.attachments : [],
       updated_at: new Date().toISOString(),
     };
     updateState(entries.some(entry => entry.id === normalized.id)
@@ -176,8 +182,18 @@ export default function NotesPage() {
     setEditing(null);
   }
 
-  function removeEntry(id) {
-    updateState(entries.filter(entry => entry.id !== id));
+  async function removeEntry(id) {
+    const entry = entries.find(item => item.id === id);
+    const attachments = Array.isArray(entry?.attachments) ? entry.attachments : [];
+    if (window.electronAPI?.notesDeleteAttachment) {
+      const storedAttachments = attachments
+        .map(attachment => attachment?.filename || attachment?.storedName)
+        .filter(Boolean);
+      const results = await Promise.all(storedAttachments.map(filename => window.electronAPI.notesDeleteAttachment(filename)));
+      const failed = results.some(result => !result?.success);
+      if (failed) console.warn('Alguns anexos não puderam ser removidos do disco.');
+    }
+    updateState(entries.filter(item => item.id !== id));
     if (selectedId === id) {
       setSelectedId(null);
       setEditing(null);
@@ -197,6 +213,22 @@ export default function NotesPage() {
     } catch (error) {
       console.error('Não foi possível copiar o texto:', error);
     }
+  }
+
+  function handleAttachmentsChange(nextAttachments) {
+    const current = editing || selectedEntry;
+    if (!current) return;
+    const updated = {
+      ...current,
+      attachments: Array.isArray(nextAttachments) ? nextAttachments : [],
+      updated_at: new Date().toISOString(),
+    };
+    const nextEntries = entries.some(entry => entry.id === updated.id)
+      ? entries.map(entry => entry.id === updated.id ? updated : entry)
+      : [updated, ...entries];
+    updateState(nextEntries);
+    setSelectedId(updated.id);
+    setEditing(previous => previous ? { ...previous, ...updated } : null);
   }
 
   const editor = editing || selectedEntry;
@@ -269,6 +301,7 @@ export default function NotesPage() {
                       </div>
                       <div className="notes-entry-meta">
                         <EntryVisualBadge entry={entry} isUex={isUex} compact/>
+                        {Array.isArray(entry.attachments) && entry.attachments.length > 0 && <span className="notes-entry-attachments"><Paperclip size={9}/>{entry.attachments.length}</span>}
                         <span className="notes-entry-date"><Clock size={9}/>{formatDate(entry.updated_at)}</span>
                       </div>
                     </div>
@@ -306,6 +339,13 @@ export default function NotesPage() {
                 <div><label style={labelStyle}>Categoria</label><select value={editor.category} onChange={e=>setEditing({...editor,category:e.target.value})} style={selectStyle}>{categories.map(category=><option key={category}>{category}</option>)}</select></div>
               </div>
               <div style={{marginBottom:14}}><label style={labelStyle}>{isUex?'Texto para copiar e reutilizar':'Conteúdo da nota'}</label><textarea autoFocus value={editor.content} onChange={e=>setEditing({...editor,content:e.target.value})} placeholder={isUex?'Digite aqui a mensagem que você usa nas negociações...':'Escreva sua anotação aqui...'} style={{...inputStyle,minHeight:330,resize:'vertical',lineHeight:1.6,fontSize:13}}/></div>
+              <NoteAttachments
+                noteId={editor.id}
+                attachments={editor.attachments || []}
+                onChange={handleAttachmentsChange}
+                onError={setAttachmentError}
+              />
+              {attachmentError && <div className="note-attachment-error">{attachmentError}</div>}
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                 <span style={{fontSize:10,color:'var(--text-muted)'}}>{editor.content.length} caracteres · atualizado em {formatDate(editor.updated_at)}</span>
                 <div style={{display:'flex',gap:7}}>

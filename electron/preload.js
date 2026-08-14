@@ -23,7 +23,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uexFetch:           (data)       => ipcRenderer.invoke('uex-fetch', data),
   uexImage:           (url)        => ipcRenderer.invoke('uex-image', url),
   uexPost: (data) => ipcRenderer.invoke('uex-post', data),
-  googleTranslate: (data) => ipcRenderer.invoke('google-translate', data),
   mymemoryTranslate: (data) => ipcRenderer.invoke('mymemory-translate', data),
   getSeedNames:        ()           => ipcRenderer.invoke('get-seed-names'),
   // Blueprints
@@ -47,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dataRestartApp:       ()       => ipcRenderer.invoke('data-restart-app'),
   dataExportFull:       (data)   => ipcRenderer.invoke('data-export-full', data),
   dataImportFull:       ()       => ipcRenderer.invoke('data-import-full'),
+  // Anexos do Bloco de Notas — imagens e PDFs salvos na pasta central
+  notesSaveAttachment:   (payload) => ipcRenderer.invoke('notes-save-attachment', payload),
+  notesReadAttachment:   (storedName) => ipcRenderer.invoke('notes-read-attachment', storedName),
+  notesDeleteAttachment: (storedName) => ipcRenderer.invoke('notes-delete-attachment', storedName),
+  notesOpenAttachment:   (storedName) => ipcRenderer.invoke('notes-open-attachment', storedName),
+  notesDownloadAttachment: (payload) => ipcRenderer.invoke('notes-download-attachment', payload),
   // Monitor automático independente do Game.log
   missionMonitorChooseLog: () => ipcRenderer.invoke('mission-monitor-choose-log'),
   missionMonitorStart:     (logPath) => ipcRenderer.invoke('mission-monitor-start', logPath),

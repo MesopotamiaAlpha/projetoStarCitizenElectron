@@ -1,45 +1,65 @@
 {
   "name": "companheiro-emoto",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Companheiro Emoto — Star Citizen Companion App",
   "author": "Companheiro Emoto",
   "main": "electron/main.js",
   "scripts": {
-    "react-start": "cross-env BROWSER=none react-scripts start",
-    "dev": "concurrently \"cross-env BROWSER=none react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
+    "react-start": "cross-env BROWSER=none CI=true react-scripts start",
+    "dev": "concurrently \"cross-env BROWSER=none CI=true react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
     "react-build": "react-scripts build",
     "build": "npm run build:win",
     "build:win": "npm run react-build && electron-builder --win",
-    "electron": "electron ."
+    "electron": "electron .",
+    "check:electron": "node --check electron/main.js && node --check electron/preload.js && node --check electron/missionWatcher.js",
+    "test": "react-scripts test --watchAll=false --passWithNoTests",
+    "verify": "npm run test && npm run react-build && npm run check:electron"
   },
   "dependencies": {
-    "sql.js": "^1.12.0",
+    "lucide-react": "^0.383.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "lucide-react": "^0.383.0"
+    "sql.js": "^1.12.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^29.0.0",
-    "electron-builder": "^24.9.1",
-    "wait-on": "^7.2.0",
-    "react-scripts": "5.0.1"
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "react-scripts": "5.0.1",
+    "wait-on": "^7.2.0"
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
   },
   "build": {
     "extends": null,
-    "appId": "com.sctracker.armor",
+    "appId": "com.companheiroemoto.app",
     "productName": "Companheiro Emoto",
     "artifactName": "Companheiro-Emoto-${version}.${ext}",
     "asar": true,
-    "files": ["build/**/*", "electron/**/*", "!**/CompanheiroEmoto{,/**/*}", "!**/backup{,/**/*}", "!**/*.map"],
-    "directories": { "output": "dist" },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "!**/CompanheiroEmoto{,/**/*}",
+      "!**/backup{,/**/*}",
+      "!**/*.map"
+    ],
+    "directories": {
+      "output": "dist"
+    },
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "electron-icons/icon.ico",
       "requestedExecutionLevel": "asInvoker",
       "publisherName": "Companheiro Emoto"

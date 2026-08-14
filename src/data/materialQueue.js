@@ -7,27 +7,34 @@ import {
   fromCargoBase,
   roundCargo,
 } from './cargoUnits';
+import { readJson, writeJson } from '../utils/storage';
 
 const KEY = 'sc_material_queue_v1';
 const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
 
+const EMPTY_QUEUE = { queuedBlueprints: [], collectedMaterials: {} };
+
 export function loadQueue() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || { queuedBlueprints:[], collectedMaterials:{} }; }
-  catch { return { queuedBlueprints:[], collectedMaterials:{} }; }
+  const value = readJson(KEY, EMPTY_QUEUE);
+  if (!value || typeof value !== 'object') return { ...EMPTY_QUEUE };
+  return {
+    ...EMPTY_QUEUE,
+    ...value,
+    queuedBlueprints: Array.isArray(value.queuedBlueprints) ? value.queuedBlueprints : [],
+    collectedMaterials: value.collectedMaterials && typeof value.collectedMaterials === 'object' ? value.collectedMaterials : {},
+  };
 }
-export function saveQueue(q) { localStorage.setItem(KEY, JSON.stringify(q)); }
+export function saveQueue(q) { return writeJson(KEY, q); }
 
 // Ordem manual dos materiais no Tracking. Mantida separada da fila para não alterar dados antigos.
 export function loadMaterialOrder() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MATERIAL_ORDER_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
-  } catch { return []; }
+  const parsed = readJson(MATERIAL_ORDER_KEY, []);
+  return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
 }
 
 export function saveMaterialOrder(order) {
   const normalized = Array.isArray(order) ? order.filter(Boolean).map(String) : [];
-  localStorage.setItem(MATERIAL_ORDER_KEY, JSON.stringify([...new Set(normalized)]));
+  writeJson(MATERIAL_ORDER_KEY, [...new Set(normalized)]);
   return normalized;
 }
 

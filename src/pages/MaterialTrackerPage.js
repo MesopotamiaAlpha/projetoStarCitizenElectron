@@ -671,8 +671,16 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
         {isComplete ? (
           <div className="bp-queue-complete-note"><CheckCircle2 size={13}/> Materiais prontos para craft</div>
         ) : (
-          <button className="bp-queue-consume" onClick={() => onConsume(bp)} disabled={consuming} title="Usar os minérios elegíveis do Baú e concluir esta blueprint">
-            {consuming ? <RefreshCw size={12} className="bp-queue-spinner"/> : <Archive size={12}/>}<span>{consuming ? 'Calculando...' : 'Concluir do Baú'}</span>
+          <button
+            className="bp-queue-consume bp-queue-consume-icon"
+            onClick={() => onConsume(bp)}
+            disabled={consuming}
+            title={consuming ? 'Calculando o uso do Baú' : 'Concluir pelo Baú'}
+            aria-label={consuming ? `Calculando o uso do Baú para ${bp.bpName}` : `Concluir ${bp.bpName} usando os minérios elegíveis do Baú`}
+            aria-busy={consuming}
+            data-tooltip={consuming ? 'Calculando o uso do Baú...' : 'Concluir pelo Baú: usa automaticamente os minérios elegíveis para finalizar esta blueprint.'}
+          >
+            {consuming ? <RefreshCw size={14} className="bp-queue-spinner"/> : <Archive size={14}/>} 
           </button>
         )}
       </div>

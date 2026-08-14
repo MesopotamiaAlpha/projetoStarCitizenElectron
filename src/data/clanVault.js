@@ -1,13 +1,18 @@
 // Cofre do Clã — minérios enviados para guarda compartilhada, aguardando entrega ao dono
+// Cofre do Clã — persistência local compartilhada entre a tela e o Dashboard.
+import { readJson, writeJson } from '../utils/storage';
+
 const KEY = 'sc_clan_vault_v1';
 
 export const VAULT_UNITS = ['SCU', 'uSCU', 'unidade'];
 
 export function loadClanVault() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || []; }
-  catch { return []; }
+  const value = readJson(KEY, []);
+  return Array.isArray(value) ? value : [];
 }
-export function saveClanVault(list) { localStorage.setItem(KEY, JSON.stringify(list)); }
+export function saveClanVault(list) {
+  return writeJson(KEY, Array.isArray(list) ? list : []);
+}
 
 // Adiciona uma ou mais entradas novas (ex: vindas do fim de uma sessão de mineração)
 export function addClanVaultEntries(entries) {

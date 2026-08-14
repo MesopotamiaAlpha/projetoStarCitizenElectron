@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { loadToken, checkForUpdates, messageIdentity, notificationIdentity, isCrossFeedDuplicate } from '../data/uexNegotiations';
 import { checkMarketAlerts, focusMarketAlert, loadMarketAlertSettings, MARKET_ALERT_SETTINGS_UPDATED_EVENT } from '../data/uexMarketAlerts';
+import { UEX_ACTIVE_NEGOTIATION_EVENT, getActiveNegotiationHash } from '../data/uexUiEvents';
 
 const POLL_INTERVAL_MS = 90 * 1000; // 90s para negociações
 const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
@@ -47,11 +48,36 @@ export default function UexNotificationBell({ onNavigate }) {
   const [error, setError]     = useState('');
   const [hasToken, setHasToken] = useState(!!loadToken());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
+  const [activeNegotiationHash, setActiveNegotiationHash] = useState(() => getActiveNegotiationHash());
   const wrapRef = useRef(null);
   const checkingRef = useRef(false);
   const marketCheckingRef = useRef(false);
   const initialMarketSettings = loadMarketAlertSettings();
   const marketNextCheckRef = useRef(initialMarketSettings.nextCheckAt);
+
+  useEffect(() => {
+    const handleActiveNegotiation = event => {
+      const activeHash = String(event?.detail?.hash || '').trim();
+      setActiveNegotiationHash(activeHash);
+      if (activeHash) {
+        setItems(previous => previous.filter(item => {
+          if (item.kind === 'message') return String(item.negotiationHash || '').trim() !== activeHash;
+          const references = [item.negotiationHash, item.hash, item.redir, item.url, item.link].map(value => String(value || ''));
+          return !references.some(value => value.includes(activeHash));
+        }));
+      }
+    };
+    window.addEventListener(UEX_ACTIVE_NEGOTIATION_EVENT, handleActiveNegotiation);
+    return () => window.removeEventListener(UEX_ACTIVE_NEGOTIATION_EVENT, handleActiveNegotiation);
+  }, []);
+
+  function isItemFromActiveNegotiation(item) {
+    const activeHash = String(activeNegotiationHash || '').trim();
+    if (!activeHash || !item) return false;
+    if (item.kind === 'message') return String(item.negotiationHash || '').trim() === activeHash;
+    const references = [item.negotiationHash, item.hash, item.redir, item.url, item.link].map(value => String(value || ''));
+    return references.some(value => value.includes(activeHash));
+  }
 
   function toggleMuted() {
     setMuted(prev => {
@@ -73,23 +99,22 @@ export default function UexNotificationBell({ onNavigate }) {
       const mapped = [
         ...newMessages.map(m => ({ kind: 'message', key: m.key || messageIdentity(m, m.negotiationHash), ...m })),
         ...newNotifications.map(n => ({ kind: 'notif', key: n.key || notificationIdentity(n), ...n })),
-      ];
-      if (mapped.length) {
-        setItems(prev => {
-          const existingKeys = new Set(prev.map(i => i.key));
-          const freshOnes = mapped.filter(i => !existingKeys.has(i.key));
-          if (freshOnes.length && !muted) playNotificationSound();
-          const merged = dedupeNotificationItems([...freshOnes, ...prev]);
-          return merged.sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 50);
-        });
-      }
+      ].filter(item => !isItemFromActiveNegotiation(item));
+      setItems(prev => {
+        const visiblePrevious = prev.filter(item => !isItemFromActiveNegotiation(item));
+        const existingKeys = new Set(visiblePrevious.map(i => i.key));
+        const freshOnes = mapped.filter(i => !existingKeys.has(i.key));
+        if (freshOnes.length && !muted) playNotificationSound();
+        const merged = dedupeNotificationItems([...freshOnes, ...visiblePrevious]);
+        return merged.sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 50);
+      });
     } catch (e) {
       if (!silent) setError(e.message);
     } finally {
       checkingRef.current = false;
       setChecking(false);
     }
-  }, [muted]);
+  }, [muted, activeNegotiationHash]);
 
   const runMarketCheck = useCallback(async (silent = true) => {
     if (marketCheckingRef.current) return;
@@ -174,8 +199,9 @@ export default function UexNotificationBell({ onNavigate }) {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'fixed', top: 12, right: 12, zIndex: 999, pointerEvents: 'none' }}>
-      <button
+    <div ref={wrapRef} className="uex-notification-widget" style={{ position: 'fixed', top: 12, right: 12, zIndex: 999, pointerEvents: 'none' }}>
+        <button
+        className="uex-notification-trigger"
         onClick={() => {
           if (!hasToken && !items.some(item => item.kind === 'market-alert')) { onNavigate && onNavigate('uexapi'); return; }
           setOpen(o => !o);
@@ -206,13 +232,13 @@ export default function UexNotificationBell({ onNavigate }) {
       </button>
 
       {open && (
-        <div style={{
+        <div className="uex-notification-panel" style={{
           position: 'absolute', top: 48, right: 0, width: 360, maxHeight: 460,
           background: 'var(--bg-panel)', border: '1px solid var(--border-normal)',
           borderRadius: 10, boxShadow: 'var(--shadow-card)', overflow: 'hidden',
           display: 'flex', flexDirection: 'column', pointerEvents: 'auto',
         }}>
-          <div style={{
+          <div className="uex-notification-header" style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
           }}>
@@ -248,7 +274,7 @@ export default function UexNotificationBell({ onNavigate }) {
             )}
 
             {items.map(item => (
-              <div key={item.key} style={{
+              <div key={item.key} className={`uex-notification-item ${item.kind === 'market-alert' ? 'is-market-alert' : ''}`} style={{
                 padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
                 display: 'flex', gap: 10, alignItems: 'flex-start',
               }}>
@@ -276,7 +302,7 @@ export default function UexNotificationBell({ onNavigate }) {
                     {timeAgo(item.dateAdded)}
                   </div>
                 </div>
-                <button onClick={() => handleDismissOne(item.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>
+                <button className="uex-notification-dismiss" onClick={() => handleDismissOne(item.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>
                   <X size={13} />
                 </button>
               </div>
@@ -285,6 +311,7 @@ export default function UexNotificationBell({ onNavigate }) {
 
           <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border-subtle)' }}>
             <button
+              className="uex-notification-refresh"
               onClick={() => Promise.all([runCheck(false), runMarketCheck(false)])}
               disabled={checking}
               style={{

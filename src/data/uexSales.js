@@ -1,19 +1,18 @@
 // ── Persistência compartilhada do Acompanhamento UEX ─────────────────────────
 // O módulo é usado pela tela de Vendas e pelo chat de Negociações para que uma
 // negociação concluída possa criar/atualizar o mesmo catálogo local sem duplicar.
+import { readJson, writeJson, dispatchStorageEvent } from '../utils/storage';
 
 const SALES_KEY = 'sc_uex_sales_v1';
 const CATALOG_KEY = 'sc_uex_catalog_v1';
 
 function loadArray(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
+  const parsed = readJson(key, []);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 function saveArray(key, value) {
-  localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+  return writeJson(key, Array.isArray(value) ? value : []);
 }
 
 export function loadUexSales() { return loadArray(SALES_KEY); }
@@ -195,9 +194,7 @@ export function registerNegotiationSale(negotiation) {
   if (catalogIndex >= 0) catalog[catalogIndex] = catalogEntry;
   else catalog.unshift(catalogEntry);
   saveUexCatalog(catalog);
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('sc_uex_sales_updated', { detail: { hash: sale.source_negotiation_hash } }));
-  }
+  dispatchStorageEvent('sc_uex_sales_updated', { hash: sale.source_negotiation_hash });
 
   return {
     sale: savedSale,
@@ -211,10 +208,8 @@ export function registerNegotiationSale(negotiation) {
 const NEGOTIATION_CLOSURES_KEY = 'sc_uex_negotiation_closures_v1';
 
 export function loadNegotiationClosures() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(NEGOTIATION_CLOSURES_KEY) || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch { return {}; }
+  const parsed = readJson(NEGOTIATION_CLOSURES_KEY, {});
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
 }
 
 export function getNegotiationClosure(hash) {
@@ -234,6 +229,7 @@ export function closeNegotiation(hash, status, details = {}) {
     ...details,
   };
   closures[key] = entry;
-  localStorage.setItem(NEGOTIATION_CLOSURES_KEY, JSON.stringify(closures));
+  writeJson(NEGOTIATION_CLOSURES_KEY, closures);
+  dispatchStorageEvent('sc_uex_sales_updated', { hash: key, closure: entry });
   return entry;
 }

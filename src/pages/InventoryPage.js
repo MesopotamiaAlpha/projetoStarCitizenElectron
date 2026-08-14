@@ -11,6 +11,7 @@ import { getItemMarketPrice, getMarketPriceForName } from '../data/uexMarketDB';
 import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
+import { publishInventoryUpdate } from '../data/inventoryEvents';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
@@ -1331,7 +1332,8 @@ export default function InventoryPage() {
       }));
       itensRef.current = normalized;
       setItens(normalized);
-    } catch(e) { console.error(e); }
+      return normalized;
+    } catch(e) { console.error(e); return []; }
     finally { setLoading(false); }
   }, [invAPI]);
 
@@ -1346,9 +1348,14 @@ export default function InventoryPage() {
     if (normalizedData.id) await invAPI.update(normalizedData);
     else { await invAPI.create(normalizedData); setProvenance('item', normalizedData.name, SOURCES.MANUAL); }
     setShowForm(false); setEditItem(null);
-    await loadData();
+    const refreshed = await loadData();
+    publishInventoryUpdate(refreshed);
   }
-  async function handleDelete(id) { await invAPI.delete(id); await loadData(); }
+  async function handleDelete(id) {
+    await invAPI.delete(id);
+    const refreshed = await loadData();
+    publishInventoryUpdate(refreshed);
+  }
 
   async function handleTransfer(item, { destination, quantity }) {
     const sourceQuantity = Math.max(0, Number(item.quantity) || 0);
@@ -1400,10 +1407,12 @@ export default function InventoryPage() {
           throw destinationError;
         }
       }
-      await loadData();
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
     } catch (e) {
       console.error('Erro ao transferir item:', e);
-      await loadData();
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
     }
   }
 
@@ -1421,8 +1430,10 @@ export default function InventoryPage() {
 
     try {
       await invAPI.update(updatedItem);
+      publishInventoryUpdate(itensRef.current);
     } catch (e) {
-      await loadData();
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
       console.error('Erro ao atualizar quantidade de script:', e);
     }
   }

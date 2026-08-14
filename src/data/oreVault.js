@@ -8,14 +8,18 @@ import {
   roundCargo,
   cargoEquivalentTotal,
 } from './cargoUnits';
+import { readJson, writeJson } from '../utils/storage';
 
 const KEY = 'sc_ore_vault_v1';
 
+const EMPTY_VAULT = { entries: [] };
+
 export function loadVault() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || { entries: [] }; }
-  catch { return { entries: [] }; }
+  const value = readJson(KEY, EMPTY_VAULT);
+  if (!value || typeof value !== 'object') return { ...EMPTY_VAULT };
+  return { ...value, entries: Array.isArray(value.entries) ? value.entries : [] };
 }
-export function saveVault(v) { localStorage.setItem(KEY, JSON.stringify(v)); }
+export function saveVault(v) { return writeJson(KEY, v); }
 
 // Adicionar ou atualizar entrada
 export function addOreEntry(entry) {

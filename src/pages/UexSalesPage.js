@@ -3,11 +3,15 @@ import {
   TrendingUp, TrendingDown, RefreshCw, Plus, Edit3, Trash2,
   Save, X, Search, Package, DollarSign, BarChart3, ShoppingBag,
   CheckCircle2, AlertTriangle, Archive, Star, Eye, ChevronDown,
-  ChevronUp, Globe, Clock, Minus, Info, ExternalLink
+  ChevronUp, Globe, Clock, Minus, Info, ExternalLink, MapPin, Filter
 } from 'lucide-react';
 import {
   loadUexSales, saveUexSales, loadUexCatalog, saveUexCatalog,
 } from '../data/uexSales';
+import { normalizeUexItemName } from '../data/uexItemsDB';
+import { buildUexListingUrl } from '../data/uexNegotiations';
+import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
+import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 const TOKEN_KEY    = 'sc_uex_token_v1';
@@ -73,6 +77,89 @@ function daysSince(ts) {
   const ms = toTimestampMs(ts);
   if (!ms) return 0;
   return Math.floor((Date.now() - ms) / 86400000);
+}
+
+function normalizeInventoryName(value) {
+  return normalizeUexItemName(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function normalizeMarketSlug(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function findMarketTrendForItem(item, trendData = []) {
+  const targetName = normalizeInventoryName(item?.title);
+  const targetSlug = normalizeMarketSlug(item?.item_slug || item?.slug);
+  const targetId = item?.id_item ?? item?.uex_item_id;
+  const rows = Array.isArray(trendData) ? trendData : [];
+  if (targetId !== null && targetId !== undefined && String(targetId).trim()) {
+    const byId = rows.find(row => String(row?.id_item ?? row?.uex_item_id ?? '').trim() === String(targetId).trim());
+    if (byId) return byId;
+  }
+  if (targetSlug) {
+    const bySlug = rows.find(row => normalizeMarketSlug(row?.item_slug || row?.slug) === targetSlug);
+    if (bySlug) return bySlug;
+  }
+  if (!targetName) return null;
+  return rows.find(row => normalizeInventoryName(row?.item_name || row?.name) === targetName) || null;
+}
+
+function inventoryLocationKey(item) {
+  return `${String(item?.system || 'Outro').trim()}::${String(item?.location_type || 'Outros').trim()}::${String(item?.location_name || 'Local não informado').trim()}`;
+}
+
+function getInventoryBinding(item) {
+  const raw = item?.inventory_binding;
+  const locationKeys = Array.isArray(raw?.locationKeys)
+    ? [...new Set(raw.locationKeys.map(key => String(key || '').trim()).filter(Boolean))]
+    : [];
+  return { locationKeys, linked: locationKeys.length > 0, updatedAt: raw?.updatedAt || null };
+}
+
+function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = []) {
+  const name = normalizeInventoryName(listing?.title);
+  const matches = (Array.isArray(inventoryItems) ? inventoryItems : [])
+    .filter(entry => normalizeInventoryName(entry?.name) === name);
+  const binding = getInventoryBinding(listing);
+  const locationMap = new Map((managedLocations || []).map(location => [location.key, location]));
+  const locationRows = [...new Map(matches.map(entry => {
+    const key = inventoryLocationKey(entry);
+    const managed = locationMap.get(key);
+    return [key, {
+      key,
+      label: managed?.label || `${entry.location_name || 'Local não informado'} · ${entry.system || 'Outro'} · ${entry.location_type || 'Outros'}`,
+      system: entry.system || 'Outro',
+      location_type: entry.location_type || 'Outros',
+      location_name: entry.location_name || 'Local não informado',
+      quantity: 0,
+    }];
+  })).values()];
+  matches.forEach(entry => {
+    const row = locationRows.find(candidate => candidate.key === inventoryLocationKey(entry));
+    if (row) row.quantity += Math.max(0, Number(entry.quantity) || 0);
+  });
+  binding.locationKeys.forEach(key => {
+    if (locationRows.some(row => row.key === key)) return;
+    const [system = 'Outro', location_type = 'Outros', location_name = 'Local não informado'] = key.split('::');
+    const managed = locationMap.get(key);
+    locationRows.push({ key, label: managed?.label || `${location_name} · ${system} · ${location_type}`, system, location_type, location_name, quantity: 0 });
+  });
+  const allQuantity = matches.reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
+  const linkedMatches = binding.linked ? matches.filter(entry => binding.locationKeys.includes(inventoryLocationKey(entry))) : [];
+  const linkedQuantity = linkedMatches.reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
+  const quantity = binding.linked ? linkedQuantity : allQuantity;
+  return {
+    name,
+    matches,
+    locationRows,
+    binding,
+    hasMatch: matches.length > 0,
+    isLinked: binding.linked,
+    allQuantity,
+    linkedQuantity,
+    quantity,
+    surplus: quantity - Math.max(0, Number(listing?.in_stock) || 0),
+  };
 }
 
 function listingExpiryState(listing, now = Date.now()) {
@@ -160,6 +247,69 @@ function MiniBarChart({ data, color='var(--accent-primary)', height=80 }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Modal de vínculo com o Inventário de Itens ─────────────────────────────────
+function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, onSave, onClose }) {
+  const summary = getInventoryStockSummary(listing, inventoryItems, managedLocations);
+  const [selectedKeys, setSelectedKeys] = useState(() => summary.binding.locationKeys);
+  const selectedQuantity = summary.locationRows
+    .filter(row => selectedKeys.includes(row.key))
+    .reduce((total, row) => total + row.quantity, 0);
+
+  function toggleLocation(key) {
+    setSelectedKeys(previous => previous.includes(key)
+      ? previous.filter(value => value !== key)
+      : [...previous, key]);
+  }
+
+  function handleSave() {
+    onSave(selectedKeys.length ? { locationKeys: selectedKeys, updatedAt: new Date().toISOString() } : null);
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1300, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div style={{ width:'min(560px,100%)', maxHeight:'90vh', overflowY:'auto', background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.36)', borderRadius:12, padding:18, boxShadow:'0 24px 80px rgba(0,0,0,0.7)' }} onMouseDown={event => event.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Vínculo de estoque interno</div>
+            <h3 style={{ margin:'5px 0 0', color:'var(--text-primary)', fontFamily:'Michroma,sans-serif', fontSize:15 }}>{listing.title}</h3>
+            <div style={{ marginTop:4, color:'var(--text-muted)', fontSize:11 }}>Escolha um ou mais locais do Inventário de Itens que devem alimentar este anúncio.</div>
+          </div>
+          <button onClick={onClose} title="Fechar" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-muted)', cursor:'pointer' }}><X size={14}/></button>
+        </div>
+
+        {!summary.hasMatch ? (
+          <div style={{ padding:12, border:'1px solid rgba(251,191,36,0.28)', background:'rgba(251,191,36,0.07)', borderRadius:7, color:'var(--accent-gold)', fontSize:11, lineHeight:1.55 }}>
+            Este item ainda não existe no Inventário de Itens. Cadastre <strong>{listing.title}</strong> no inventário para que os locais apareçam aqui e o estoque seja calculado automaticamente.
+          </div>
+        ) : (
+          <>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap', marginBottom:9, padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
+              <span style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</span>
+              <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity} unidade{selectedQuantity === 1 ? '' : 's'}</strong>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {summary.locationRows.map(row => (
+                <label key={row.key} style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 10px', border:`1px solid ${selectedKeys.includes(row.key) ? 'rgba(56,189,248,0.45)' : 'var(--border-subtle)'}`, background:selectedKeys.includes(row.key) ? 'rgba(56,189,248,0.09)' : 'rgba(255,255,255,0.02)', borderRadius:7, cursor:'pointer' }}>
+                  <input type="checkbox" checked={selectedKeys.includes(row.key)} onChange={() => toggleLocation(row.key)} />
+                  <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}>{row.label}</span>
+                  <strong style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{row.quantity}</strong>
+                </label>
+              ))}
+            </div>
+            <div style={{ marginTop:9, color:'var(--text-muted)', fontSize:10, lineHeight:1.45 }}>Se nenhum local for selecionado, o vínculo será removido. Alterações futuras no Inventário atualizarão este anúncio automaticamente.</div>
+          </>
+        )}
+
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:7, marginTop:15 }}>
+          <button onClick={onClose} style={{ padding:'7px 12px', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Cancelar</button>
+          {summary.binding.linked && <button onClick={() => onSave(null)} style={{ padding:'7px 12px', border:'1px solid rgba(251,113,133,0.28)', borderRadius:5, background:'rgba(251,113,133,0.07)', color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Remover vínculo</button>}
+          <button onClick={handleSave} disabled={!summary.hasMatch} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'7px 12px', border:'1px solid rgba(56,189,248,0.35)', borderRadius:5, background:'rgba(56,189,248,0.1)', color:'var(--accent-primary)', cursor:summary.hasMatch ? 'pointer' : 'not-allowed', opacity:summary.hasMatch ? 1 : 0.5, fontSize:11, fontWeight:700 }}><Save size={11}/> Salvar vínculo</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -361,19 +511,23 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 }
 
 // ── Card de item do catálogo com dados de mercado ─────────────────────────────
-function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
+function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendDataFetchedAt, inventoryItems, managedLocations, onOpenStockLink }) {
   const [expanded, setExpanded]   = useState(false);
   const [editStock, setEditStock]     = useState(false);
   const [stockVal, setStockVal]       = useState(String(item.in_stock || 0));
   const [internalVal, setInternalVal] = useState(String(item.internal_stock || 0));
   const [delConf, setDelConf]     = useState(false);
+  const inventorySummary = getInventoryStockSummary(item, inventoryItems, managedLocations);
+  const displayedInternalStock = inventorySummary.isLinked ? inventorySummary.quantity : Number(item.internal_stock) || 0;
 
   const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
   const totalSold = itemSales.reduce((a,s) => a + (s.total_revenue || 0), 0);
   const qtyListed = item.in_stock || 0;
 
-  // Dados de tendência da UEX para este item
-  const trend = trendData?.find(t => t.item_name?.toLowerCase().includes(item.title?.split(' ')[0]?.toLowerCase() || ''));
+  // Dados de tendência da UEX: correspondência exata por ID, slug ou nome.
+  // Nunca usar apenas o primeiro termo do título, pois isso mistura itens como
+  // Yormandi Tongue e Yormandi Eye.
+  const trend = findMarketTrendForItem(item, trendData);
 
   // Detectar qualidade no título
   const suggestedQ = extractQualityFromTitle(item.title || '');
@@ -392,6 +546,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
   const expiryBackground = isExpired ? 'rgba(251,113,133,0.045)' : isExpiringSoon ? 'rgba(251,191,36,0.045)' : 'var(--bg-card)';
 
   return (
+    <>
     <div style={{
       background:expiryBackground,
       border:`1px solid ${expiryBorder}`,
@@ -423,7 +578,9 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
           <div style={{ fontFamily:'Michroma,sans-serif', fontSize:15, fontWeight:800, color:'var(--accent-gold)' }}>{ptMoney(item.price)} <span style={{ fontSize:10, color:'var(--text-muted)' }}>aUEC</span></div>
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end', fontSize:10, color:'var(--text-muted)', marginTop:2 }}>
             <span>Listado: {qtyListed}</span>
-            <span style={{ color:'var(--accent-primary)' }}>Estoque: {item.internal_stock || 0}</span>
+            <span style={{ color: inventorySummary.isLinked ? 'var(--accent-green)' : inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)' }}>
+              Estoque: {inventorySummary.isLinked ? displayedInternalStock : inventorySummary.hasMatch ? 'não vinculado' : 'desconhecido'}
+            </span>
           </div>
         </div>
 
@@ -469,28 +626,32 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
               </div>
 
               {/* Controle de estoque interno */}
-              <div style={{ marginTop:10, padding:'10px 12px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:7 }}>
-                <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>📦 Estoque Interno</div>
-                {editStock ? (
-                  <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                    <input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)}
-                      style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/>
-                    <button onClick={()=>{onEditStock(item.id, parseInt(stockVal)||0); setEditStock(false);}}
-                      style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>
-                      <Save size={10}/> Salvar
-                    </button>
-                    <button onClick={()=>setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button>
-                  </div>
+              <div style={{ marginTop:10, padding:'10px 12px', background:inventorySummary.isLinked ? 'rgba(52,211,153,0.06)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.06)' : 'rgba(251,113,133,0.05)', border:`1px solid ${inventorySummary.isLinked ? 'rgba(52,211,153,0.2)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.24)' : 'rgba(251,113,133,0.22)'}`, borderRadius:7 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:7 }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:inventorySummary.isLinked ? 'var(--accent-green)' : inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)', textTransform:'uppercase', letterSpacing:'0.08em' }}>📦 Estoque Interno</div>
+                  {inventorySummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>VINCULADO AO INVENTÁRIO</span>}
+                </div>
+                {inventorySummary.isLinked ? (
+                  <>
+                    <div style={{ display:'flex', alignItems:'baseline', gap:8, flexWrap:'wrap' }}>
+                      <span style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-green)' }}>{displayedInternalStock}</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidade{displayedInternalStock === 1 ? '' : 's'} no inventário selecionado</span>
+                    </div>
+                    <div style={{ marginTop:5, fontSize:10, color:inventorySummary.surplus >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                      Após vender as {qtyListed} listadas: <strong>{inventorySummary.surplus >= 0 ? `${inventorySummary.surplus} sobrando` : `${Math.abs(inventorySummary.surplus)} em falta`}</strong>
+                    </div>
+                  </>
                 ) : (
-                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-primary)' }}>{item.internal_stock || 0}</span>
-                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidades no inventário</span>
-                    <button onClick={()=>{setStockVal(String(item.internal_stock||0)); setEditStock(true);}}
-                      style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, padding:'4px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>
-                      <Edit3 size={9}/> Editar
-                    </button>
+                  <div style={{ fontSize:11, color:inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)', lineHeight:1.45 }}>
+                    <strong>{inventorySummary.hasMatch ? 'Estoque não vinculado' : 'Estoque desconhecido'}</strong>
+                    <div>{inventorySummary.hasMatch ? 'O item existe no inventário, mas nenhum local foi selecionado.' : 'Cadastre este item no Inventário de Itens para descobrir a quantidade disponível.'}</div>
                   </div>
                 )}
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, flexWrap:'wrap' }}>
+                  <button onClick={() => onOpenStockLink(item)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}><MapPin size={10}/> {inventorySummary.isLinked ? 'Editar locais' : 'Vincular estoque'}</button>
+                  {!inventorySummary.isLinked && <button onClick={() => { setStockVal(String(item.internal_stock || 0)); setEditStock(true); }} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 9px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Edit3 size={9}/> Informar manualmente</button>}
+                </div>
+                {editStock && !inventorySummary.isLinked && <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:8 }}><input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)} style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/><button onClick={() => { onEditStock(item.id, parseInt(stockVal, 10) || 0); setEditStock(false); }} style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Save size={10}/> Salvar</button><button onClick={() => setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button></div>}
               </div>
             </div>
 
@@ -498,8 +659,11 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
             <div>
               {trend ? (
                 <div>
-                  <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7, display:'flex', alignItems:'center', gap:5 }}>
+                  <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:2, display:'flex', alignItems:'center', gap:5 }}>
                     <Globe size={9}/> Mercado UEX — {trend.item_name}
+                  </div>
+                  <div style={{ fontSize:9, color:'var(--text-muted)', marginBottom:7 }}>
+                    Fonte: <span style={{ color:'var(--accent-primary)' }}>marketplace_trends</span> · {trend.currency || 'UEC'} · snapshot {trendDataFetchedAt ? ptDate(trendDataFetchedAt) : 'não registrado'} · cache da UEX: até 1h
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:10 }}>
                     {[
@@ -573,12 +737,17 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 
 // ── Tab: Meus Itens (catálogo) ────────────────────────────────────────────────
-function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAddEsgotado }) {
+function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryItems = [], managedLocations = [], onEditStock, onDeleteItem, onAddEsgotado, onOpenStockLink }) {
   const [search, setSearch] = useState('');
+  const displayedStock = item => {
+    const summary = getInventoryStockSummary(item, inventoryItems, managedLocations);
+    return summary.isLinked ? summary.quantity : Number(item.internal_stock) || 0;
+  };
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('date');
 
@@ -596,21 +765,25 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
     if (sortBy === 'price_desc') list = [...list].sort((a,b) => (b.price||0) - (a.price||0));
     if (sortBy === 'date')       list = [...list].sort((a,b) => (b.date_added||0) - (a.date_added||0));
     if (sortBy === 'name')       list = [...list].sort((a,b) => (a.title||'').localeCompare(b.title||''));
-    if (sortBy === 'stock')      list = [...list].sort((a,b) => (b.internal_stock||0) - (a.internal_stock||0));
+    if (sortBy === 'stock')      list = [...list].sort((a,b) => displayedStock(b) - displayedStock(a));
     return list;
-  }, [catalog, search, filterStatus, sortBy]);
+  }, [catalog, search, filterStatus, sortBy, inventoryItems, managedLocations]);
 
   const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   return (
     <div>
       {/* Cabeçalho com totais */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:8, padding:'7px 10px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.14)', borderRadius:6 }}>
+        <span style={{ fontSize:10, color:'var(--text-muted)' }}>Fonte: <strong style={{ color:'var(--accent-primary)' }}>UEX · marketplace_trends</strong> · médias de venda, faixa de preços, anúncios ativos e negociações</span>
+        <span style={{ fontSize:10, color:trendDataFetchedAt ? 'var(--accent-green)' : 'var(--accent-gold)', fontFamily:'Share Tech Mono,monospace' }}>{trendDataFetchedAt ? `Consultado em ${ptDate(trendDataFetchedAt)}` : 'Ainda não consultado'}</span>
+      </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
         {[
           { label:'Total de Itens', value:catalog.length, color:'var(--accent-primary)', sub:'no catálogo' },
           { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out && (i.in_stock===undefined||i.in_stock>0)).length, color:'var(--accent-green)', sub:'listados ativamente' },
           { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out||(i.in_stock!==undefined&&i.in_stock<=0)).length, color:'var(--accent-red)', sub:'sem estoque' },
-          { label:'Estoque Total', value:catalog.reduce((a,i)=>a+(i.internal_stock||0),0), color:'var(--accent-gold)', sub:'no inventário' },
+          { label:'Estoque Total', value:catalog.reduce((a,i)=>a+displayedStock(i),0), color:'var(--accent-gold)', sub:'no inventário/vínculos' },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
             <div style={{ fontFamily:'Michroma,sans-serif', fontSize:18, fontWeight:800, color }}>{value}</div>
@@ -664,6 +837,10 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
             item={item}
             sales={sales}
             trendData={trendData}
+            trendDataFetchedAt={trendDataFetchedAt}
+            inventoryItems={inventoryItems}
+            managedLocations={managedLocations}
+            onOpenStockLink={onOpenStockLink}
             onEditStock={onEditStock}
             onDelete={onDeleteItem}
           />
@@ -963,35 +1140,170 @@ function SalesTab({ sales, onDelete, onUpdate }) {
 }
 
 // ── Tab: Tendências do Mercado ────────────────────────────────────────────────
-function TrendsTab({ catalog, trendData, loading, onRefresh }) {
+function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh }) {
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortBy, setSortBy] = useState('variation_desc');
+  const [filters, setFilters] = useState({
+    avgSellMin:'', avgSellMax:'', monthAvgMin:'', monthAvgMax:'',
+    minSellMin:'', minSellMax:'', maxSellMin:'', maxSellMax:'',
+    listingsMin:'', listingsMax:'', negotiationsMin:'', negotiationsMax:'',
+    variationMin:'', variationMax:'',
+  });
+
+  const toMetricNumber = value => {
+    const parsed = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
   const myItems = useMemo(() => {
-    if (!trendData || trendData.length === 0 || catalog.length === 0) return [];
+    if (!Array.isArray(trendData) || trendData.length === 0 || catalog.length === 0) return [];
     return catalog.map(item => {
-      const keyword = (item.title||'').split(' ')[0]?.toLowerCase();
-      const trend = trendData.find(t => t.item_name?.toLowerCase().includes(keyword || ''));
-      return trend ? { ...item, trend } : null;
+      const trend = findMarketTrendForItem(item, trendData);
+      if (!trend) return null;
+      const avgSell = toMetricNumber(trend.price_avg_sell);
+      const monthAvg = toMetricNumber(trend.price_avg_month_sell);
+      const variation = monthAvg > 0 ? ((avgSell - monthAvg) / monthAvg) * 100 : null;
+      const recommended = avgSell > 0 ? Math.round(avgSell * 0.95) : null;
+      const ownPrice = toMetricNumber(item.price);
+      const directListingUrl = [item.listing_url, item.listingUrl, item.url, item.link, item.source_listing_url]
+        .map(value => String(value || '').trim())
+        .find(value => /^https?:\/\//i.test(value));
+      const listingSlug = item.source_listing_slug || item.listing_slug || item.slug;
+      const listingUrl = directListingUrl || (listingSlug ? buildUexListingUrl(listingSlug) : (trend.link_prices || 'https://uexcorp.space/marketplace/'));
+      return {
+        item,
+        trend,
+        listingUrl,
+        avgSell,
+        monthAvg,
+        minSell: toMetricNumber(trend.price_min_sell),
+        maxSell: toMetricNumber(trend.price_max_sell),
+        listings: toMetricNumber(trend.listings_count_sell),
+        negotiations: toMetricNumber(trend.negotiations_count),
+        variation,
+        recommended,
+        priceDiff: recommended && ownPrice ? recommended - ownPrice : null,
+      };
     }).filter(Boolean);
   }, [catalog, trendData]);
 
-  const filtered = search.trim()
-    ? myItems.filter(i => i.title?.toLowerCase().includes(search.toLowerCase()) || i.trend?.item_name?.toLowerCase().includes(search.toLowerCase()))
-    : myItems;
+  const setFilter = (key, value) => setFilters(previous => ({ ...previous, [key]: value }));
+  const withinRange = (value, min, max) => {
+    const minValue = min === '' ? null : toMetricNumber(min);
+    const maxValue = max === '' ? null : toMetricNumber(max);
+    return (minValue === null || value >= minValue) && (maxValue === null || value <= maxValue);
+  };
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const list = myItems.filter(row => {
+      const matchesSearch = !query || row.item.title?.toLowerCase().includes(query) || row.trend.item_name?.toLowerCase().includes(query);
+      return matchesSearch
+        && withinRange(row.avgSell, filters.avgSellMin, filters.avgSellMax)
+        && withinRange(row.monthAvg, filters.monthAvgMin, filters.monthAvgMax)
+        && withinRange(row.minSell, filters.minSellMin, filters.minSellMax)
+        && withinRange(row.maxSell, filters.maxSellMin, filters.maxSellMax)
+        && withinRange(row.listings, filters.listingsMin, filters.listingsMax)
+        && withinRange(row.negotiations, filters.negotiationsMin, filters.negotiationsMax)
+        && ((filters.variationMin === '' && filters.variationMax === '') || (row.variation !== null && withinRange(row.variation, filters.variationMin, filters.variationMax)));
+    });
+    const direction = sortBy.endsWith('_asc') ? 1 : -1;
+    const metricKey = sortBy.replace(/_(?:asc|desc)$/, '');
+    return [...list].sort((a, b) => {
+      if (metricKey === 'name') return a.item.title.localeCompare(b.item.title) * direction;
+      const aValue = a[metricKey] === null ? Number.NEGATIVE_INFINITY : a[metricKey];
+      const bValue = b[metricKey] === null ? Number.NEGATIVE_INFINITY : b[metricKey];
+      return (aValue - bValue) * direction;
+    });
+  }, [myItems, search, filters, sortBy]);
+
+  const activeFilterCount = Object.values(filters).filter(value => value !== '').length;
+  const [expandedItemId, setExpandedItemId] = useState(null);
+  const [referenceAds, setReferenceAds] = useState({});
+  const [referenceLoadingId, setReferenceLoadingId] = useState(null);
+  const [referenceErrors, setReferenceErrors] = useState({});
+
+  async function toggleReferenceAds(row) {
+    const key = String(row.item.id);
+    if (expandedItemId === key) {
+      setExpandedItemId(null);
+      return;
+    }
+    setExpandedItemId(key);
+    if (Object.prototype.hasOwnProperty.call(referenceAds, key)) return;
+    const itemId = row.trend?.id_item ?? row.trend?.uex_item_id;
+    if (itemId === null || itemId === undefined || String(itemId).trim() === '') {
+      setReferenceErrors(previous => ({ ...previous, [key]: 'A UEX não retornou o id_item necessário para consultar os anúncios.' }));
+      return;
+    }
+    setReferenceLoadingId(key);
+    setReferenceErrors(previous => ({ ...previous, [key]: '' }));
+    try {
+      const response = await uexFetch(`marketplace_listings?id_item=${encodeURIComponent(itemId)}&operation=sell`);
+      const data = Array.isArray(response) ? response : Array.isArray(response?.data) ? response.data : [];
+      const references = data
+        .filter(ad => String(ad?.id_item ?? '') === String(itemId) && String(ad?.operation || 'sell').toLowerCase() === 'sell' && Number(ad?.is_sold_out) !== 1 && String(ad?.id ?? '') !== String(row.item.id))
+        .sort((a, b) => Number(a?.price || 0) - Number(b?.price || 0))
+        .slice(0, 3);
+      setReferenceAds(previous => ({ ...previous, [key]: references }));
+    } catch (error) {
+      setReferenceErrors(previous => ({ ...previous, [key]: error.message || 'Não foi possível carregar os anúncios de referência.' }));
+    } finally {
+      setReferenceLoadingId(null);
+    }
+  }
 
   return (
     <div>
-      <div style={{ display:'flex', gap:8, marginBottom:12, alignItems:'center' }}>
-        <div style={{ position:'relative', flex:1 }}>
+      <div style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center', flexWrap:'wrap' }}>
+        <div style={{ position:'relative', flex:'1 1 220px', minWidth:180 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
-            placeholder="Filtrar por item..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <input style={{ width:'100%', padding:'7px 10px 7px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+            placeholder="Buscar item..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
-        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', background:'rgba(56,189,248,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', opacity:loading?0.5:1 }}>
+        <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{ padding:'7px 24px 7px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontSize:11, outline:'none' }}>
+          <option value="variation_desc">Maior alta vs 30 dias</option>
+          <option value="variation_asc">Menor alta vs 30 dias</option>
+          <option value="avgSell_desc">Maior média atual</option>
+          <option value="avgSell_asc">Menor média atual</option>
+          <option value="listings_desc">Mais anúncios ativos</option>
+          <option value="negotiations_desc">Mais negociações</option>
+          <option value="name_asc">Nome A-Z</option>
+        </select>
+        <button onClick={() => setFiltersOpen(value => !value)} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:activeFilterCount ? 'rgba(251,191,36,0.12)' : 'rgba(56,189,248,0.06)', border:`1px solid ${activeFilterCount ? 'rgba(251,191,36,0.35)' : 'var(--border-subtle)'}`, borderRadius:5, color:activeFilterCount ? 'var(--accent-gold)' : 'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700 }}>
+          <Filter size={11}/> Filtros {activeFilterCount ? `(${activeFilterCount})` : ''}
+        </button>
+        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(56,189,248,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:loading?'not-allowed':'pointer', fontSize:11, fontWeight:700, opacity:loading?0.5:1 }}>
           <RefreshCw size={11} style={{ animation:loading?'spin 1s linear infinite':'none' }}/> Atualizar
         </button>
-        <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} com dados</span>
+        <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length}/{myItems.length} com dados</span>
       </div>
+      <div style={{ marginBottom:10, fontSize:10, color:'var(--text-muted)' }}>
+        Fonte: <strong style={{ color:'var(--accent-primary)' }}>UEX · marketplace_trends</strong> · {trendDataFetchedAt ? `snapshot consultado em ${ptDate(trendDataFetchedAt)}` : 'snapshot ainda não consultado'} · cache informado pela UEX: até 1h.
+      </div>
+      {filtersOpen && (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))', gap:8, marginBottom:12, padding:10, background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:7 }}>
+          {[
+            ['avgSell','Média atual de venda','aUEC'],
+            ['monthAvg','Média de 30 dias','aUEC'],
+            ['minSell','Mínimo de venda','aUEC'],
+            ['maxSell','Máximo de venda','aUEC'],
+            ['listings','Anúncios ativos','qtd.'],
+            ['negotiations','Negociações','qtd.'],
+            ['variation','Variação vs 30 dias','%'],
+          ].map(([key, label, unit]) => (
+            <div key={key} style={{ padding:8, background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:5 }}>
+              <div style={{ fontSize:9, color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', marginBottom:5 }}>{label} · {unit}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5 }}>
+                <input type="number" value={filters[`${key}Min`]} onChange={e=>setFilter(`${key}Min`, e.target.value)} placeholder="Mín." style={{ width:'100%', boxSizing:'border-box', padding:'5px 6px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-primary)', fontSize:11, outline:'none' }}/>
+                <input type="number" value={filters[`${key}Max`]} onChange={e=>setFilter(`${key}Max`, e.target.value)} placeholder="Máx." style={{ width:'100%', boxSizing:'border-box', padding:'5px 6px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-primary)', fontSize:11, outline:'none' }}/>
+              </div>
+            </div>
+          ))}
+          <button onClick={() => setFilters({ avgSellMin:'', avgSellMax:'', monthAvgMin:'', monthAvgMax:'', minSellMin:'', minSellMax:'', maxSellMin:'', maxSellMax:'', listingsMin:'', listingsMax:'', negotiationsMin:'', negotiationsMax:'', variationMin:'', variationMax:'' })} style={{ alignSelf:'end', padding:'7px 10px', border:'1px solid rgba(251,113,133,0.28)', borderRadius:5, background:'rgba(251,113,133,0.07)', color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Limpar filtros</button>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div style={{ textAlign:'center', padding:'40px 0', color:'var(--text-muted)' }}>
@@ -1002,12 +1314,8 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
         </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          {filtered.map(item => {
-            const t = item.trend;
-            const variation = t.price_avg_sell && t.price_avg_month_sell
-              ? ((t.price_avg_sell - t.price_avg_month_sell) / t.price_avg_month_sell) * 100 : null;
-            const recommended = t.price_avg_sell ? Math.round(t.price_avg_sell * 0.95) : null;
-            const priceDiff = recommended && item.price ? recommended - item.price : null;
+          {filtered.map(row => {
+            const { item, trend: t, listingUrl, variation, recommended, priceDiff } = row;
 
             return (
               <div key={item.id} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'12px 14px' }}>
@@ -1049,8 +1357,59 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
                     <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:3 }}>
                       {t.negotiations_count} negoc. · {t.listings_count_sell} anúncios
                     </div>
+                    <a href={listingUrl} target="_blank" rel="noreferrer" onClick={event=>event.stopPropagation()} style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:8, padding:'6px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.28)', borderRadius:5, color:'var(--accent-primary)', fontSize:10, fontWeight:700, textDecoration:'none', whiteSpace:'nowrap' }} title="Abrir este anúncio na UEX">
+                      <ExternalLink size={11}/> Abrir anúncio UEX
+                    </a>
+                    <button type="button" onClick={() => toggleReferenceAds(row)} style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5, marginTop:6, padding:'6px 9px', background:expandedItemId === String(item.id) ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.03)', border:`1px solid ${expandedItemId === String(item.id) ? 'rgba(251,191,36,0.3)' : 'var(--border-subtle)'}`, borderRadius:5, color:expandedItemId === String(item.id) ? 'var(--accent-gold)' : 'var(--text-secondary)', cursor:'pointer', fontSize:10, fontWeight:700, whiteSpace:'nowrap' }} title="Mostrar até três anúncios de referência">
+                      {expandedItemId === String(item.id) ? <ChevronUp size={11}/> : <ChevronDown size={11}/>} {expandedItemId === String(item.id) ? 'Ocultar referências' : 'Comparar 3 anúncios'}
+                    </button>
                   </div>
                 </div>
+                {expandedItemId === String(item.id) && (
+                  <div style={{ marginTop:12, paddingTop:10, borderTop:'1px solid rgba(148,163,184,0.16)' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+                      <div>
+                        <div style={{ fontSize:10, color:'var(--accent-gold)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.06em' }}>Anúncios de referência</div>
+                        <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:2 }}>Até 3 anúncios ativos de venda do mesmo item usados para contextualizar o mercado.</div>
+                      </div>
+                      <span style={{ fontSize:10, color:'var(--text-muted)', fontFamily:'Share Tech Mono,monospace' }}>{(referenceAds[String(item.id)] || []).length}/3 encontrados</span>
+                    </div>
+                    {referenceLoadingId === String(item.id) ? (
+                      <div style={{ padding:'12px 8px', color:'var(--text-muted)', fontSize:11 }}>Consultando anúncios ativos da UEX...</div>
+                    ) : referenceErrors[String(item.id)] ? (
+                      <div style={{ padding:'9px 10px', color:'var(--accent-red)', background:'rgba(251,113,133,0.06)', border:'1px solid rgba(251,113,133,0.2)', borderRadius:5, fontSize:11 }}>{referenceErrors[String(item.id)]}</div>
+                    ) : (referenceAds[String(item.id)] || []).length === 0 ? (
+                      <div style={{ padding:'9px 10px', color:'var(--text-muted)', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:5, fontSize:11 }}>Nenhum anúncio ativo de venda foi encontrado para este item.</div>
+                    ) : (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:7 }}>
+                        {(referenceAds[String(item.id)] || []).map((ad, index) => {
+                          const directAdUrl = [ad.url, ad.link, ad.listing_url, ad.listingUrl]
+                            .map(value => String(value || '').trim())
+                            .find(value => /^https?:\/\//i.test(value));
+                          const adUrl = directAdUrl || (ad.slug ? buildUexListingUrl(ad.slug) : 'https://uexcorp.space/marketplace/');
+                          return (
+                            <article key={ad.id || ad.slug || `${item.id}-reference-${index}`} style={{ padding:'9px 10px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:6 }}>
+                              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                                <span style={{ fontSize:9, color:'var(--text-muted)', fontFamily:'Share Tech Mono,monospace' }}>REF. {index + 1}</span>
+                                <strong style={{ fontSize:13, color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace' }}>{ptMoney(ad.price)} {ad.currency || t.currency || 'UEC'}</strong>
+                              </div>
+                              <div style={{ display:'grid', gap:3, fontSize:10, color:'var(--text-secondary)' }}>
+                                <span><strong>Vendedor:</strong> {ad.user_username || ad.user_name || 'Não informado'}</span>
+                                <span><strong>Local:</strong> {ad.location || 'Não informado'}</span>
+                                <span><strong>Qualidade:</strong> {ad.quality !== null && ad.quality !== undefined && ad.quality !== '' ? ad.quality : '—'} · <strong>Durabilidade:</strong> {ad.durability !== null && ad.durability !== undefined && ad.durability !== '' ? ad.durability : '—'}</span>
+                                <span><strong>Estoque:</strong> {ad.in_stock ?? '—'} · <strong>Origem:</strong> {ad.source || 'Não informada'}</span>
+                                <span><strong>Expira:</strong> {ad.date_expiration ? ptDate(ad.date_expiration) : ad.hours_expiration ? `${ad.hours_expiration}h` : 'Não informado'}</span>
+                              </div>
+                              <a href={adUrl} target="_blank" rel="noreferrer" onClick={event=>event.stopPropagation()} style={{ display:'inline-flex', alignItems:'center', gap:5, marginTop:8, color:'var(--accent-primary)', fontSize:10, fontWeight:700, textDecoration:'none' }}>
+                                <ExternalLink size={10}/> Abrir referência na UEX
+                              </a>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1065,6 +1424,7 @@ export default function UexSalesPage() {
   const [catalog,   setCatalog]   = useState(() => loadCatalog());
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
+  const [trendDataFetchedAt, setTrendDataFetchedAt] = useState(null);
   const [username,  setUsername]  = useState(() => loadUsername());
   const [activeTab, setActiveTab] = useState('items');
   const [loading,   setLoading]   = useState(false);
@@ -1073,12 +1433,47 @@ export default function UexSalesPage() {
   const [showManualSale, setShowManualSale] = useState(false);
   const [showEsgotadoForm, setShowEsgotadoForm] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [managedLocations, setManagedLocations] = useState(() => buildManagedLocationOptions());
+  const [stockLinkItem, setStockLinkItem] = useState(null);
   // Refs para evitar closure stale no fluxo de importação
   const catalogRef    = React.useRef(catalog);
   const importQueueRef = React.useRef([]);
 
   // Sincronizar refs com state
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+
+  const loadInventoryForStock = useCallback(async () => {
+    try {
+      const result = window.electronAPI?.inventoryGetAll
+        ? await window.electronAPI.inventoryGetAll()
+        : (() => {
+          try { return JSON.parse(localStorage.getItem('sc_inventory_v1') || '{}').itens || []; } catch { return []; }
+        })();
+      const items = (Array.isArray(result) ? result : []).map(item => ({ ...item, name: normalizeUexItemName(item.name) }));
+      setInventoryItems(items);
+      return items;
+    } catch {
+      setInventoryItems([]);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInventoryForStock();
+    const refreshInventory = event => {
+      if (Array.isArray(event.detail?.items)) setInventoryItems(event.detail.items.map(item => ({ ...item, name: normalizeUexItemName(item.name) })));
+      else loadInventoryForStock();
+    };
+    const refreshLocations = () => setManagedLocations(buildManagedLocationOptions());
+    window.addEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+    window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    return () => {
+      window.removeEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+      window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    };
+  }, [loadInventoryForStock]);
+
   useEffect(() => {
     const refreshFromNegotiation = () => {
       const nextCatalog = loadCatalog();
@@ -1155,6 +1550,9 @@ export default function UexSalesPage() {
         importQueueRef.current = newListings;
         setImportQueue([...newListings]);
       }
+      // A mesma ação de sincronização atualiza também o snapshot de mercado.
+      // O endpoint da UEX possui cache próprio de aproximadamente uma hora.
+      await fetchTrends();
     } catch (err) {
       setSyncMsg(`❌ Erro: ${err.message}`);
     }
@@ -1189,8 +1587,10 @@ export default function UexSalesPage() {
   async function fetchTrends() {
     setTrendsLoading(true);
     try {
-      const data = await uexFetch('marketplace_trends');
-      setTrendData(data || []);
+      const response = await uexFetch('marketplace_trends');
+      const data = Array.isArray(response) ? response : Array.isArray(response?.data) ? response.data : [];
+      setTrendData(data);
+      setTrendDataFetchedAt(new Date().toISOString());
     } catch (err) {
       console.warn('Trends error:', err.message);
     }
@@ -1214,11 +1614,18 @@ export default function UexSalesPage() {
       const patch = typeof fields === 'number'
         ? { internal_stock: fields }
         : fields;
-      // Recalcular is_sold_out baseado no in_stock atualizado
       const newInStock = patch.in_stock !== undefined ? patch.in_stock : i.in_stock;
       return { ...i, ...patch, is_sold_out: newInStock <= 0 ? 1 : 0 };
     });
     refreshCatalog(updated);
+  }
+  function handleSaveStockLink(itemId, binding) {
+    const updated = catalogRef.current.map(item => item.id === itemId
+      ? { ...item, inventory_binding: binding }
+      : item);
+    refreshCatalog(updated);
+    setStockLinkItem(null);
+    setSyncMsg(binding ? '✓ Estoque do anúncio vinculado ao Inventário de Itens.' : '✓ Vínculo removido; o estoque manual foi preservado.');
   }
   function handleDeleteItem(itemId) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
@@ -1279,6 +1686,15 @@ export default function UexSalesPage() {
       )}
       {showManualSale && (
         <ManualSaleModal catalogItems={catalog} onSave={handleManualSale} onClose={()=>setShowManualSale(false)}/>
+      )}
+      {stockLinkItem && (
+        <InventoryStockLinkModal
+          listing={stockLinkItem}
+          inventoryItems={inventoryItems}
+          managedLocations={managedLocations}
+          onSave={binding => handleSaveStockLink(stockLinkItem.id, binding)}
+          onClose={() => setStockLinkItem(null)}
+        />
       )}
       {showEsgotadoForm && (
         <ManualSaleModal
@@ -1344,14 +1760,16 @@ export default function UexSalesPage() {
       {/* Conteúdo */}
       <div className="page-body">
         {activeTab==='items' && (
-          <MyItemsTab catalog={catalog} sales={sales} trendData={trendData}
+          <MyItemsTab catalog={catalog} sales={sales} trendData={trendData} trendDataFetchedAt={trendDataFetchedAt}
+            inventoryItems={inventoryItems} managedLocations={managedLocations}
+            onOpenStockLink={setStockLinkItem}
             onEditStock={handleEditStock} onDeleteItem={handleDeleteItem} onAddEsgotado={handleAddEsgotado}/>
         )}
         {activeTab==='sales' && (
           <SalesTab sales={sales} onDelete={handleDeleteSale} onUpdate={handleUpdateSale}/>
         )}
         {activeTab==='trends' && (
-          <TrendsTab catalog={catalog} trendData={trendData} loading={trendsLoading} onRefresh={fetchTrends}/>
+          <TrendsTab catalog={catalog} trendData={trendData} trendDataFetchedAt={trendDataFetchedAt} loading={trendsLoading} onRefresh={fetchTrends}/>
         )}
       </div>
 

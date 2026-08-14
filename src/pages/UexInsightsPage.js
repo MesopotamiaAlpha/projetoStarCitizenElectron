@@ -85,7 +85,8 @@ function Freshness({ snapshot, ttl = 24 }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color, background, border: `1px solid ${color}44`, borderRadius: 999, padding: '4px 8px', fontSize: 10, fontWeight: 700 }}>
       <Icon size={12} /> {state.label}
-      {snapshot?.syncedAt && <span style={{ opacity: 0.75 }}>· {formatUexDate(snapshot.syncedAt)}</span>}
+      <span style={{ opacity: 0.82 }}>· {state.ageLabel}</span>
+      {snapshot?.syncedAt && <span style={{ opacity: 0.65 }}>· {formatUexDate(snapshot.syncedAt)}</span>}
     </span>
   );
 }

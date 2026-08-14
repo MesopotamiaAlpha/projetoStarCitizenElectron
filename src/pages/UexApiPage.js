@@ -11,7 +11,6 @@ import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB
 import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
 import { loadVehicleCatalog, saveVehicleCatalog, syncUexVehicles } from '../data/uexVehicles';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
-import { loadGoogleTranslateApiKey, saveGoogleTranslateApiKey } from '../data/uexNegotiations';
 import { loadMarketPrices, syncMarketPrices } from '../data/uexMarketDB';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
@@ -66,9 +65,7 @@ const TABS = [
 function TokenConfigPanel({ onTokenChange }) {
   const [token,      setToken]     = React.useState(loadToken);
   const [secretKey,  setSecretKey] = React.useState(loadSecretKey);
-  const [googleTranslateKey, setGoogleTranslateKey] = React.useState(loadGoogleTranslateApiKey);
   const [showToken,  setShowToken] = React.useState(false);
-  const [showGoogleKey, setShowGoogleKey] = React.useState(false);
   const [testStatus, setTestStatus]= React.useState(null); // null | 'testing' | 'ok' | 'error'
   const [testMsg,    setTestMsg]   = React.useState('');
   const [saved,      setSaved]     = React.useState(false);
@@ -78,7 +75,6 @@ function TokenConfigPanel({ onTokenChange }) {
   function handleSave() {
     saveToken(token.trim());
     saveSecretKey(secretKey.trim());
-    saveGoogleTranslateApiKey(googleTranslateKey.trim());
     setSaved(true);
     onTokenChange && onTokenChange(token.trim());
     setTimeout(() => setSaved(false), 2000);
@@ -163,7 +159,7 @@ function TokenConfigPanel({ onTokenChange }) {
         <div style={{ padding: '0 16px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
             O token é salvo <strong>apenas no seu computador</strong> (localStorage) e nunca é enviado para nenhum outro serviço além da UEX Corp API.
-            Obtenha seu token em <a href="https://uexcorp.space/account/api" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account/api</a>.
+            Obtenha seu token em <a href="https://uexcorp.space/account" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account</a>.
           </div>
 
           {/* Token input */}
@@ -212,35 +208,6 @@ function TokenConfigPanel({ onTokenChange }) {
                   fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
                 }}
               />
-            </div>
-          </div>
-
-          {/* Google Cloud Translation */}
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '12px 0 6px' }}>
-            A tradução automática usa primeiro o <strong>MyMemory</strong>, sem chave e sem pré-pagamento, com limite gratuito de aproximadamente 5.000 caracteres por dia e até 500 bytes por consulta. A chave Google abaixo é opcional e serve apenas como fallback quando o limite gratuito for atingido.
-            Se desejar configurar o fallback, obtenha a chave no <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>Google Cloud Console</a>, ative a Cloud Translation API e restrinja a chave ao serviço de tradução.
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <Globe size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}/>
-              <input
-                type={showGoogleKey ? 'text' : 'password'}
-                value={googleTranslateKey}
-                onChange={e => setGoogleTranslateKey(e.target.value)}
-                placeholder="Chave Google opcional — fallback após limite MyMemory..."
-                style={{
-                  width: '100%', padding: '9px 40px 9px 32px', boxSizing: 'border-box',
-                  background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
-                  borderRadius: 6, color: 'var(--text-primary)',
-                  fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
-                }}
-              />
-              <button type="button" onClick={() => setShowGoogleKey(!showGoogleKey)} style={{
-                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--text-muted)', display: 'flex', alignItems: 'center',
-              }}>
-                {showGoogleKey ? <EyeOff size={13}/> : <Eye size={13}/>}</button>
             </div>
           </div>
 

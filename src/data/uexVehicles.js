@@ -1,5 +1,6 @@
 // Catálogo de veículos UEX e Meu Hangar local.
 // A API UEX é consultada somente por HTTPS via window.electronAPI no Electron.
+import { readJson, readStorage, writeJson } from '../utils/storage';
 
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
 const VEHICLE_CATALOG_KEY = 'sc_uex_vehicles_catalog_v1';
@@ -38,16 +39,11 @@ export const VEHICLE_ROLE_LABELS = Object.freeze({
 });
 
 function storageGet(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+  return readJson(key, fallback);
 }
 
 function storageSet(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  return writeJson(key, value);
 }
 
 function numberOrNull(value) {
@@ -69,11 +65,11 @@ function unwrapRows(payload) {
 }
 
 function loadToken() {
-  try { return localStorage.getItem('sc_uex_token_v1') || ''; } catch { return ''; }
+  return String(readStorage('sc_uex_token_v1', '') || '');
 }
 
 function loadSecretKey() {
-  try { return localStorage.getItem('sc_uex_secretkey_v1') || ''; } catch { return ''; }
+  return String(readStorage('sc_uex_secretkey_v1', '') || '');
 }
 
 async function requestUex(endpoint) {
@@ -255,9 +251,10 @@ export function saveMyHangar(entries) {
     const quantity = Math.max(1, Number(entry.quantity) || 1);
     const legacyUnitPrice = numberOrNull(entry.unitPriceAuec ?? entry.purchasePriceAuec ?? entry.priceAuec ?? entry.price_auec);
     const storedTotal = numberOrNull(entry.totalCostAuec ?? entry.total_cost_auec);
-    const totalCostAuec = source === 'compra'
-      ? Math.max(0, storedTotal ?? ((legacyUnitPrice ?? 0) * quantity))
-      : 0;
+    const legacyTotal = (legacyUnitPrice ?? 0) * quantity;
+    // Registros antigos podem ter totalCostAuec=0 mesmo contendo o preço unitário.
+    const preferredTotal = storedTotal !== null && storedTotal > 0 ? storedTotal : legacyTotal;
+    const totalCostAuec = source === 'compra' ? Math.max(0, preferredTotal) : 0;
     const unitPriceAuec = source === 'compra' && totalCostAuec > 0
       ? totalCostAuec / quantity
       : (source === 'compra' ? legacyUnitPrice : null);
@@ -354,18 +351,32 @@ export function getPurchaseRows(catalog, vehicleId) {
   return (catalog?.purchasePrices || []).filter(row => Number(row.id_vehicle) === Number(vehicleId));
 }
 
+/** Retorna a média do preço de compra disponível no catálogo UEX local. */
+export function getVehiclePurchaseAverage(catalog, vehicleId) {
+  const values = getPurchaseRows(catalog, vehicleId)
+    .map(row => row.price_buy_avg ?? row.price_buy)
+    .map(Number)
+    .filter(value => Number.isFinite(value) && value > 0);
+  if (!values.length) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
 export function getRentalRows(catalog, vehicleId) {
   return (catalog?.rentalPrices || []).filter(row => Number(row.id_vehicle) === Number(vehicleId));
 }
 
-export function getPurchasedAuecTotal(entries = loadMyHangar()) {
+export function getPurchasedAuecTotal(entries = loadMyHangar(), catalog = null) {
   return (Array.isArray(entries) ? entries : [])
     .filter(entry => entry?.source !== 'wikelo')
     .reduce((total, entry) => {
       const quantity = Math.max(0, Number(entry?.quantity) || 0);
       const storedTotal = Number(entry?.totalCostAuec);
-      const legacyTotal = Number(entry?.unitPriceAuec ?? entry?.purchasePriceAuec ?? entry?.priceAuec ?? entry?.price_auec) * quantity;
-      return total + (Number.isFinite(storedTotal) ? Math.max(0, storedTotal) : (Number.isFinite(legacyTotal) ? Math.max(0, legacyTotal) : 0));
+      const legacyUnitPrice = Number(entry?.unitPriceAuec ?? entry?.purchasePriceAuec ?? entry?.priceAuec ?? entry?.price_auec);
+      const legacyTotal = Number.isFinite(legacyUnitPrice) ? legacyUnitPrice * quantity : 0;
+      const catalogAverage = catalog ? getVehiclePurchaseAverage(catalog, entry?.vehicleId) : null;
+      const catalogTotal = Number.isFinite(catalogAverage) ? catalogAverage * quantity : 0;
+      const usableTotal = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : (legacyTotal > 0 ? legacyTotal : catalogTotal);
+      return total + (Number.isFinite(usableTotal) ? Math.max(0, usableTotal) : 0);
     }, 0);
 }
 
@@ -380,7 +391,7 @@ export function getCatalogStats(catalog) {
     rentalOffers: (catalog?.rentalPrices || []).length,
     ownedTypes: owned.length,
     ownedUnits: owned.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
-    purchasedAuecTotal: getPurchasedAuecTotal(owned),
+    purchasedAuecTotal: getPurchasedAuecTotal(owned, catalog),
   };
 }
 

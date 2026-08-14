@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages } from 'lucide-react';
+import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen } from 'lucide-react';
 import {
   loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages, sendNegotiationMessage,
   translatePortugueseToEnglish, translateEnglishToPortuguese,
@@ -7,6 +7,7 @@ import {
 import {
   getNegotiationClosure, closeNegotiation, registerNegotiationSale,
 } from '../data/uexSales';
+import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -30,6 +31,18 @@ async function copyTextToClipboard(text) {
 }
 
 const CHAT_POLL_INTERVAL_MS = 5000;
+const UEX_TEXTS_KEY = 'sc_uex_texts_v1';
+
+function loadQuickUexTexts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(UEX_TEXTS_KEY) || '[]');
+    return (Array.isArray(parsed) ? parsed : [])
+      .filter(item => String(item?.title || '').trim() && String(item?.content || '').trim())
+      .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  } catch {
+    return [];
+  }
+}
 
 function playChatNotificationSound() {
   try {
@@ -104,6 +117,9 @@ function NegotiationThread({ negotiation, onBack }) {
   const [polling, setPolling] = useState(false);
   const [buyerCopied, setBuyerCopied] = useState(false);
   const [buyerCopyError, setBuyerCopyError] = useState('');
+  const [quickTexts, setQuickTexts] = useState(() => loadQuickUexTexts());
+  const [quickTextsOpen, setQuickTextsOpen] = useState(false);
+  const [quickTextCopiedId, setQuickTextCopiedId] = useState('');
   const [closure, setClosure] = useState(() => getNegotiationClosure(negotiation.hash));
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState('');
@@ -115,6 +131,27 @@ function NegotiationThread({ negotiation, onBack }) {
   const pollingRef = React.useRef(false);
   const requestRef = React.useRef(false);
   const translationRequestRef = React.useRef(0);
+
+  useEffect(() => {
+    dispatchUexUiEvent(UEX_ACTIVE_NEGOTIATION_EVENT, {
+      hash: String(negotiation.hash || ''),
+      listingTitle: negotiation.listing_title || '',
+    });
+    const refreshQuickTexts = event => {
+      const incoming = event?.detail?.texts;
+      setQuickTexts(Array.isArray(incoming) ? incoming.filter(item => String(item?.title || '').trim() && String(item?.content || '').trim()) : loadQuickUexTexts());
+    };
+    const refreshFromStorage = event => {
+      if (!event || event.key === UEX_TEXTS_KEY) setQuickTexts(loadQuickUexTexts());
+    };
+    window.addEventListener(UEX_TEXTS_UPDATED_EVENT, refreshQuickTexts);
+    window.addEventListener('storage', refreshFromStorage);
+    return () => {
+      window.removeEventListener(UEX_TEXTS_UPDATED_EVENT, refreshQuickTexts);
+      window.removeEventListener('storage', refreshFromStorage);
+      dispatchUexUiEvent(UEX_ACTIVE_NEGOTIATION_EVENT, { hash: '' });
+    };
+  }, [negotiation.hash, negotiation.listing_title]);
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (requestRef.current) return;
@@ -254,15 +291,24 @@ function NegotiationThread({ negotiation, onBack }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 
-  async function handleCopyBuyerNick() {
+    async function handleCopyBuyerNick() {
     const buyerNick = String(negotiation.client_username || '').trim();
     if (!buyerNick) { setBuyerCopyError('Esta negociação não informa o nick do comprador.'); return; }
-    try {
-      await copyTextToClipboard(buyerNick);
+    try { await copyTextToClipboard(buyerNick);
       setBuyerCopied(true);
       setBuyerCopyError('');
       window.setTimeout(() => setBuyerCopied(false), 1800);
     } catch (e) { setBuyerCopyError(e.message); }
+  }
+
+  async function handleCopyQuickText(text) {
+    try {
+      await copyTextToClipboard(text?.content || '');
+      setQuickTextCopiedId(text.id);
+      window.setTimeout(() => setQuickTextCopiedId(current => current === text.id ? '' : current), 1800);
+    } catch (e) {
+      setSendError(e.message || 'Não foi possível copiar o texto UEX.');
+    }
   }
 
   function handleCloseNegotiation(status) {
@@ -296,10 +342,32 @@ function NegotiationThread({ negotiation, onBack }) {
         <div style={{ fontFamily: '"Exo 2",sans-serif', fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
           {negotiation.listing_title}
         </div>
-        <div style={{ marginLeft: 'auto', display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', justifyContent:'flex-end' }}>
+        <div style={{ marginLeft: 'auto', position:'relative', display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', justifyContent:'flex-end' }}>
           <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'var(--accent-primary)', textDecoration:'none' }}>
             Abrir Spectrum <ExternalLink size={11} />
           </a>
+          <button type="button" onClick={() => setQuickTextsOpen(opened => !opened)} data-help="Abra seus textos UEX salvos para copiar uma resposta sem sair desta negociação." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:quickTextsOpen?'rgba(167,139,250,0.16)':'rgba(167,139,250,0.09)', border:`1px solid ${quickTextsOpen?'rgba(167,139,250,0.5)':'rgba(167,139,250,0.32)'}`, borderRadius:6, color:'var(--accent-purple)', cursor:'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase' }}>
+            <BookOpen size={12}/> Textos UEX {quickTexts.length ? `(${quickTexts.length})` : ''}
+          </button>
+          {quickTextsOpen && (
+            <div className="uex-quick-texts-popover">
+              <div className="uex-quick-texts-popover-header"><span><BookOpen size={13}/> TEXTOS UEX</span><small>{quickTexts.length ? 'Clique em copiar para reutilizar' : 'Nenhum texto salvo'}</small></div>
+              {quickTexts.length > 0 ? quickTexts.map(text => (
+                <div className="uex-quick-text-item" key={text.id}>
+                  <div className="uex-quick-text-copy">
+                    <strong title={text.title}>{text.title}</strong>
+                    <span>{String(text.content).replace(/\s+/g, ' ').trim().slice(0, 105)}{String(text.content).trim().length > 105 ? '…' : ''}</span>
+                  </div>
+                  <button type="button" onClick={() => handleCopyQuickText(text)} className={`uex-quick-text-copy-button${quickTextCopiedId === text.id ? ' copied' : ''}`} title="Copiar texto para a área de transferência">
+                    {quickTextCopiedId === text.id ? <ClipboardCheck size={13}/> : <Copy size={13}/>}
+                    <span>{quickTextCopiedId === text.id ? 'Copiado' : 'Copiar'}</span>
+                  </button>
+                </div>
+              )) : (
+                <div className="uex-quick-texts-empty">Cadastre respostas na seção <strong>Bloco de Notas &gt; Textos UEX</strong> para acessá-las aqui.</div>
+              )}
+            </div>
+          )}
           <button type="button" onClick={handleCopyBuyerNick} style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:buyerCopied?'rgba(52,211,153,0.12)':'rgba(56,189,248,0.1)', border:`1px solid ${buyerCopied?'rgba(52,211,153,0.35)':'rgba(56,189,248,0.35)'}`, borderRadius:6, color:buyerCopied?'var(--accent-green)':'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase' }}>
             {buyerCopied ? <ClipboardCheck size={12}/> : <Copy size={12}/>} {buyerCopied ? 'Nick copiado' : 'Copiar o nick do comprador'}
           </button>
