@@ -673,11 +673,173 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
   );
 }
 
+// ── Modal de detalhes e edição de venda ────────────────────────────────────────
+function SaleDetailsModal({ sale, onClose, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(sale.title || '');
+  const [type, setType] = useState(sale.type || 'sold');
+  const [date, setDate] = useState(() => {
+    const ms = toTimestampMs(sale.date);
+    if (!ms) return '';
+    const value = new Date(ms);
+    const pad = number => String(number).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  });
+  const [price, setPrice] = useState(String(sale.price ?? ''));
+  const [qty, setQty] = useState(String(sale.qty ?? 1));
+  const [quality, setQuality] = useState(sale.quality || '');
+  const [buyer, setBuyer] = useState(sale.buyer || '');
+  const [location, setLocation] = useState(sale.location || '');
+  const [currency, setCurrency] = useState(sale.currency || 'aUEC');
+  const [notes, setNotes] = useState(sale.notes || '');
+  const [error, setError] = useState('');
+
+  const IS = { width:'100%', boxSizing:'border-box', padding:'8px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
+  const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 8px center', paddingRight:28 };
+  const LS = { display:'block', marginBottom:4, fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.07em' };
+  const typeLabel = type === 'sold' ? 'Venda concretizada' : type === 'failed' ? 'Venda não concretizada' : 'Listagem expirada';
+  const typeColor = type === 'sold' ? 'var(--accent-green)' : type === 'failed' ? 'var(--accent-red)' : 'var(--text-muted)';
+  const typeIcon = type === 'sold' ? '✅' : type === 'failed' ? '❌' : '⏰';
+  const numericPrice = Number(String(price).replace(',', '.')) || 0;
+  const numericQty = Math.max(1, parseInt(qty, 10) || 1);
+  const calculatedTotal = type === 'sold' ? Math.round(numericPrice * numericQty) : 0;
+
+  function cancelEditing() {
+    setTitle(sale.title || '');
+    setType(sale.type || 'sold');
+    setPrice(String(sale.price ?? ''));
+    setQty(String(sale.qty ?? 1));
+    setQuality(sale.quality || '');
+    setBuyer(sale.buyer || '');
+    setLocation(sale.location || '');
+    setCurrency(sale.currency || 'aUEC');
+    setNotes(sale.notes || '');
+    setError('');
+    setEditing(false);
+  }
+
+  function handleSave() {
+    if (!title.trim()) { setError('Informe o nome do item.'); return; }
+    if (numericPrice <= 0) { setError('O preço unitário deve ser maior que zero.'); return; }
+    const timestamp = date ? new Date(`${date}T12:00:00`).getTime() / 1000 : sale.date;
+    const updated = {
+      ...sale,
+      title: title.trim(),
+      type,
+      date: Number.isFinite(timestamp) ? timestamp : sale.date,
+      price: Math.round(numericPrice),
+      qty: numericQty,
+      total_revenue: calculatedTotal,
+      quality: quality.trim(),
+      buyer: buyer.trim(),
+      location: location.trim(),
+      currency: currency.trim() || 'aUEC',
+      notes: notes.trim(),
+      edited_at: new Date().toISOString(),
+    };
+    onSave(updated);
+    setEditing(false);
+    setError('');
+  }
+
+  const detailRows = [
+    ['Item', sale.title || '—'],
+    ['Status', `${typeIcon} ${typeLabel}`],
+    ['Data do registro', ptDateTime(sale.date)],
+    ['Preço unitário', `${ptMoney(sale.price)} ${sale.currency || 'aUEC'}`],
+    ['Quantidade', `${sale.qty || 1}`],
+    ['Receita total', `${ptMoney(sale.total_revenue || 0)} ${sale.currency || 'aUEC'}`],
+    ['Qualidade', sale.quality || 'Não informada'],
+    ['Comprador / IGN', sale.buyer || 'Não informado'],
+    ['Localização', sale.location || 'Não informada'],
+    ['Origem', sale.is_manual ? 'Registro manual' : sale.source === 'uex_negotiation' ? 'Negociação UEX' : sale.source || 'Não informada'],
+  ];
+  const technicalRows = [
+    ['ID do histórico', sale.id],
+    ['Hash da negociação', sale.source_negotiation_hash],
+    ['ID do anúncio', sale.source_listing_id],
+    ['Slug do anúncio', sale.source_listing_slug],
+    ['Título original do anúncio', sale.listing_title],
+    ['Papel na negociação', sale.negotiation_role],
+    ['Data de encerramento UEX', sale.date_closed ? ptDateTime(sale.date_closed) : null],
+    ['Criado em', sale.created_at ? ptDateTime(sale.created_at) : null],
+    ['Editado em', sale.edited_at ? ptDateTime(sale.edited_at) : null],
+  ].filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1200, padding:16, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center' }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div style={{ width:'min(760px, 100%)', maxHeight:'92vh', overflowY:'auto', background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:12, boxShadow:'0 24px 80px rgba(0,0,0,0.72)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'14px 18px', borderBottom:'1px solid var(--border-subtle)', background:'rgba(56,189,248,0.07)' }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.05em' }}><Eye size={15}/> DETALHES DA VENDA</div>
+            <div style={{ marginTop:5, color:'var(--text-muted)', fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sale.title || 'Registro sem título'}</div>
+          </div>
+          <button onClick={onClose} title="Fechar detalhes" aria-label="Fechar detalhes" style={{ width:28, height:28, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-muted)', cursor:'pointer' }}><X size={14}/></button>
+        </div>
+
+        <div style={{ padding:18 }}>
+          {!editing ? (
+            <>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14, padding:'9px 11px', background:type === 'sold' ? 'rgba(52,211,153,0.07)' : 'rgba(251,113,133,0.06)', border:`1px solid ${type === 'sold' ? 'rgba(52,211,153,0.24)' : 'rgba(251,113,133,0.2)'}`, borderRadius:7 }}>
+                <span style={{ fontSize:17 }}>{typeIcon}</span>
+                <div><div style={{ color:typeColor, fontSize:12, fontWeight:700 }}>{typeLabel}</div><div style={{ color:'var(--text-muted)', fontSize:10, marginTop:2 }}>Clique em editar para corrigir ou complementar os dados deste histórico.</div></div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:7 }}>
+                {detailRows.map(([label, value]) => (
+                  <div key={label} style={{ padding:'8px 10px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:6 }}>
+                    <div style={{ color:'var(--text-muted)', fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
+                    <div style={{ marginTop:4, color:label === 'Receita total' ? 'var(--accent-green)' : 'var(--text-primary)', fontFamily:label === 'Preço unitário' || label === 'Receita total' ? 'Share Tech Mono,monospace' : '"Exo 2",sans-serif', fontSize:12, fontWeight:label === 'Receita total' ? 800 : 600, wordBreak:'break-word' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {sale.notes && <div style={{ marginTop:12, padding:'10px 12px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontSize:12, lineHeight:1.5, whiteSpace:'pre-wrap' }}><strong style={{ color:'var(--text-muted)', fontSize:10, textTransform:'uppercase', letterSpacing:'0.06em' }}>Notas</strong><div style={{ marginTop:5 }}>{sale.notes}</div></div>}
+              {technicalRows.length > 0 && (
+                <details style={{ marginTop:12 }}>
+                  <summary style={{ cursor:'pointer', color:'var(--accent-primary)', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em' }}>Metadados técnicos da origem UEX</summary>
+                  <div style={{ marginTop:7, display:'flex', flexDirection:'column', gap:4 }}>
+                    {technicalRows.map(([label, value]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:14, padding:'5px 0', borderBottom:'1px solid var(--border-subtle)', fontSize:10 }}><span style={{ color:'var(--text-muted)' }}>{label}</span><span style={{ color:'var(--text-secondary)', fontFamily:'Share Tech Mono,monospace', textAlign:'right', wordBreak:'break-all' }}>{value}</span></div>)}
+                  </div>
+                </details>
+              )}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+                <button onClick={onClose} style={{ padding:'8px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}>Fechar</button>
+                <button onClick={()=>setEditing(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 14px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}><Edit3 size={12}/> Editar histórico</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))', gap:10 }}>
+                <div style={{ gridColumn:'1 / -1' }}><label style={LS}>Nome do item</label><input style={IS} value={title} onChange={event=>setTitle(event.target.value)} /></div>
+                <div><label style={LS}>Tipo do registro</label><select style={SS} value={type} onChange={event=>setType(event.target.value)}><option value="sold">✅ Venda concretizada</option><option value="failed">❌ Venda não concretizada</option><option value="expired">⏰ Listagem expirada</option></select></div>
+                <div><label style={LS}>Data</label><input style={IS} type="date" value={date} onChange={event=>setDate(event.target.value)} /></div>
+                <div><label style={LS}>Preço unitário</label><input style={{ ...IS, fontFamily:'Share Tech Mono,monospace' }} type="number" min="0" value={price} onChange={event=>setPrice(event.target.value)} /></div>
+                <div><label style={LS}>Quantidade</label><input style={IS} type="number" min="1" step="1" value={qty} onChange={event=>setQty(event.target.value)} /></div>
+                <div><label style={LS}>Moeda</label><input style={IS} value={currency} onChange={event=>setCurrency(event.target.value)} /></div>
+                <div><label style={LS}>Qualidade</label><input style={IS} placeholder="ex.: 716, Grade A..." value={quality} onChange={event=>setQuality(event.target.value)} /></div>
+                <div><label style={LS}>Comprador / IGN</label><input style={IS} value={buyer} onChange={event=>setBuyer(event.target.value)} /></div>
+                <div><label style={LS}>Localização</label><input style={IS} value={location} onChange={event=>setLocation(event.target.value)} /></div>
+                <div style={{ gridColumn:'1 / -1' }}><label style={LS}>Notas</label><textarea style={{ ...IS, minHeight:74, resize:'vertical' }} value={notes} onChange={event=>setNotes(event.target.value)} /></div>
+              </div>
+              <div style={{ marginTop:12, padding:'9px 11px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}><span style={{ color:'var(--text-muted)', fontSize:11 }}>Receita recalculada</span><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:14 }}>{ptMoney(calculatedTotal)} {currency || 'aUEC'}</strong></div>
+              {error && <div style={{ marginTop:10, color:'var(--accent-red)', fontSize:11 }}><AlertTriangle size={12} style={{ verticalAlign:'-2px', marginRight:4 }}/>{error}</div>}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+                <button onClick={cancelEditing} style={{ padding:'8px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}>Cancelar</button>
+                <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 14px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:6, color:'var(--accent-green)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}><Save size={12}/> Salvar alterações</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Vendas / Ocorrências ─────────────────────────────────────────────────
-function SalesTab({ sales, onDelete }) {
+function SalesTab({ sales, onDelete, onUpdate }) {
   const [filterType, setFilterType] = useState('all');
   const [search, setSearch] = useState('');
   const [delConf, setDelConf] = useState(null);
+  const [selectedSale, setSelectedSale] = useState(null);
 
   const filtered = useMemo(() => {
     let list = [...sales].sort((a,b) => (b.date||0) - (a.date||0));
@@ -761,7 +923,7 @@ function SalesTab({ sales, onDelete }) {
             const typeIcon   = s.type==='sold'?'✅':s.type==='failed'?'❌':'⏰';
             const typeColor  = s.type==='sold'?'var(--accent-green)':s.type==='failed'?'var(--accent-red)':'var(--text-muted)';
             return (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+              <div key={s.id} role="button" tabIndex={0} onClick={()=>setSelectedSale(s)} onKeyDown={event=>{ if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedSale(s); } }} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:7, cursor:'pointer', transition:'border-color 0.16s, background 0.16s' }} onMouseEnter={event=>{event.currentTarget.style.borderColor='rgba(56,189,248,0.38)'; event.currentTarget.style.background='rgba(56,189,248,0.045)';}} onMouseLeave={event=>{event.currentTarget.style.borderColor='var(--border-subtle)'; event.currentTarget.style.background='var(--bg-card)';}}>
                 <span style={{ fontSize:14 }}>{typeIcon}</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</div>
@@ -778,13 +940,14 @@ function SalesTab({ sales, onDelete }) {
                     {s.qty > 1 && <div style={{ fontSize:10, color:'var(--text-muted)' }}>{s.qty}× {ptMoney(s.price)}</div>}
                   </div>
                 )}
+                <button onClick={event=>{event.stopPropagation(); setSelectedSale(s);}} title="Ver detalhes da venda" aria-label={`Ver detalhes de ${s.title || 'venda'}`} style={{ width:28, height:28, borderRadius:5, border:'1px solid rgba(56,189,248,0.24)', background:'rgba(56,189,248,0.07)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Eye size={12}/></button>
                 {delConf===s.id ? (
                   <div style={{ display:'flex', gap:4 }}>
-                    <button onClick={()=>{onDelete(s.id);setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
-                    <button onClick={()=>setDelConf(null)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
+                    <button onClick={event=>{event.stopPropagation(); onDelete(s.id); setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+                    <button onClick={event=>{event.stopPropagation(); setDelConf(null);}} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
                   </div>
                 ) : (
-                  <button onClick={()=>setDelConf(s.id)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <button onClick={event=>{event.stopPropagation(); setDelConf(s.id);}} title="Excluir registro" aria-label={`Excluir ${s.title || 'venda'}`} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <Trash2 size={10}/>
                   </button>
                 )}
@@ -793,6 +956,8 @@ function SalesTab({ sales, onDelete }) {
           })}
         </div>
       )}
+
+      {selectedSale && <SaleDetailsModal sale={selectedSale} onClose={()=>setSelectedSale(null)} onSave={updated=>{ onUpdate(updated); setSelectedSale(updated); }} />}
     </div>
   );
 }
@@ -927,7 +1092,11 @@ export default function UexSalesPage() {
   }, []);
 
   function refreshCatalog(d) { catalogRef.current = d; setCatalog(d); saveCatalog(d); }
-  function refreshSales(d)   { setSales(d); saveSales(d); }
+  function refreshSales(d) {
+    setSales(d);
+    saveSales(d);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sc_uex_sales_updated'));
+  }
 
   // ── Sincronizar listagens da UEX ──
   async function syncFromUEX() {
@@ -1059,7 +1228,10 @@ export default function UexSalesPage() {
     setShowManualSale(false);
   }
   function handleDeleteSale(saleId) {
-    refreshSales(sales.filter(s => s.id !== saleId));
+    refreshSales(sales.filter(s => String(s.id) !== String(saleId)));
+  }
+  function handleUpdateSale(updatedSale) {
+    refreshSales(sales.map(s => String(s.id) === String(updatedSale.id) ? updatedSale : s));
   }
   function handleAddEsgotado() { setShowEsgotadoForm(true); }
 
@@ -1176,7 +1348,7 @@ export default function UexSalesPage() {
             onEditStock={handleEditStock} onDeleteItem={handleDeleteItem} onAddEsgotado={handleAddEsgotado}/>
         )}
         {activeTab==='sales' && (
-          <SalesTab sales={sales} onDelete={handleDeleteSale}/>
+          <SalesTab sales={sales} onDelete={handleDeleteSale} onUpdate={handleUpdateSale}/>
         )}
         {activeTab==='trends' && (
           <TrendsTab catalog={catalog} trendData={trendData} loading={trendsLoading} onRefresh={fetchTrends}/>

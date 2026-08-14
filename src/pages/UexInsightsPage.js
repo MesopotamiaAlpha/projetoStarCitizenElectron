@@ -24,7 +24,7 @@ import {
 } from '../data/uexInsights';
 import { loadUexItemsDB } from '../data/uexItemsDB';
 import { loadUexSales } from '../data/uexSales';
-import { DEFAULT_MARKET_ALERT_INTERVAL_MINUTES, DEFAULT_MARKET_ALERT_MAX_RESULTS, MAX_MARKET_ALERT_MAX_RESULTS, MIN_MARKET_ALERT_MAX_RESULTS, MARKET_ALERT_SOURCES, MARKET_ALERT_SETTINGS_UPDATED_EVENT, MARKET_ALERTS_UPDATED_EVENT, loadMarketAlertSettings, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertFocus, marketAlertDefaults, removeMarketAlert, removeMarketAlertEventsByGroup, upsertMarketAlert, checkMarketAlerts, saveMarketAlertSettings, dismissMarketAlertEvent } from '../data/uexMarketAlerts';
+import { DEFAULT_MARKET_ALERT_INTERVAL_MINUTES, DEFAULT_MARKET_ALERT_MAX_RESULTS, MAX_MARKET_ALERT_MAX_RESULTS, MIN_MARKET_ALERT_MAX_RESULTS, MARKET_ALERT_MANUAL_MATCH_MODES, MARKET_ALERT_SOURCES, MARKET_ALERT_SETTINGS_UPDATED_EVENT, MARKET_ALERTS_UPDATED_EVENT, loadMarketAlertSettings, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertFocus, manualMatchModeLabel, marketAlertDefaults, removeMarketAlert, removeMarketAlertEventsByGroup, upsertMarketAlert, checkMarketAlerts, saveMarketAlertSettings, dismissMarketAlertEvent } from '../data/uexMarketAlerts';
 
 const TABS = [
   { id: 'market', label: 'Mercado por qualidade', icon: TrendingUp, color: '#fbbf24' },
@@ -57,6 +57,7 @@ const buttonStyle = (tone = 'blue', disabled = false) => {
     green: ['#34d399', 'rgba(52,211,153,0.12)'],
     gold: ['#fbbf24', 'rgba(251,191,36,0.12)'],
     purple: ['#a78bfa', 'rgba(167,139,250,0.12)'],
+    muted: ['#94a3b8', 'rgba(148,163,184,0.10)'],
   };
   const [color, background] = colors[tone] || colors.blue;
   return {
@@ -264,7 +265,10 @@ function marketAlertGroupId(event = {}) {
 function formatMarketAlertAge(event) {
   const raw = event?.listing?.date_added || event?.listing?.dateAdded || event?.dateAdded;
   if (!raw) return 'Data não informada';
-  const date = new Date(Number(raw) > 100000000000 ? Number(raw) : raw);
+  const numeric = Number(raw);
+  const date = Number.isFinite(numeric) && numeric > 0
+    ? new Date(numeric < 100000000000 ? numeric * 1000 : numeric)
+    : new Date(String(raw));
   return Number.isNaN(date.getTime()) ? 'Data não informada' : date.toLocaleString('pt-BR');
 }
 
@@ -278,6 +282,7 @@ function marketAlertListingDetails(event) {
     ['Qualidade', event.quality !== null && event.quality !== undefined ? `Q${event.quality}` : 'Não informada'],
     ['Preço', `${Number(event.price || 0).toLocaleString('pt-BR')} ${event.currency || 'UEC'}`],
     ['Publicado', formatMarketAlertAge(event)],
+    ['Correspondência', event.matchReason || (event.matchMode === 'broad' ? 'Busca ampla' : event.matchMode === 'title' ? 'Nome/título do anúncio' : 'Catálogo UEX por ID')],
   ];
 }
 
@@ -304,7 +309,7 @@ function MarketAlertDetailsModal({ group, onClose, onDismiss }) {
       </div>
       <div className="uex-market-alert-modal-list">
         {group.events.map((event, index) => <article className="uex-market-alert-detail-card" key={event.key}>
-          <div className="uex-market-alert-detail-top"><div><span className="uex-market-alert-detail-index">#{index + 1}</span><strong>{event.itemName || group.name}</strong><small>{event.seller || 'Vendedor não informado'} · {event.location || 'Local não informado'}</small></div><b>{Number(event.price || 0).toLocaleString('pt-BR')} {event.currency || 'UEC'}</b></div>
+          <div className="uex-market-alert-detail-top"><div><span className="uex-market-alert-detail-index">#{index + 1}</span><strong>{event.itemName || group.name}</strong><small>{event.seller || 'Vendedor não informado'} · {event.location || 'Local não informado'} · {event.matchReason || (event.matchMode === 'broad' ? 'Descrição do anúncio' : event.matchMode === 'title' ? 'Nome/título do anúncio' : 'Catálogo UEX')}</small></div><b>{Number(event.price || 0).toLocaleString('pt-BR')} {event.currency || 'UEC'}</b></div>
           <div className="uex-market-alert-detail-grid">{marketAlertListingDetails(event).map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
           <div className="uex-market-alert-detail-actions"><a href={event.listingUrl || 'https://uexcorp.space/marketplace/'} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Abrir anúncio na UEX</a><button type="button" onClick={() => copyLink(event)}><Copy size={13} /> {copiedKey === event.key ? 'Link copiado' : copiedKey === 'error' ? 'Não foi possível copiar' : 'Copiar link'}</button><button type="button" className="danger" onClick={() => onDismiss(event.key)}><X size={13} /> Remover anúncio</button></div>
           <details className="uex-market-alert-raw"><summary><ChevronDown size={13} /> Ver todos os dados recebidos</summary><pre>{JSON.stringify(event.listing || event, null, 2)}</pre></details>
@@ -326,7 +331,8 @@ export function MarketAlertPanel() {
   const [itemQuery, setItemQuery] = useState('');
   const [entryMode, setEntryMode] = useState('catalog');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [form, setForm] = useState(() => marketAlertDefaults({ currency: 'UEC', qualityAny: true, priceMode: 'lowest' }));
+  const [editingAlertId, setEditingAlertId] = useState('');
+  const [form, setForm] = useState(() => marketAlertDefaults({ currency: 'UEC', qualityAny: true, priceMode: 'lowest', manualMatchMode: 'title' }));
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
 
@@ -387,6 +393,26 @@ export function MarketAlertPanel() {
     setForm(previous => ({ ...previous, itemMode: mode, itemId: '', itemName: '' }));
   }
 
+  function beginEditAlert(alert) {
+    const safe = { ...marketAlertDefaults(alert), ...alert, manualMatchMode: alert.manualMatchMode || 'title' };
+    setEditingAlertId(String(alert.id || ''));
+    setEntryMode(safe.itemMode === 'manual' ? 'manual' : 'catalog');
+    setItemQuery(safe.itemName || '');
+    setForm(safe);
+    setSuggestionsOpen(false);
+    setError('');
+    window.setTimeout(() => document.querySelector('.uex-market-alert-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  }
+
+  function cancelEditAlert() {
+    setEditingAlertId('');
+    setEntryMode('catalog');
+    setItemQuery('');
+    setSuggestionsOpen(false);
+    setForm(marketAlertDefaults({ currency: 'UEC', itemMode: 'catalog', qualityAny: true, priceMode: 'lowest', manualMatchMode: 'title' }));
+    setError('');
+  }
+
   function updateForm(name, value) {
     setForm(previous => ({ ...previous, [name]: value }));
   }
@@ -413,10 +439,11 @@ export function MarketAlertPanel() {
     if (form.priceMode === 'limit' && Number(form.maxPrice) <= 0) { setError('Informe um preço máximo maior que zero ou escolha Menor preço disponível.'); return; }
     if (form.priceMode === 'range' && (Number(form.minPrice) <= 0 || Number(form.maxPrice) <= 0 || Number(form.minPrice) > Number(form.maxPrice))) { setError('Na faixa de preço, informe valores maiores que zero e o mínimo não pode superar o máximo.'); return; }
     const maxResults = Math.max(MIN_MARKET_ALERT_MAX_RESULTS, Math.min(MAX_MARKET_ALERT_MAX_RESULTS, Math.round(Number(form.maxResults) || DEFAULT_MARKET_ALERT_MAX_RESULTS)));
-    const next = upsertMarketAlert({ ...form, itemMode: entryMode, itemName: itemQuery.trim(), enabled: true, qualityMin: Number(form.qualityMin), qualityMax: Number(form.qualityMax), minPrice: Number(form.minPrice), maxPrice: Number(form.maxPrice), maxListingAgeDays: Number(form.maxListingAgeDays), maxResults });
+    const next = upsertMarketAlert({ ...form, id: editingAlertId || form.id, itemMode: entryMode, manualMatchMode: entryMode === 'manual' ? (form.manualMatchMode || 'title') : 'title', itemName: itemQuery.trim(), enabled: true, qualityMin: Number(form.qualityMin), qualityMax: Number(form.qualityMax), minPrice: Number(form.minPrice), maxPrice: Number(form.maxPrice), maxListingAgeDays: Number(form.maxListingAgeDays), maxResults });
     setAlerts(next);
+    setEditingAlertId('');
     setEntryMode('catalog');
-    setForm(marketAlertDefaults({ currency: 'UEC', itemMode: 'catalog', qualityAny: true, priceMode: 'lowest' }));
+    setForm(marketAlertDefaults({ currency: 'UEC', itemMode: 'catalog', qualityAny: true, priceMode: 'lowest', manualMatchMode: 'title' }));
     setItemQuery('');
     setSuggestionsOpen(false);
   }
@@ -450,7 +477,8 @@ export function MarketAlertPanel() {
     <div className="uex-market-alert-note"><AlertTriangle size={14} /> A moeda é fixa em <strong>UEC</strong>. A análise automática está <strong>{settings.automaticEnabled ? 'ligada' : 'desligada'}</strong>; quando desligada, nenhuma pesquisa periódica é feita. O botão <strong>Verificar agora</strong> continua disponível para consultas manuais.</div>
     <form onSubmit={addAlert} className="uex-market-alert-form">
       <div className="uex-market-alert-mode"><span>Modo de seleção do item</span><label><input type="radio" name="market-alert-item-mode" checked={entryMode === 'catalog'} onChange={() => changeEntryMode('catalog')} /> Catálogo UEX</label><label><input type="radio" name="market-alert-item-mode" checked={entryMode === 'manual'} onChange={() => changeEntryMode('manual')} /> Item manual</label></div>
-      <label className="uex-market-alert-item-field">{entryMode === 'catalog' ? 'Item para comprar' : 'Nome manual do item'}<input value={itemQuery} onFocus={() => { if (entryMode === 'catalog' && !form.itemId && itemQuery.trim().length >= 2) setSuggestionsOpen(true); }} onChange={event => { setItemQuery(event.target.value); setSuggestionsOpen(entryMode === 'catalog'); setForm(previous => ({ ...previous, itemMode: entryMode, itemId: '', itemName: event.target.value })); }} placeholder={entryMode === 'catalog' ? 'Pesquise e selecione um item do catálogo' : 'Ex.: Sadaryx'} style={inputStyle} autoComplete="off" />{entryMode === 'catalog' && suggestionsOpen && suggestions.length > 0 && <div className="uex-market-alert-suggestions">{suggestions.map(item => <button type="button" key={item.id || item.name} onClick={() => chooseItem(item)}><strong>{item.name}</strong><small>ID {item.id || item.id_item}</small></button>)}</div>}{entryMode === 'catalog' && form.itemId && <small className="uex-market-alert-selected">Selecionado: {form.itemName} · ID {form.itemId}</small>}{entryMode === 'manual' && itemQuery.trim().length >= 2 && <small className="uex-market-alert-selected">Busca manual ativa: {itemQuery.trim()}</small>}</label>
+      <label className="uex-market-alert-item-field">{entryMode === 'catalog' ? 'Item para comprar' : 'Nome manual do item'}<input value={itemQuery} onFocus={() => { if (entryMode === 'catalog' && !form.itemId && itemQuery.trim().length >= 2) setSuggestionsOpen(true); }} onChange={event => { setItemQuery(event.target.value); setSuggestionsOpen(entryMode === 'catalog'); setForm(previous => ({ ...previous, itemMode: entryMode, itemId: '', itemName: event.target.value })); }} placeholder={entryMode === 'catalog' ? 'Pesquise e selecione um item do catálogo' : 'Ex.: Iron ou Sadaryx'} style={inputStyle} autoComplete="off" />{entryMode === 'catalog' && suggestionsOpen && suggestions.length > 0 && <div className="uex-market-alert-suggestions">{suggestions.map(item => <button type="button" key={item.id || item.name} onClick={() => chooseItem(item)}><strong>{item.name}</strong><small>ID {item.id || item.id_item}</small></button>)}</div>}{entryMode === 'catalog' && form.itemId && <small className="uex-market-alert-selected">Selecionado: {form.itemName} · ID {form.itemId}</small>}{entryMode === 'manual' && itemQuery.trim().length >= 2 && <small className="uex-market-alert-selected">Busca manual ativa: {itemQuery.trim()}</small>}</label>
+      {entryMode === 'manual' && <label>Precisão da busca<select value={form.manualMatchMode || 'title'} onChange={event => updateForm('manualMatchMode', event.target.value)} style={inputStyle}>{MARKET_ALERT_MANUAL_MATCH_MODES.map(mode => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select><small className="uex-market-alert-field-help">{MARKET_ALERT_MANUAL_MATCH_MODES.find(mode => mode.value === (form.manualMatchMode || 'title'))?.description}</small></label>}
       <label>Origem<select value={form.source} onChange={event => updateForm('source', event.target.value)} style={inputStyle}>{MARKET_ALERT_SOURCES.map(source => <option key={source.value} value={source.value}>{source.label}</option>)}</select></label>
       <label>Última atividade do anúncio (dias)<input type="number" min="0" max="3650" step="1" value={form.maxListingAgeDays} onChange={event => updateForm('maxListingAgeDays', event.target.value)} placeholder="0 = qualquer idade" style={inputStyle} /></label>
       <label>Limite de anúncios<input type="number" min={MIN_MARKET_ALERT_MAX_RESULTS} max={MAX_MARKET_ALERT_MAX_RESULTS} step="1" value={form.maxResults ?? DEFAULT_MARKET_ALERT_MAX_RESULTS} onChange={event => updateForm('maxResults', event.target.value)} placeholder={`1–${MAX_MARKET_ALERT_MAX_RESULTS}`} style={inputStyle} /><small className="uex-market-alert-field-help">Mantém só as melhores ofertas dentro deste limite.</small></label>
@@ -459,11 +487,12 @@ export function MarketAlertPanel() {
       <label>Critério de preço<select value={form.priceMode} onChange={event => updateForm('priceMode', event.target.value)} style={inputStyle}><option value="lowest">Menor preço disponível</option><option value="limit">Até um preço máximo</option><option value="range">Faixa de preço</option></select></label>
       {form.priceMode === 'limit' && <label>Preço máximo<input type="number" min="1" step="1" value={form.maxPrice} onChange={event => updateForm('maxPrice', event.target.value)} placeholder="Ex.: 150000" style={inputStyle} /></label>}
       {form.priceMode === 'range' && <><label>Preço mínimo<input type="number" min="1" step="1" value={form.minPrice} onChange={event => updateForm('minPrice', event.target.value)} placeholder="Ex.: 50000" style={inputStyle} /></label><label>Preço máximo<input type="number" min="1" step="1" value={form.maxPrice} onChange={event => updateForm('maxPrice', event.target.value)} placeholder="Ex.: 150000" style={inputStyle} /></label></>}
-      <div className="uex-market-alert-form-action"><button type="submit" style={buttonStyle('green')}>Adicionar alerta</button></div>
+      <div className="uex-market-alert-form-action"><button type="submit" style={buttonStyle('green')}>{editingAlertId ? 'Salvar alterações' : 'Adicionar alerta'}</button>{editingAlertId && <button type="button" style={buttonStyle('muted')} onClick={cancelEditAlert}>Cancelar edição</button>}</div>
     </form>
     {error && <ErrorBox error={error} />}
-    <div className="uex-market-alert-list">{alerts.length === 0 ? <EmptyState text="Nenhum alerta configurado. Selecione um item acima para começar." /> : alerts.map(alert => <div className={`uex-market-alert-card ${alert.enabled ? '' : 'disabled'}`} key={alert.id}><div><strong>{alert.itemName || 'Item UEX'}</strong><small>{alert.itemMode === 'manual' ? 'item manual' : 'catálogo UEX'} · {alert.source ? MARKET_ALERT_SOURCES.find(source => source.value === alert.source)?.label : 'Qualquer origem'} · {alert.qualityAny ? 'qualquer qualidade' : `Q${alert.qualityMin}–Q${alert.qualityMax}`} · {Number(alert.maxListingAgeDays || 0) > 0 ? `anúncio até ${alert.maxListingAgeDays}d` : 'qualquer idade'} · {alert.priceMode === 'lowest' ? 'menor preço' : alert.priceMode === 'range' ? `faixa ${Number(alert.minPrice || 0).toLocaleString('pt-BR')}–${Number(alert.maxPrice || 0).toLocaleString('pt-BR')} UEC` : `até ${Number(alert.maxPrice || 0).toLocaleString('pt-BR')} UEC`}
-</small><small>{alert.lastCheckedAt ? `Última verificação: ${formatUexDate(alert.lastCheckedAt)}` : 'Ainda não verificado'}{alert.lastMatchCount ? ` · ${alert.lastMatchCount} correspondência(s)` : ''} · limite: {alert.maxResults || DEFAULT_MARKET_ALERT_MAX_RESULTS}{alert.lastError ? ` · erro: ${alert.lastError}` : ''}</small></div><div className="uex-market-alert-card-actions"><button type="button" title={alert.enabled ? 'Pausar alerta' : 'Ativar alerta'} onClick={() => { const next = upsertMarketAlert({ ...alert, enabled: !alert.enabled }); setAlerts(next); }}>{alert.enabled ? 'Ativo' : 'Pausado'}</button><button type="button" title="Excluir alerta" onClick={() => setAlerts(removeMarketAlert(alert.id))}><XCircle size={14} /></button></div></div>)}</div>
+    <div className="uex-market-alert-list">{alerts.length === 0 ? <EmptyState text="Nenhum alerta configurado. Selecione um item acima para começar." /> : alerts.map(alert => <div className={`uex-market-alert-card ${alert.enabled ? '' : 'disabled'}`} key={alert.id}><div><strong>{alert.itemName || 'Item UEX'}</strong><small>{alert.itemMode === 'manual' ? 'item manual' : 'catálogo UEX'}{alert.itemMode === 'manual' ? ` · ${manualMatchModeLabel(alert.manualMatchMode)}` : ''} · {alert.source ? MARKET_ALERT_SOURCES.find(source => source.value === alert.source)?.label : 'Qualquer origem'} · {alert.qualityAny ? 'qualquer qualidade' : `Q${alert.qualityMin}–Q${alert.qualityMax}`} · {Number(alert.maxListingAgeDays || 0) > 0 ? `anúncio até ${alert.maxListingAgeDays}d` : 'qualquer idade'} · {alert.priceMode === 'lowest' ? 'menor preço' : alert.priceMode === 'range' ? `faixa ${Number(alert.minPrice || 0).toLocaleString('pt-BR')}–${Number(alert.maxPrice || 0).toLocaleString('pt-BR')} UEC` : `até ${Number(alert.maxPrice || 0).toLocaleString('pt-BR')} UEC`}
+</small><small>{alert.lastCheckedAt ? `Última verificação: ${formatUexDate(alert.lastCheckedAt)}` : 'Ainda não verificado'}{alert.lastMatchCount ? ` · ${alert.lastMatchCount} correspondência(s)` : ''} · limite: {alert.maxResults || DEFAULT_MARKET_ALERT_MAX_RESULTS}{alert.lastError ? ` · erro: ${alert.lastError}` : ''}</small></div><div className="uex-market-alert-card-actions"><button type="button" title="Editar alerta" onClick={() => beginEditAlert(alert)}>Editar</button><button type="button" title={alert.enabled ? 'Pausar alerta' : 'Ativar alerta'} onClick={() => { const next = upsertMarketAlert({ ...alert, enabled: !alert.enabled }); setAlerts(next); }}>{alert.enabled ? 'Ativo' : 'Pausado'}</button><button type="button" title="Excluir alerta" onClick={() => { if (String(editingAlertId) === String(alert.id)) cancelEditAlert(); setAlerts(removeMarketAlert(alert.id)); }}><XCircle size={14} /></button>
+</div></div>)}</div>
     {eventGroups.length > 0 && <div className="uex-market-alert-events"><div className="uex-market-alert-events-heading"><div><strong>Últimos anúncios encontrados</strong><span>{events.length} anúncio{events.length === 1 ? '' : 's'} novos organizados em {eventGroups.length} grupo{eventGroups.length === 1 ? '' : 's'}</span></div><small>O mesmo anúncio aparece uma única vez</small></div><div className="uex-market-alert-groups">{eventGroups.map(group => { const cheapest = group.events.reduce((lowest, event) => !lowest || Number(event.price || 0) < Number(lowest.price || 0) ? event : lowest, null); const focused = group.events.some(event => event.key === focusedEventKey); return <div className="uex-market-alert-group-shell" key={group.key}><button type="button" className={`uex-market-alert-group ${focused ? 'focused' : ''}`} onClick={() => setSelectedGroupKey(group.key)}><span className="uex-market-alert-group-icon"><TrendingUp size={15} /></span><span className="uex-market-alert-group-copy"><strong>{group.name}</strong><small>{group.events.length} anúncio{group.events.length === 1 ? '' : 's'} · último encontrado {formatMarketAlertAge(group.events[0])}</small></span><span className="uex-market-alert-group-price"><b>{Number(cheapest?.price || 0).toLocaleString('pt-BR')} UEC</b><small>menor preço · ver detalhes <ChevronDown size={12} /></small></span></button><button type="button" className="uex-market-alert-group-remove" title={`Remover grupo ${group.name}`} onClick={event => { event.stopPropagation(); dismissGroup(group.key); }}><X size={13} /></button></div>; })}</div></div>}
     {selectedGroup && <MarketAlertDetailsModal group={selectedGroup} onClose={() => setSelectedGroupKey('')} onDismiss={dismissEvent} />}
   </div>;

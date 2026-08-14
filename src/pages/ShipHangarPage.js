@@ -18,15 +18,23 @@ import {
   loadVehicleCatalog,
   removeFromMyHangar,
   updateMyHangarEntry,
+  getPurchasedAuecTotal,
   UEX_VEHICLES_UPDATED_EVENT,
   VEHICLE_ROLE_LABELS,
 } from '../data/uexVehicles';
 import { UEX_INSIGHTS_KEYS, saveUexInsight } from '../data/uexInsights';
 
 const HANGAR_VIEW_KEY = 'sc_hangar_view_v1';
+const CATALOG_VIEW_KEY = 'sc_hangar_catalog_view_v1';
+const OWNED_VIEW_KEY = 'sc_hangar_owned_view_v1';
 
-function loadHangarViewMode() {
-  try { return localStorage.getItem(HANGAR_VIEW_KEY) === 'list' ? 'list' : 'cards'; } catch { return 'cards'; }
+function loadViewMode(key) {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved === 'list' || saved === 'cards') return saved;
+    const legacy = localStorage.getItem(HANGAR_VIEW_KEY);
+    return legacy === 'list' ? 'list' : 'cards';
+  } catch { return 'cards'; }
 }
 
 const TABS = [
@@ -63,6 +71,25 @@ function formatNumber(value, maximumFractionDigits = 0) {
 function formatAuec(value) {
   if (value === null || value === undefined || value === '') return '—';
   return `${formatNumber(value)} aUEC`;
+}
+
+function getEntryCost(entry) {
+  if (!entry || entry.source === 'wikelo') return 0;
+  const stored = Number(entry.totalCostAuec);
+  if (Number.isFinite(stored)) return Math.max(0, stored);
+  const unit = Number(entry.unitPriceAuec ?? entry.purchasePriceAuec ?? entry.priceAuec ?? entry.price_auec);
+  const quantity = Math.max(0, Number(entry.quantity) || 0);
+  return Number.isFinite(unit) ? Math.max(0, unit * quantity) : 0;
+}
+
+function getEntrySourceLabel(entry) {
+  return entry?.source === 'wikelo' ? 'Edição Wikelo' : 'Comprada';
+}
+
+function formatEntryCost(entry) {
+  if (entry?.source === 'wikelo') return 'Sem custo · Wikelo';
+  const cost = getEntryCost(entry);
+  return cost > 0 ? formatAuec(cost) : 'Custo não informado';
 }
 
 function formatDate(value) {
@@ -207,6 +234,7 @@ function VehicleDetails({ details, color = COLORS.blue, vehicleId, loaners = [],
 
 function BuyModal({ vehicle, onClose, onConfirm }) {
   const [quantity, setQuantity] = useState('1');
+  const [unitPriceAuec, setUnitPriceAuec] = useState('');
   const [notes, setNotes] = useState('');
   if (!vehicle) return null;
   return (
@@ -217,34 +245,42 @@ function BuyModal({ vehicle, onClose, onConfirm }) {
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button>
         </div>
         <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11 }}>Quantidade<input type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={inputStyle} /></label>
-        <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Preço pago, variante ou observações da aquisição" rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></label>
+        <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Preço pago por nave (aUEC)<input type="number" min="0" step="1" value={unitPriceAuec} onChange={event => setUnitPriceAuec(event.target.value)} placeholder="Opcional — usado no total gasto" style={inputStyle} /></label>
+        <div style={{ marginTop: 6, color: 'var(--text-muted)', fontSize: 10, lineHeight: 1.4 }}>O total será calculado como preço por nave × quantidade. Se deixar vazio, a compra fica registrada, mas sem custo informado.</div>
+        <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Variante ou observações da aquisição" rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></label>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button>
-          <button onClick={() => onConfirm({ quantity, notes })} style={primaryButtonStyle}><Check size={13} /> Comprei</button>
+          <button onClick={() => onConfirm({ quantity, unitPriceAuec, notes })} style={primaryButtonStyle}><Check size={13} /> Comprei</button>
         </div>
       </div>
     </div>
   );
 }
 
-function WikeloModal({ onClose, onConfirm }) {
-  const [name, setName] = useState('');
-  const [manufacturer, setManufacturer] = useState('');
+function WikeloModal({ vehicles = [], onClose, onConfirm }) {
+  const [search, setSearch] = useState('');
+  const [vehicleId, setVehicleId] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [scu, setScu] = useState('');
   const [notes, setNotes] = useState('');
+  const options = useMemo(() => [...(vehicles || [])].sort((a, b) => String(a.name_full || a.name).localeCompare(String(b.name_full || b.name), 'pt-BR')), [vehicles]);
+  const filteredOptions = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term ? options.filter(vehicle => `${vehicle.name} ${vehicle.name_full || ''} ${vehicle.company_name || ''}`.toLowerCase().includes(term)) : options;
+  }, [options, search]);
+  const selectedVehicle = options.find(vehicle => String(vehicle.id) === String(vehicleId));
+  const canSave = Boolean(selectedVehicle);
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }} onMouseDown={onClose}>
-      <div style={{ width: 'min(520px,100%)', background: 'var(--bg-card)', border: '1px solid rgba(162,155,254,0.45)', borderRadius: 10, padding: 18, boxShadow: '0 18px 60px rgba(0,0,0,0.45)' }} onMouseDown={event => event.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}><div><div style={{ color: '#a29bfe', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Nave obtida pelo Wikelo</div><h3 style={{ margin: '5px 0 0', color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 15 }}>Adicionar ao Meu Hangar</h3></div><button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button></div>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
-          <label style={{ color: 'var(--text-muted)', fontSize: 11 }}>Nome da nave *<input value={name} onChange={event => setName(event.target.value)} placeholder="Ex.: F8C Lightning" style={inputStyle} /></label>
-          <label style={{ color: 'var(--text-muted)', fontSize: 11 }}>Fabricante<input value={manufacturer} onChange={event => setManufacturer(event.target.value)} placeholder="RSI" style={inputStyle} /></label>
-          <label style={{ color: 'var(--text-muted)', fontSize: 11 }}>Quantidade<input type="number" min="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={inputStyle} /></label>
-          <label style={{ color: 'var(--text-muted)', fontSize: 11 }}>Carga SCU<input type="number" min="0" value={scu} onChange={event => setScu(event.target.value)} placeholder="Opcional" style={inputStyle} /></label>
-        </div>
-        <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Favor, recompensa, variante ou origem do Wikelo" rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></label>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}><button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button><button onClick={() => name.trim() && onConfirm({ name, manufacturer, quantity, scu, notes })} style={{ ...primaryButtonStyle, background: '#a29bfe', color: '#17152b' }}><StarIcon /> Adicionar Wikelo</button></div>
+    <div className="hangar-modal-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }} onMouseDown={onClose}>
+      <div className="hangar-modal-panel hangar-wikelo-modal" style={{ width: 'min(560px,100%)', maxHeight: 'calc(100vh - 36px)', overflowY: 'auto', background: 'var(--bg-card)', border: '1px solid rgba(162,155,254,0.45)', borderRadius: 10, padding: 18, boxShadow: '0 18px 60px rgba(0,0,0,0.45)' }} onMouseDown={event => event.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14 }}><div><div style={{ color: '#a29bfe', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Naves do Wikelo · catálogo UEX</div><h3 style={{ margin: '5px 0 0', color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 15 }}>Adicionar Edição Wikelo</h3></div><button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button></div>
+        {!options.length ? <div style={{ padding: 14, border: '1px dashed rgba(162,155,254,0.35)', borderRadius: 7, color: 'var(--text-muted)', fontSize: 11 }}>O catálogo local está vazio. Sincronize as naves em UEX API (Live) antes de registrar uma Edição Wikelo.</div> : <>
+          <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11 }}>Pesquisar no catálogo<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome ou fabricante..." style={inputStyle} /></label>
+          <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Escolha a nave *<select value={vehicleId} onChange={event => setVehicleId(event.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}><option value="">Selecione uma nave do catálogo</option>{filteredOptions.map(vehicle => <option key={vehicle.id || vehicle.uuid || vehicle.name} value={vehicle.id}>{vehicle.name_full || vehicle.name}{vehicle.company_name ? ` · ${vehicle.company_name}` : ''}</option>)}</select></label>
+          {selectedVehicle && <div className="hangar-wikelo-selected" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, padding: 9, border: '1px solid rgba(162,155,254,0.28)', background: 'rgba(162,155,254,0.08)', borderRadius: 7 }}><UexVehicleImage src={selectedVehicle.url_photo} alt="" containerStyle={{ width: 62, height: 42, borderRadius: 5, background: 'rgba(162,155,254,0.12)' }} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }} fallbackColor="#a29bfe" /><div style={{ minWidth: 0 }}><strong style={{ color: 'var(--text-primary)', fontSize: 11 }}>{selectedVehicle.name_full || selectedVehicle.name}</strong><div style={{ marginTop: 3, color: '#a29bfe', fontSize: 10 }}>Edição Wikelo · sem custo aUEC{selectedVehicle.company_name ? ` · ${selectedVehicle.company_name}` : ''}</div></div></div>}
+          <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Quantidade<input type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={inputStyle} /></label>
+          <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Favor, recompensa, variante ou origem do Wikelo" rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></label>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}><button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button><button disabled={!canSave} onClick={() => canSave && onConfirm({ vehicle: selectedVehicle, quantity, notes })} style={{ ...primaryButtonStyle, background: '#a29bfe', color: '#17152b', opacity: canSave ? 1 : 0.45, cursor: canSave ? 'pointer' : 'not-allowed' }}><StarIcon /> Adicionar Wikelo</button></div>
+        </>}
       </div>
     </div>
   );
@@ -325,18 +361,26 @@ function VehicleListRow({ vehicle, catalog, purchasedQuantity = 0, onBought, exp
   );
 }
 
-function HangarEntry({ entry, onChangeQuantity, onEdit, onRemove }) {
+function HangarListRow({ entry, onChangeQuantity, onEdit, onRemove }) {
+  const wikelo = entry.source === 'wikelo';
+  const accent = wikelo ? '#a29bfe' : COLORS.orange;
   return (
-    <article style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12, background: 'var(--bg-card)', border: `1px solid ${entry.source === 'wikelo' ? 'rgba(162,155,254,0.3)' : 'var(--border-subtle)'}`, borderRadius: 8, minWidth: 0 }}>
-      <div style={{ width: 64, height: 54, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: entry.source === 'wikelo' ? 'rgba(162,155,254,0.1)' : 'rgba(251,146,60,0.1)', color: entry.source === 'wikelo' ? '#a29bfe' : COLORS.orange }}>
-        <UexVehicleImage src={entry.image} alt="" containerStyle={{ width: '100%', height: '100%' }} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }} fallbackColor={entry.source === 'wikelo' ? '#a29bfe' : COLORS.orange} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}><strong style={{ color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.vehicleName}</strong><span style={{ padding: '2px 5px', borderRadius: 3, background: entry.source === 'wikelo' ? 'rgba(162,155,254,0.12)' : 'rgba(251,146,60,0.12)', color: entry.source === 'wikelo' ? '#a29bfe' : COLORS.orange, fontSize: 9, fontWeight: 800 }}>{entry.source === 'wikelo' ? 'WIKELO' : 'COMPRADA'}</span></div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 5, color: 'var(--text-muted)', fontSize: 10 }}><span>{entry.manufacturer || 'Fabricante —'}</span>{entry.scu !== null && <span><Package size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />{formatNumber(entry.scu, 2)} SCU</span>}<span><CalendarDays size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />{formatDate(entry.acquiredAt)}</span></div>
-        {entry.notes && <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.4 }}>{entry.notes}</div>}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}><button onClick={() => onChangeQuantity(Math.max(1, entry.quantity - 1))} style={quantityButtonStyle}>−</button><span style={{ minWidth: 28, textAlign: 'center', color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 13 }}>{entry.quantity}</span><button onClick={() => onChangeQuantity(entry.quantity + 1)} style={quantityButtonStyle}>+</button><button onClick={onEdit} style={{ ...quantityButtonStyle, marginLeft: 4 }} title="Editar"><Pencil size={12} /></button><button onClick={onRemove} style={{ ...quantityButtonStyle, color: COLORS.red }} title="Remover"><Trash2 size={12} /></button></div>
+    <article className={`hangar-owned-list-row ${wikelo ? 'hangar-wikelo-entry' : 'hangar-purchased-entry'}`} style={{ display: 'grid', gridTemplateColumns: '64px minmax(190px,1fr) minmax(155px,0.8fr) auto', gap: 12, alignItems: 'center', padding: 11, background: 'var(--bg-card)', border: `1px solid ${wikelo ? 'rgba(162,155,254,0.34)' : 'var(--border-subtle)'}`, borderRadius: 8, minWidth: 0 }}>
+      <div style={{ width: 64, height: 54, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: wikelo ? 'rgba(162,155,254,0.1)' : 'rgba(251,146,60,0.1)', color: accent }}><UexVehicleImage src={entry.image} alt="" containerStyle={{ width: '100%', height: '100%' }} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }} fallbackColor={accent} /></div>
+      <div style={{ minWidth: 0 }}><div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}><strong style={{ color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.vehicleName}</strong><span className="hangar-edition-badge" style={{ background: wikelo ? 'rgba(162,155,254,0.12)' : 'rgba(251,146,60,0.12)', color: accent }}>{getEntrySourceLabel(entry)}</span></div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 5, color: 'var(--text-muted)', fontSize: 10 }}><span>{entry.manufacturer || 'Fabricante —'}</span>{entry.scu !== null && <span><Package size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />{formatNumber(entry.scu, 2)} SCU</span>}<span><CalendarDays size={10} style={{ verticalAlign: 'middle', marginRight: 3 }} />{formatDate(entry.acquiredAt)}</span></div>{entry.notes && <div style={{ marginTop: 5, color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.notes}</div>}</div>
+      <div className="hangar-owned-row-summary" style={{ display: 'grid', gap: 5, color: 'var(--text-muted)', fontSize: 10 }}><span><strong style={{ color: 'var(--text-primary)' }}>{formatNumber(entry.quantity)}</strong> unidade(s)</span><span style={{ color: wikelo ? '#a29bfe' : 'var(--text-secondary)' }}>{formatEntryCost(entry)}</span></div>
+      <div className="hangar-owned-actions" style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'flex-end', flexWrap: 'wrap' }}><button onClick={() => onChangeQuantity(Math.max(1, entry.quantity - 1))} style={quantityButtonStyle} title="Diminuir quantidade">−</button><span style={{ minWidth: 28, textAlign: 'center', color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 13 }}>{entry.quantity}</span><button onClick={() => onChangeQuantity(entry.quantity + 1)} style={quantityButtonStyle} title="Aumentar quantidade">+</button><button onClick={onEdit} style={{ ...quantityButtonStyle, marginLeft: 4 }} title="Editar"><Pencil size={12} /></button><button onClick={onRemove} style={{ ...quantityButtonStyle, color: COLORS.red }} title="Remover"><Trash2 size={12} /></button></div>
+    </article>
+  );
+}
+
+function HangarCard({ entry, onChangeQuantity, onEdit, onRemove }) {
+  const wikelo = entry.source === 'wikelo';
+  const accent = wikelo ? '#a29bfe' : COLORS.orange;
+  return (
+    <article className={`hangar-owned-card ${wikelo ? 'hangar-wikelo-entry' : 'hangar-purchased-entry'}`} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', background: 'var(--bg-card)', border: `1px solid ${wikelo ? 'rgba(162,155,254,0.38)' : 'var(--border-subtle)'}`, borderRadius: 9, boxShadow: wikelo ? '0 0 16px rgba(162,155,254,0.08)' : 'none' }}>
+      <div style={{ height: 124, position: 'relative', overflow: 'hidden', background: wikelo ? 'linear-gradient(135deg,rgba(162,155,254,0.2),rgba(56,189,248,0.06))' : 'linear-gradient(135deg,rgba(251,146,60,0.16),rgba(56,189,248,0.05))' }}><UexVehicleImage src={entry.image} alt={entry.vehicleName} containerStyle={{ width: '100%', height: '100%' }} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.82 }} fallbackColor={accent} /><div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(12,17,28,0.96),transparent 72%)' }} /><span className="hangar-edition-badge hangar-card-edition" style={{ position: 'absolute', top: 9, left: 9, background: wikelo ? 'rgba(31,25,61,0.9)' : 'rgba(53,30,10,0.9)', color: accent }}>{getEntrySourceLabel(entry)}</span><div style={{ position: 'absolute', left: 11, right: 11, bottom: 10 }}><h3 style={{ margin: 0, color: '#fff', fontFamily: 'Michroma,sans-serif', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.vehicleName}</h3><div style={{ marginTop: 3, color: 'rgba(255,255,255,0.68)', fontSize: 10 }}>{entry.manufacturer || 'Fabricante não informado'}</div></div></div>
+      <div style={{ display: 'grid', gap: 8, padding: 12 }}><div className="hangar-owned-card-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}><Stat icon={Package} label="Carga" value={entry.scu !== null ? `${formatNumber(entry.scu, 2)} SCU` : '—'} color={COLORS.gold} /><Stat icon={Anchor} label="Quantidade" value={`${formatNumber(entry.quantity)} unidade(s)`} color={accent} /><Stat icon={CalendarDays} label="Registro" value={formatDate(entry.acquiredAt)} color={COLORS.blue} /><Stat icon={HandCoins} label="Custo" value={wikelo ? '0 aUEC' : formatEntryCost(entry)} color={wikelo ? '#a29bfe' : COLORS.green} /></div>{entry.notes && <div style={{ color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.45 }}>{entry.notes}</div>}<div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', paddingTop: 2 }}><button onClick={() => onChangeQuantity(Math.max(1, entry.quantity - 1))} style={quantityButtonStyle} title="Diminuir quantidade">−</button><span style={{ minWidth: 28, textAlign: 'center', color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 13 }}>{entry.quantity}</span><button onClick={() => onChangeQuantity(entry.quantity + 1)} style={quantityButtonStyle} title="Aumentar quantidade">+</button><button onClick={onEdit} style={{ ...secondaryButtonStyle, marginLeft: 'auto', padding: '6px 8px' }}><Pencil size={12} /> Editar</button><button onClick={onRemove} style={{ ...secondaryButtonStyle, padding: '6px 8px', color: COLORS.red, borderColor: 'rgba(251,113,133,0.28)' }}><Trash2 size={12} /> Remover</button></div></div>
     </article>
   );
 }
@@ -345,12 +389,16 @@ const quantityButtonStyle = { width: 26, height: 26, display: 'inline-flex', ali
 
 function EditHangarModal({ entry, onClose, onSave }) {
   const [notes, setNotes] = useState(entry.notes || '');
+  const [unitPriceAuec, setUnitPriceAuec] = useState(entry.source === 'wikelo' ? '' : (entry.unitPriceAuec ?? ''));
+  const isWikelo = entry.source === 'wikelo';
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }} onMouseDown={onClose}>
-      <div style={{ width: 'min(470px,100%)', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 18 }} onMouseDown={event => event.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 13 }}><h3 style={{ margin: 0, color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 14 }}>Editar {entry.vehicleName}</h3><button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button></div>
-        <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' }} /></label>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}><button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button><button onClick={() => onSave({ notes })} style={primaryButtonStyle}><Check size={13} /> Salvar</button></div>
+    <div className="hangar-modal-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }} onMouseDown={onClose}>
+      <div className="hangar-modal-panel" style={{ width: 'min(470px,100%)', background: 'var(--bg-card)', border: `1px solid ${isWikelo ? 'rgba(162,155,254,0.45)' : 'var(--border-subtle)'}`, borderRadius: 10, padding: 18 }} onMouseDown={event => event.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 13 }}><div><div style={{ color: isWikelo ? '#a29bfe' : COLORS.orange, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>{isWikelo ? 'Edição Wikelo' : 'Compra registrada'}</div><h3 style={{ margin: '4px 0 0', color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 14 }}>Editar {entry.vehicleName}</h3></div><button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button></div>
+        {!isWikelo && <><label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11 }}>Preço pago por nave (aUEC)<input type="number" min="0" step="1" value={unitPriceAuec} onChange={event => setUnitPriceAuec(event.target.value)} placeholder="Informe para incluir no total gasto" style={inputStyle} /></label><div style={{ marginTop: 5, color: 'var(--text-muted)', fontSize: 10 }}>Quantidade atual: {formatNumber(entry.quantity)} · total calculado automaticamente.</div></>}
+        {isWikelo && <div style={{ marginBottom: 9, padding: 8, borderRadius: 6, background: 'rgba(162,155,254,0.08)', color: '#c4b5fd', fontSize: 10 }}>Edições Wikelo são gratuitas e nunca entram no contador de aUEC gasto.</div>}
+        <label style={{ display: 'block', marginTop: 10, color: 'var(--text-muted)', fontSize: 11 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' }} /></label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}><button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button><button onClick={() => onSave({ notes, ...(isWikelo ? { unitPriceAuec: null, totalCostAuec: 0 } : { unitPriceAuec: unitPriceAuec === '' ? null : Number(unitPriceAuec), totalCostAuec: unitPriceAuec === '' ? 0 : Math.max(0, Number(unitPriceAuec) || 0) * Math.max(1, Number(entry.quantity) || 1) }) })} style={primaryButtonStyle}><Check size={13} /> Salvar</button></div>
       </div>
     </div>
   );
@@ -377,7 +425,11 @@ export default function ShipHangarPage({ onNavigate }) {
   const [role, setRole] = useState('all');
   const [type, setType] = useState('all');
   const [sort, setSort] = useState('name');
-  const [viewMode, setViewMode] = useState(loadHangarViewMode);
+  const [catalogViewMode, setCatalogViewMode] = useState(() => loadViewMode(CATALOG_VIEW_KEY));
+  const [hangarViewMode, setHangarViewMode] = useState(() => loadViewMode(OWNED_VIEW_KEY));
+  const [hangarSearch, setHangarSearch] = useState('');
+  const [hangarSource, setHangarSource] = useState('all');
+  const [hangarSort, setHangarSort] = useState('name');
   const [buyVehicle, setBuyVehicle] = useState(null);
   const [showWikelo, setShowWikelo] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
@@ -388,8 +440,12 @@ export default function ShipHangarPage({ onNavigate }) {
   const [loadingFleet, setLoadingFleet] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem(HANGAR_VIEW_KEY, viewMode); } catch { /* preferência opcional */ }
-  }, [viewMode]);
+    try {
+      localStorage.setItem(CATALOG_VIEW_KEY, catalogViewMode);
+      localStorage.setItem(OWNED_VIEW_KEY, hangarViewMode);
+      localStorage.setItem(HANGAR_VIEW_KEY, catalogViewMode);
+    } catch { /* preferência opcional */ }
+  }, [catalogViewMode, hangarViewMode]);
 
   useEffect(() => {
     const handleCatalogUpdated = event => {
@@ -420,6 +476,29 @@ export default function ShipHangarPage({ onNavigate }) {
       return String(a.name_full || a.name).localeCompare(String(b.name_full || b.name), 'pt-BR');
     });
   }, [catalog, role, search, sort, type]);
+
+  const filteredHangar = useMemo(() => {
+    const normalizedSearch = hangarSearch.trim().toLowerCase();
+    const filtered = (hangar || []).filter(entry => {
+      const searchable = `${entry.vehicleName || ''} ${entry.manufacturer || ''} ${entry.notes || ''}`.toLowerCase();
+      if (normalizedSearch && !searchable.includes(normalizedSearch)) return false;
+      if (hangarSource !== 'all' && entry.source !== hangarSource) return false;
+      return true;
+    });
+    return filtered.sort((a, b) => {
+      if (hangarSort === 'quantity') return (Number(b.quantity) || 0) - (Number(a.quantity) || 0);
+      if (hangarSort === 'cost') return getEntryCost(b) - getEntryCost(a);
+      if (hangarSort === 'date') return new Date(b.acquiredAt || 0).getTime() - new Date(a.acquiredAt || 0).getTime();
+      return String(a.vehicleName || '').localeCompare(String(b.vehicleName || ''), 'pt-BR');
+    });
+  }, [hangar, hangarSearch, hangarSort, hangarSource]);
+
+  const hangarSummary = useMemo(() => ({
+    purchasedUnits: (hangar || []).filter(entry => entry.source !== 'wikelo').reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
+    wikeloUnits: (hangar || []).filter(entry => entry.source === 'wikelo').reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
+    purchasedTypes: (hangar || []).filter(entry => entry.source !== 'wikelo').length,
+    wikeloTypes: (hangar || []).filter(entry => entry.source === 'wikelo').length,
+  }), [hangar]);
 
   const sync = useCallback(() => {
     setLoading(true); setError(''); setMessage('');
@@ -469,8 +548,10 @@ export default function ShipHangarPage({ onNavigate }) {
   }
 
   function confirmWikelo(options) {
-    const next = addToMyHangar(null, { source: 'wikelo', vehicleName: options.name, manufacturer: options.manufacturer, quantity: options.quantity, scu: options.scu, notes: options.notes });
-    setHangar(next); setShowWikelo(false); setTab('hangar'); setMessage(`${options.name} foi adicionada ao Meu Hangar como nave do Wikelo.`);
+    const vehicle = options?.vehicle;
+    if (!vehicle) return;
+    const next = addToMyHangar(vehicle, { source: 'wikelo', quantity: options.quantity, notes: options.notes });
+    setHangar(next); setShowWikelo(false); setTab('hangar'); setMessage(`${vehicle.name_full || vehicle.name} foi adicionada ao Meu Hangar como Edição Wikelo, sem custo aUEC.`);
   }
 
   function changeQuantity(entry, quantity) { setHangar(updateMyHangarEntry(entry.id, { quantity })); }
@@ -482,7 +563,7 @@ export default function ShipHangarPage({ onNavigate }) {
       <div className="page-header" style={{ flexShrink: 0 }}><div><div className="page-title">HANGAR DE NAVES</div><div className="page-subtitle">Catálogo UEX de veículos, locais de compra/aluguel e controle das suas naves</div></div><button onClick={sync} disabled={loading} style={{ ...secondaryButtonStyle, padding: '8px 11px' }}>{loading ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Recarregar dados locais</button></div>
       {(error || message) && <div style={{ margin: '0 14px 10px', padding: '9px 12px', borderRadius: 6, fontSize: 11, lineHeight: 1.5, background: error ? 'rgba(251,113,133,0.08)' : 'rgba(52,211,153,0.08)', border: `1px solid ${error ? 'rgba(251,113,133,0.28)' : 'rgba(52,211,153,0.28)'}`, color: error ? COLORS.red : COLORS.green, display: 'flex', alignItems: 'flex-start', gap: 8 }}><Info size={13} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ flex: 1 }}>{error || message}</span><button onClick={() => { setError(''); setMessage(''); }} style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer' }}><X size={13} /></button></div>}
       <div style={{ padding: '0 14px 12px', flexShrink: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 7, marginBottom: 12 }}><Stat icon={Rocket} label="Catálogo" value={stats.vehicles} color={COLORS.orange} /><Stat icon={Package} label="Naves" value={stats.spaceships} color={COLORS.blue} /><Stat icon={ShoppingCart} label="Compras UEX" value={stats.purchaseOffers} color={COLORS.green} /><Stat icon={HandCoins} label="Aluguéis UEX" value={stats.rentalOffers} color={COLORS.purple} /><Stat icon={Anchor} label="Meu Hangar" value={`${stats.ownedUnits} unidade(s)`} color={COLORS.gold} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 7, marginBottom: 12 }}><Stat icon={Rocket} label="Catálogo" value={stats.vehicles} color={COLORS.orange} /><Stat icon={Package} label="Naves" value={stats.spaceships} color={COLORS.blue} /><Stat icon={ShoppingCart} label="Compras UEX" value={stats.purchaseOffers} color={COLORS.green} /><Stat icon={HandCoins} label="Aluguéis UEX" value={stats.rentalOffers} color={COLORS.purple} /><Stat icon={Anchor} label="Meu Hangar" value={`${stats.ownedUnits} unidade(s)`} color={COLORS.gold} /><Stat icon={HandCoins} label="Gasto em compras" value={formatAuec(stats.purchasedAuecTotal)} color={COLORS.green} /></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 8 }}>{TABS.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setTab(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 5, border: `1px solid ${tab === id ? `${COLORS.orange}77` : 'var(--border-subtle)'}`, background: tab === id ? 'rgba(251,146,60,0.12)' : 'transparent', color: tab === id ? COLORS.orange : 'var(--text-muted)', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}><Icon size={13} />{label}{id === 'hangar' && <span style={{ fontFamily: 'Share Tech Mono,monospace' }}>{stats.ownedUnits}</span>}</button>)}{catalog?.syncedAt && <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 10 }}>Última sincronização: {formatDate(catalog.syncedAt)}</span>}</div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 18px' }}>
@@ -491,18 +572,20 @@ export default function ShipHangarPage({ onNavigate }) {
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}><button onClick={() => { setShowUexFleet(value => !value); if (!showUexFleet && !uexFleet.length) loadUexFleet(); }} style={{ ...secondaryButtonStyle, padding: '6px 9px', color: '#c4b5fd', borderColor: 'rgba(167,139,250,0.3)' }}><Rocket size={12} /> {showUexFleet ? 'Ocultar frota UEX' : 'Comparar com frota UEX'}</button></div>
             {showUexFleet && <UexFleetPanel rows={uexFleet} loading={loadingFleet} onRefresh={loadUexFleet} onClose={() => setShowUexFleet(false)} />}
             <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}><div style={{ flex: '1 1 220px', position: 'relative' }}>
-<Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-muted)' }} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nave, fabricante ou slug..." style={{ ...inputStyle, marginTop: 0, paddingLeft: 29 }} /></div><select value={type} onChange={event => setType(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 150 }}><option value="all">Todos os veículos</option><option value="spaceship">Somente naves</option><option value="ground">Somente terrestres</option></select><select value={role} onChange={event => setRole(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 145 }}><option value="all">Todas as funções</option>{ROLE_FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button onClick={() => setSort(sort === 'name' ? 'cargo' : sort === 'cargo' ? 'crew' : 'name')} style={{ ...secondaryButtonStyle, height: 32 }} title="Alterar ordenação">{sort === 'name' ? <ArrowDownAZ size={13} /> : sort === 'cargo' ? <Package size={13} /> : <Users size={13} />} {sort === 'name' ? 'Nome' : sort === 'cargo' ? 'Carga' : 'Tripulação'}</button><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: 2, border: '1px solid var(--border-subtle)', borderRadius: 5, marginLeft: 'auto' }}><button onClick={() => setViewMode('cards')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'cards' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'cards' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em cards"><LayoutGrid size={13} /> Cards</button><button onClick={() => setViewMode('list')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'list' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'list' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em lista"><List size={13} /> Lista</button></div></div>
-            {!catalog?.vehicles?.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Rocket size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>CATÁLOGO AINDA NÃO SINCRONIZADO</div><p style={{ maxWidth: 470, margin: '0 auto 14px', fontSize: 12, lineHeight: 1.6 }}>Primeiro sincronize a aba <strong>UEX API (Live) → Veículos</strong>. O Hangar reutiliza o catálogo salvo localmente, incluindo carga, fabricantes, características, compra e aluguel.</p><button onClick={() => onNavigate ? onNavigate('uexapi') : sync()} style={primaryButtonStyle}><Globe2 size={13} /> Abrir UEX API (Live)</button></div> : <><div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 8 }}>{vehicles.length} veículo(s) exibido(s) · os preços são dados comunitários da UEX e podem variar por patch</div>{viewMode === 'cards' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,330px),1fr))', gap: 10 }}>{vehicles.map(vehicle => <VehicleCard key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{vehicles.map(vehicle => <VehicleListRow key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div>}</>}
+<Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-muted)' }} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nave, fabricante ou slug..." style={{ ...inputStyle, marginTop: 0, paddingLeft: 29 }} /></div><select value={type} onChange={event => setType(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 150 }}><option value="all">Todos os veículos</option><option value="spaceship">Somente naves</option><option value="ground">Somente terrestres</option></select><select value={role} onChange={event => setRole(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 145 }}><option value="all">Todas as funções</option>{ROLE_FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button onClick={() => setSort(sort === 'name' ? 'cargo' : sort === 'cargo' ? 'crew' : 'name')} style={{ ...secondaryButtonStyle, height: 32 }} title="Alterar ordenação">{sort === 'name' ? <ArrowDownAZ size={13} /> : sort === 'cargo' ? <Package size={13} /> : <Users size={13} />} {sort === 'name' ? 'Nome' : sort === 'cargo' ? 'Carga' : 'Tripulação'}</button><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: 2, border: '1px solid var(--border-subtle)', borderRadius: 5, marginLeft: 'auto' }}><button onClick={() => setCatalogViewMode('cards')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: catalogViewMode === 'cards' ? 'rgba(56,189,248,0.14)' : 'transparent', color: catalogViewMode === 'cards' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em cards"><LayoutGrid size={13} /> Cards</button><button onClick={() => setCatalogViewMode('list')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: catalogViewMode === 'list' ? 'rgba(56,189,248,0.14)' : 'transparent', color: catalogViewMode === 'list' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em lista"><List size={13} /> Lista</button></div></div>
+            {!catalog?.vehicles?.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Rocket size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>CATÁLOGO AINDA NÃO SINCRONIZADO</div><p style={{ maxWidth: 470, margin: '0 auto 14px', fontSize: 12, lineHeight: 1.6 }}>Primeiro sincronize a aba <strong>UEX API (Live) → Veículos</strong>. O Hangar reutiliza o catálogo salvo localmente, incluindo carga, fabricantes, características, compra e aluguel.</p><button onClick={() => onNavigate ? onNavigate('uexapi') : sync()} style={primaryButtonStyle}><Globe2 size={13} /> Abrir UEX API (Live)</button></div> : <><div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 8 }}>{vehicles.length} veículo(s) exibido(s) · os preços são dados comunitários da UEX e podem variar por patch</div>{catalogViewMode === 'cards' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,330px),1fr))', gap: 10 }}>{vehicles.map(vehicle => <VehicleCard key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{vehicles.map(vehicle => <VehicleListRow key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div>}</>}
           </>
         ) : (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}><div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 15 }}>MEU HANGAR</h2><div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Registros locais de naves compradas e obtidas por recompensas do Wikelo.</div></div><button onClick={() => setShowWikelo(true)} style={{ ...primaryButtonStyle, background: '#a29bfe', color: '#17152b' }}><Plus size={13} /> Nave do Wikelo</button></div>
-            {!hangar.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Anchor size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>SEU HANGAR ESTÁ VAZIO</div><p style={{ maxWidth: 470, margin: '0 auto', fontSize: 12, lineHeight: 1.6 }}>Na aba <strong>Naves UEX</strong>, clique em <strong>Comprei</strong> em uma nave para registrá-la. Para uma recompensa do Wikelo, use <strong>Nave do Wikelo</strong>.</p></div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{hangar.map(entry => <HangarEntry key={entry.id} entry={entry} onChangeQuantity={quantity => changeQuantity(entry, quantity)} onEdit={() => setEditEntry(entry)} onRemove={() => removeEntry(entry)} />)}</div>}
+          <div className="hangar-owned-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}><div><h2 style={{ margin: 0, color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 15 }}>MEU HANGAR</h2><div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Naves compradas e Edições Wikelo usando o mesmo catálogo normal.</div></div><button onClick={() => setShowWikelo(true)} style={{ ...primaryButtonStyle, background: '#a29bfe', color: '#17152b' }}><Plus size={13} /> Naves do Wikelo</button></div>
+            <div className="hangar-owned-kpis"><div><span>Gasto registrado em compras</span><strong>{formatAuec(stats.purchasedAuecTotal)}</strong><small>Naves do Wikelo não entram neste total</small></div><div><span>Unidades compradas</span><strong>{formatNumber(hangarSummary.purchasedUnits)}</strong><small>{hangarSummary.purchasedTypes} tipo(s) com origem compra</small></div><div className="hangar-wikelo-kpi"><span>Edições Wikelo</span><strong>{formatNumber(hangarSummary.wikeloUnits)}</strong><small>{hangarSummary.wikeloTypes} tipo(s) sem custo aUEC</small></div></div>
+            <div className="hangar-owned-toolbar"><div className="hangar-owned-search"><Search size={14} /><input value={hangarSearch} onChange={event => setHangarSearch(event.target.value)} placeholder="Filtrar nave, fabricante ou observação..." /></div><select value={hangarSource} onChange={event => setHangarSource(event.target.value)}><option value="all">Todas as origens</option><option value="compra">Somente compradas</option><option value="wikelo">Somente Edição Wikelo</option></select><select value={hangarSort} onChange={event => setHangarSort(event.target.value)}><option value="name">Ordenar por nome</option><option value="quantity">Maior quantidade</option><option value="cost">Maior custo registrado</option><option value="date">Mais recentes</option></select><div className="hangar-view-toggle"><button onClick={() => setHangarViewMode('cards')} className={hangarViewMode === 'cards' ? 'active' : ''} title="Visualização em cards"><LayoutGrid size={13} /> Cards</button><button onClick={() => setHangarViewMode('list')} className={hangarViewMode === 'list' ? 'active' : ''} title="Visualização em lista"><List size={13} /> Lista</button></div></div>
+            {!hangar.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Anchor size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>SEU HANGAR ESTÁ VAZIO</div><p style={{ maxWidth: 470, margin: '0 auto', fontSize: 12, lineHeight: 1.6 }}>Na aba <strong>Naves UEX</strong>, clique em <strong>Comprei</strong> em uma nave para registrá-la. Para uma recompensa do Wikelo, use <strong>Naves do Wikelo</strong>.</p></div> : !filteredHangar.length ? <div className="hangar-empty-filter">Nenhuma nave corresponde aos filtros atuais.</div> : <><div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 8 }}>{filteredHangar.length} registro(s) exibido(s) de {hangar.length} · custo calculado apenas para compras com preço informado</div>{hangarViewMode === 'cards' ? <div className="hangar-owned-grid">{filteredHangar.map(entry => <HangarCard key={entry.id} entry={entry} onChangeQuantity={quantity => changeQuantity(entry, quantity)} onEdit={() => setEditEntry(entry)} onRemove={() => removeEntry(entry)} />)}</div> : <div className="hangar-owned-list">{filteredHangar.map(entry => <HangarListRow key={entry.id} entry={entry} onChangeQuantity={quantity => changeQuantity(entry, quantity)} onEdit={() => setEditEntry(entry)} onRemove={() => removeEntry(entry)} />)}</div>}</>}
           </div>
         )}
       </div>
       {buyVehicle && <BuyModal vehicle={buyVehicle} onClose={() => setBuyVehicle(null)} onConfirm={options => confirmBought(buyVehicle, options)} />}
-      {showWikelo && <WikeloModal onClose={() => setShowWikelo(false)} onConfirm={confirmWikelo} />}
+      {showWikelo && <WikeloModal vehicles={catalog?.vehicles || []} onClose={() => setShowWikelo(false)} onConfirm={confirmWikelo} />}
       {editEntry && <EditHangarModal entry={editEntry} onClose={() => setEditEntry(null)} onSave={changes => saveEntry(editEntry, changes)} />}
     </div>
   );

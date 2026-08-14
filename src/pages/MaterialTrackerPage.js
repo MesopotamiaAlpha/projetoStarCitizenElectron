@@ -630,50 +630,53 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
   const pct         = totalMats > 0 ? Math.round(doneMats / totalMats * 100) : 0;
 
   return (
-    <div className="bp-queue-card" style={{
-      display:'flex',alignItems:'center',gap:10,padding:'9px 12px',flexWrap:'wrap',
+    <article className={`bp-queue-card ${isComplete ? 'is-complete' : ''}`} style={{
       background: isComplete ? 'rgba(52,211,153,0.07)' : 'var(--bg-card)',
       border: `1px solid ${isComplete ? 'rgba(52,211,153,0.4)' : 'rgba(251,191,36,0.2)'}`,
-      borderRadius:7, transition:'all 0.2s',
     }}>
-      {/* Ícone / status */}
-      {isComplete
-        ? <CheckCircle2 size={16} style={{ color:'var(--accent-green)',flexShrink:0 }}/>
-        : <ShoppingCart size={14} style={{ color:'var(--accent-gold)',flexShrink:0 }}/>
-      }
-      <div className="bp-queue-info" style={{ flex:'1 1 150px',minWidth:0 }}>
-        <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:2 }}>
-          <div style={{ fontSize:13,fontWeight:700,color:isComplete?'var(--accent-green)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1 }}>{bp.bpName}</div>
-          {isComplete && <span style={{ fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(52,211,153,0.15)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.4)',fontWeight:700,flexShrink:0 }}>✓ PRONTO</span>}
+      <div className="bp-queue-card-head">
+        <div className="bp-queue-status-icon">
+          {isComplete
+            ? <CheckCircle2 size={17}/>
+            : <ShoppingCart size={15}/>
+          }
         </div>
-        {/* Mini progress bar */}
-        <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-          <div style={{ flex:1,height:3,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden' }}>
-            <div style={{ height:'100%',width:`${pct}%`,background:isComplete?'var(--accent-green)':'var(--accent-gold)',borderRadius:2,transition:'width 0.4s' }}/>
+        <div className="bp-queue-info">
+          <div className="bp-queue-title-line">
+            <strong className="bp-queue-name" title={bp.bpName}>{bp.bpName}</strong>
+            {isComplete && <span className="bp-queue-ready-badge">✓ PRONTO</span>}
           </div>
-          <span style={{ fontSize:9,color:isComplete?'var(--accent-green)':'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',flexShrink:0 }}>{doneMats}/{totalMats}</span>
+          <div className="bp-queue-meta-line">
+            <span>{bp.category || 'Blueprint'}</span>
+            <span className="bp-queue-material-count">{doneMats} de {totalMats} materiais</span>
+          </div>
+          <div className="bp-queue-progress-track" aria-label={`Progresso ${pct}%`}>
+            <span style={{ width:`${pct}%`, background:isComplete ? 'var(--accent-green)' : 'var(--accent-gold)' }}/>
+          </div>
         </div>
-        <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:2 }}>{bp.category}</div>
-      </div>
-      {!isComplete && (
-        <button className="bp-queue-consume"
-          onClick={() => onConsume(bp)}
-          disabled={consuming}
-          title="Usar os minérios elegíveis do Baú e concluir esta blueprint"
-          style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:'5px 8px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:5,color:'var(--accent-gold)',cursor:consuming?'wait':'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:consuming?0.65:1,whiteSpace:'normal',textAlign:'center',lineHeight:1.2 }}
-        >
-          {consuming ? <RefreshCw size={10} style={{animation:'spin 1s linear infinite'}}/> : <Archive size={10}/>} {consuming ? 'Calculando...' : 'Concluir do Baú'}
+        <button className="bp-queue-remove" onClick={() => onRemove(bp.bpId)} title="Remover blueprint da fila" aria-label={`Remover ${bp.bpName} da fila`}>
+          <X size={12}/>
         </button>
-      )}
-
-      {/* Qty */}
-      <div className="bp-queue-qty" style={{ display:'flex',alignItems:'center',gap:4,flexShrink:0 }}>
-        <button onClick={()=>onQtyChange(bp.bpId,bp.quantity-1)} disabled={bp.quantity<=1} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:bp.quantity>1?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',opacity:bp.quantity<=1?0.4:1 }}><Minus size={9}/></button>
-        <span style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-gold)',minWidth:20,textAlign:'center' }}>{bp.quantity}</span>
-        <button onClick={()=>onQtyChange(bp.bpId,bp.quantity+1)} style={{ width:20,height:20,borderRadius:3,border:'1px solid var(--border-subtle)',background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Plus size={9}/></button>
       </div>
-      <button className="bp-queue-remove" onClick={()=>onRemove(bp.bpId) } style={{ width:24,height:24,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}><X size={11}/></button>
-    </div>
+
+      <div className="bp-queue-card-footer">
+        <div className="bp-queue-quantity-wrap">
+          <span className="bp-queue-action-label">Quantidade</span>
+          <div className="bp-queue-qty">
+            <button onClick={() => onQtyChange(bp.bpId, bp.quantity - 1)} disabled={bp.quantity <= 1} title="Diminuir quantidade" aria-label="Diminuir quantidade" style={{ opacity:bp.quantity <= 1 ? 0.4 : 1 }}><Minus size={10}/></button>
+            <strong>{bp.quantity}</strong>
+            <button onClick={() => onQtyChange(bp.bpId, bp.quantity + 1)} title="Aumentar quantidade" aria-label="Aumentar quantidade"><Plus size={10}/></button>
+          </div>
+        </div>
+        {isComplete ? (
+          <div className="bp-queue-complete-note"><CheckCircle2 size={13}/> Materiais prontos para craft</div>
+        ) : (
+          <button className="bp-queue-consume" onClick={() => onConsume(bp)} disabled={consuming} title="Usar os minérios elegíveis do Baú e concluir esta blueprint">
+            {consuming ? <RefreshCw size={12} className="bp-queue-spinner"/> : <Archive size={12}/>}<span>{consuming ? 'Calculando...' : 'Concluir do Baú'}</span>
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
 

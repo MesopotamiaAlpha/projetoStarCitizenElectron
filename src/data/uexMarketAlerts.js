@@ -17,6 +17,11 @@ export const DEFAULT_MARKET_ALERT_MAX_RESULTS = 5;
 export const MIN_MARKET_ALERT_MAX_RESULTS = 1;
 export const MAX_MARKET_ALERT_MAX_RESULTS = 50;
 
+export const MARKET_ALERT_MANUAL_MATCH_MODES = Object.freeze([
+  { value: 'title', label: 'Específica — nome e título', description: 'Procura o termo somente no nome, título ou slug do anúncio.' },
+  { value: 'broad', label: 'Ampla — nome, título e descrição', description: 'Também procura o termo dentro da descrição, podendo encontrar itens que usam esse material.' },
+]);
+
 export const MARKET_ALERT_SOURCES = Object.freeze([
   { value: '', label: 'Qualquer origem' },
   { value: 'looted', label: 'Lootado' },
@@ -71,22 +76,49 @@ function normalizeItemSearch(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function normalizeManualMatchMode(value) {
+  return value === 'broad' ? 'broad' : 'title';
+}
+
+export function manualMatchModeLabel(value) {
+  return MARKET_ALERT_MANUAL_MATCH_MODES.find(mode => mode.value === normalizeManualMatchMode(value))?.label || MARKET_ALERT_MANUAL_MATCH_MODES[0].label;
+}
+
+function containsNormalizedPhrase(text, phrase) {
+  const haystack = normalizeItemSearch(text);
+  const needle = normalizeItemSearch(phrase);
+  if (!haystack || !needle) return false;
+  const haystackWords = haystack.split(' ');
+  const needleWords = needle.split(' ');
+  return haystackWords.some((_, index) => needleWords.every((word, offset) => haystackWords[index + offset] === word));
+}
+
+function manualMatchFields(listing = {}) {
+  return {
+    title: [
+      listingItemName(listing),
+      listing.title,
+      listing.slug,
+      listing.listing_slug,
+      listing.item?.name,
+    ].filter(Boolean).join(' '),
+    description: [listing.description, listing.item?.description].filter(Boolean).join(' '),
+  };
+}
+
+export function listingManualMatchReason(alert, listing) {
+  const fields = manualMatchFields(listing);
+  if (containsNormalizedPhrase(fields.title, alert?.itemName)) return 'Nome/título do anúncio';
+  if (normalizeManualMatchMode(alert?.manualMatchMode) === 'broad' && containsNormalizedPhrase(fields.description, alert?.itemName)) return 'Descrição do anúncio';
+  return null;
+}
+
 export function listingItemName(row = {}) {
   return String(row.item_name || row.itemName || row.item?.name || row.name || row.title || '').trim();
 }
 
 function listingMatchesManualItem(alert, listing) {
-  const needle = normalizeItemSearch(alert?.itemName);
-  if (!needle) return false;
-  const haystack = normalizeItemSearch([
-    listingItemName(listing),
-    listing.title,
-    listing.description,
-    listing.slug,
-    listing.listing_slug,
-    listing.item?.name,
-  ].filter(Boolean).join(' '));
-  return haystack.includes(needle);
+  return Boolean(listingManualMatchReason(alert, listing));
 }
 
 function titleQuality1000(row) {
@@ -210,6 +242,7 @@ export function marketAlertDefaults(overrides = {}) {
     itemId: overrides.itemId ? String(overrides.itemId) : '',
     itemName: String(overrides.itemName || '').trim(),
     itemMode: overrides.itemMode === 'manual' ? 'manual' : 'catalog',
+    manualMatchMode: normalizeManualMatchMode(overrides.manualMatchMode),
     currency: 'UEC',
     source: String(overrides.source || '').trim(),
     qualityAny: overrides.qualityAny !== false,
@@ -350,6 +383,9 @@ export function listingMatchesAlert(alert, listing) {
 function eventFromListing(alert, listing) {
   const quality = listingQuality1000(listing);
   const price = listingPrice(listing);
+  const matchReason = alert.itemMode === 'manual'
+    ? listingManualMatchReason(alert, listing)
+    : 'Catálogo UEX por ID do item';
   return {
     id: createId(),
     key: listingKey(listing),
@@ -369,6 +405,8 @@ function eventFromListing(alert, listing) {
     quality,
     listingAgeDays: listingAgeDays(listing),
     source: listing.source || '',
+    matchMode: alert.itemMode === 'manual' ? normalizeManualMatchMode(alert.manualMatchMode) : 'catalog',
+    matchReason: matchReason || 'Correspondência do anúncio',
     location: listing.location || listing.terminal_name || '',
     seller: listing.user_username || listing.user_name || '',
     listing,

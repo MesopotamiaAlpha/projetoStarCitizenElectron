@@ -250,20 +250,37 @@ export function loadMyHangar() {
 }
 
 export function saveMyHangar(entries) {
-  const normalized = (Array.isArray(entries) ? entries : []).map(entry => ({
-    id: entry.id || `${entry.vehicleId || 'manual'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    vehicleId: numberOrNull(entry.vehicleId),
-    vehicleName: String(entry.vehicleName || 'Nave sem nome').trim(),
-    manufacturer: entry.manufacturer || null,
-    source: entry.source === 'wikelo' ? 'wikelo' : 'compra',
-    quantity: Math.max(1, Number(entry.quantity) || 1),
-    acquiredAt: entry.acquiredAt || new Date().toISOString(),
-    notes: entry.notes || '',
-    image: entry.image || null,
-    scu: numberOrNull(entry.scu),
-    crew: entry.crew || null,
-    slug: entry.slug || null,
-  }));
+  const normalized = (Array.isArray(entries) ? entries : []).map(entry => {
+    const source = entry.source === 'wikelo' ? 'wikelo' : 'compra';
+    const quantity = Math.max(1, Number(entry.quantity) || 1);
+    const legacyUnitPrice = numberOrNull(entry.unitPriceAuec ?? entry.purchasePriceAuec ?? entry.priceAuec ?? entry.price_auec);
+    const storedTotal = numberOrNull(entry.totalCostAuec ?? entry.total_cost_auec);
+    const totalCostAuec = source === 'compra'
+      ? Math.max(0, storedTotal ?? ((legacyUnitPrice ?? 0) * quantity))
+      : 0;
+    const unitPriceAuec = source === 'compra' && totalCostAuec > 0
+      ? totalCostAuec / quantity
+      : (source === 'compra' ? legacyUnitPrice : null);
+    return {
+      id: entry.id || `${entry.vehicleId || 'manual'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      vehicleId: numberOrNull(entry.vehicleId),
+      vehicleName: String(entry.vehicleName || 'Nave sem nome').trim(),
+      manufacturer: entry.manufacturer || null,
+      source,
+      edition: source === 'wikelo' ? 'wikelo' : 'purchase',
+      editionLabel: source === 'wikelo' ? 'Edição Wikelo' : 'Comprada',
+      quantity,
+      unitPriceAuec,
+      totalCostAuec,
+      acquiredAt: entry.acquiredAt || new Date().toISOString(),
+      notes: entry.notes || '',
+      image: entry.image || null,
+      scu: numberOrNull(entry.scu),
+      crew: entry.crew || null,
+      slug: entry.slug || null,
+    };
+  });
+  
   storageSet(HANGAR_KEY, normalized);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(MY_HANGAR_UPDATED_EVENT, { detail: normalized }));
@@ -278,8 +295,23 @@ export function addToMyHangar(vehicle, options = {}) {
   const key = `${source}:${vehicleId ?? String(vehicle?.name || options.vehicleName || '').trim().toLowerCase()}`;
   const existingIndex = current.findIndex(entry => `${entry.source}:${entry.vehicleId ?? entry.vehicleName.toLowerCase()}` === key);
   const quantity = Math.max(1, Number(options.quantity) || 1);
+  const unitPriceAuec = source === 'compra' ? numberOrNull(options.unitPriceAuec ?? options.purchasePriceAuec) : null;
+  const addedCostAuec = source === 'compra' && unitPriceAuec !== null ? Math.max(0, unitPriceAuec) * quantity : 0;
   if (existingIndex >= 0) {
-    current[existingIndex] = { ...current[existingIndex], quantity: current[existingIndex].quantity + quantity, notes: options.notes || current[existingIndex].notes };
+    const existing = current[existingIndex];
+    const previousQuantity = Math.max(1, Number(existing.quantity) || 1);
+    const previousTotal = source === 'compra'
+      ? Math.max(0, Number(existing.totalCostAuec) || ((Number(existing.unitPriceAuec) || 0) * previousQuantity))
+      : 0;
+    const nextQuantity = previousQuantity + quantity;
+    const nextTotal = previousTotal + addedCostAuec;
+    current[existingIndex] = {
+      ...existing,
+      quantity: nextQuantity,
+      unitPriceAuec: source === 'compra' && nextTotal > 0 ? nextTotal / nextQuantity : existing.unitPriceAuec || null,
+      totalCostAuec: source === 'compra' ? nextTotal : 0,
+      notes: options.notes || existing.notes,
+    };
   } else {
     current.push({
       id: `${vehicleId ?? 'manual'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -287,7 +319,11 @@ export function addToMyHangar(vehicle, options = {}) {
       vehicleName: options.vehicleName || vehicle?.name_full || vehicle?.name || 'Nave sem nome',
       manufacturer: options.manufacturer || vehicle?.company_name || null,
       source,
+      edition: source === 'wikelo' ? 'wikelo' : 'purchase',
+      editionLabel: source === 'wikelo' ? 'Edição Wikelo' : 'Comprada',
       quantity,
+      unitPriceAuec: source === 'compra' ? unitPriceAuec : null,
+      totalCostAuec: source === 'compra' ? addedCostAuec : 0,
       acquiredAt: options.acquiredAt || new Date().toISOString(),
       notes: options.notes || '',
       image: options.image || vehicle?.url_photo || null,
@@ -322,6 +358,17 @@ export function getRentalRows(catalog, vehicleId) {
   return (catalog?.rentalPrices || []).filter(row => Number(row.id_vehicle) === Number(vehicleId));
 }
 
+export function getPurchasedAuecTotal(entries = loadMyHangar()) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter(entry => entry?.source !== 'wikelo')
+    .reduce((total, entry) => {
+      const quantity = Math.max(0, Number(entry?.quantity) || 0);
+      const storedTotal = Number(entry?.totalCostAuec);
+      const legacyTotal = Number(entry?.unitPriceAuec ?? entry?.purchasePriceAuec ?? entry?.priceAuec ?? entry?.price_auec) * quantity;
+      return total + (Number.isFinite(storedTotal) ? Math.max(0, storedTotal) : (Number.isFinite(legacyTotal) ? Math.max(0, legacyTotal) : 0));
+    }, 0);
+}
+
 export function getCatalogStats(catalog) {
   const vehicles = catalog?.vehicles || [];
   const owned = loadMyHangar();
@@ -333,6 +380,7 @@ export function getCatalogStats(catalog) {
     rentalOffers: (catalog?.rentalPrices || []).length,
     ownedTypes: owned.length,
     ownedUnits: owned.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
+    purchasedAuecTotal: getPurchasedAuecTotal(owned),
   };
 }
 

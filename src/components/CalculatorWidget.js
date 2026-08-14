@@ -1,6 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Calculator, GripHorizontal, RotateCcw, X } from 'lucide-react';
 
+function formatNumberForDisplay(value) {
+  const raw = String(value ?? '');
+  if (!raw) return raw;
+  const [integerPart, fractionPart] = raw.split('.');
+  const numericInteger = Number(integerPart || 0);
+  if (!Number.isFinite(numericInteger)) return raw;
+  const formattedInteger = numericInteger.toLocaleString('pt-BR', {
+    maximumFractionDigits: 0,
+  });
+  return fractionPart !== undefined ? `${formattedInteger},${fractionPart}` : formattedInteger;
+}
+
+function formatExpressionForDisplay(expression) {
+  return String(expression || '').replace(/\d+(?:\.\d+)?/g, formatNumberForDisplay);
+}
+
 function evaluateExpression(expression) {
   const normalized = String(expression || '')
     .replace(/×/g, '*')
@@ -137,7 +153,7 @@ export default function CalculatorWidget() {
             </div>
           </div>
           <div style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
-            <div style={{minHeight:18,textAlign:'right',color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{expression || '0'}</div>
+            <div style={{minHeight:18,textAlign:'right',color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatExpressionForDisplay(expression) || '0'}</div>
             <div style={{minHeight:32,textAlign:'right',color:error?'var(--accent-red)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:22,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayResult}</div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
