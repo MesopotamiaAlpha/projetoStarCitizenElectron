@@ -43,7 +43,7 @@ Thumbs.db
 # ===== Adicione suas pastas abaixo =====
 
 # exemplo
-electron/
+
 node_modules/
 # exports/
 # downloads/
