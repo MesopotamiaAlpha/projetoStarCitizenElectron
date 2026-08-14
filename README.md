@@ -133,20 +133,23 @@ A tabela abaixo mostra os identificadores usados em `activePage`, a página rend
 | Armaduras | `custom` | `CustomArmorPage.js` | Cadastro, edição e importação de conjuntos personalizados. |
 | Itens & Crafting | `inventory` | `InventoryPage.js` | Inventário de itens, autocomplete UEX, preço médio, quantidade, locais, scripts, PAF e transferência. |
 | Itens & Crafting | `blueprints` | `BlueprintPage.js` | Blueprints, ingredientes, qualidade mínima, SCMDB, posse, wishlist e fila. |
-| Itens & Crafting | `materials` | `MaterialTrackerPage.js` | Lista consolidada, prioridade por arrastar, estoque do baú, qualidade e consumo. |
-| Mineração | `mining` | `MiningPage.js` | Dados editáveis de minérios, lasers, naves, módulos e builds. |
+| Itens & Crafting | `materials` | `MaterialTrackerPage.js` | Lista consolidada, prioridade por arrastar, estoque do baú, qualidade, consumo de blueprint, seletor de coleta cSCU/SCU com conversão automática e reset individual por minério. |
+| Mineração | `mining` | `MiningPage.js` | Guia visual de builds de nave: seleção das peças equipadas e anotações, sem exibição de estatísticas numéricas de potência, alcance, extração ou capacidade. A antiga aba Naves & Módulos foi removida da página. |
 | Mineração | `mininggroup` | `MiningGroupPage.js` | Sessões, grupo de mineração, refino, loot e armazenamento. |
 | Mineração | `orevault` | `OreVaultPage.js` | Baú de minério, quantidade, unidade, qualidade, local, transferência e dedução. |
 | Clã & Missões | `clanvault` | `ClanVaultPage.js` | Estoque compartilhado do clã, responsáveis, consumo e notas. |
-| Clã & Missões | `missions` | `MissionTrackerPage.js` | Missões, status, valores, perdas da carteira, loot e histórico. |
+| Clã & Missões | `missions` | `MissionTrackerPage.js` | Missões manuais e AUTO, monitor Game.log, recompensa pendente, reputação, tempo, perdas da carteira, loot com divisão igual/porcentagem/manual, modais de detalhes/edição, estatísticas, histórico, reset protegido e reaproveitamento por templates. |
 | UEX | `uexsales` | `UexSalesPage.js` | Acompanhamento de vendas e anúncios UEX. |
 | UEX | `uexnegotiations` | `UexNegotiationsPage.js` | Negociações, chat, polling, tradução, fechamento e registro de venda. |
 | UEX | `wikelo` | `WikeloTrackerPage.js` | Missões Wikelo, scripts, favors e progresso. |
-| UEX | `uexapi` | `UexApiPage.js` | Token, sincronização de itens, locais, mineração e médias UEX. |
+| UEX | `uexapi` | `UexApiPage.js` | Token, sincronização de itens, locais, mineração, médias UEX, veículos e catálogo local compartilhado com o Hangar. |
+| UEX | `uexinsights` | `UexInsightsPage.js` | Inteligência de mercado, preços por qualidade, histórico, análise de lucro, ranking de oportunidades, frescor, busca/filtros de Refinarias por Commodity e terminal, frota e utilidades informativas. Os Alertas de Compra ficam em uma tela dedicada. |
 | Sistema | `backup` | `BackupPage.js` | Backup seletivo e restauração de categorias do localStorage. |
 | Sistema | `data-directory` | `DataDirectoryPage.js` | Pasta central, troca de diretório e backup completo. |
 | Sistema | `notes` | `NotesPage.js` | Notas livres e textos UEX reutilizáveis. |
+| UEX | `uexalerts` | `MarketAlertsPage.js` | Tela dedicada de Alertas de Compra, com filtros, análise automática, grupos de anúncios, deduplicação e links para ofertas. |
 | Sistema | `locations` | `LocationsAdminPage.js` | Cadastro, edição, ativação e remoção de locais. |
+| Sistema | `mission-admin` | `MissionAdminPage.js` | Administração de facções, tipos de missão e sistemas consumidos pelo Rastreador. |
 
 Widgets montados globalmente em `App.js`: `UexNotificationBell` realiza o controle visual das notificações UEX e `CalculatorWidget` fornece a calculadora flutuante. Eles ficam fora do switch de páginas, portanto aparecem em qualquer tela.
 
@@ -311,9 +314,12 @@ A maior parte das telas usa chaves versionadas. Ao criar uma nova chave, inclua-
 | `sc_clan_vault_v1` | `clanVault.js` | Entradas do cofre do clã. |
 | `sc_mining_group_v1` | `MiningGroupPage` | Sessões de mineração em grupo. |
 | `sc_mining_builds_v1` | `MiningPage` | Builds de mineração. |
-| `sc_missions_v2` | `MissionTrackerPage` | Missões. |
-| `sc_obj_library_v1` | `MissionTrackerPage` | Biblioteca de objetivos. |
+| `sc_missions_v2` | `MissionTrackerPage` | Missões manuais e AUTO, status, recompensa, reputação, tempo, loot e objetivos. |
+| `sc_obj_library_v1` | `MissionTrackerPage` | Biblioteca de objetivos reutilizáveis. |
 | `sc_daily_losses_v1` | `MissionTrackerPage` | Valores que saíram da carteira. |
+| `sc_mission_admin_v1` | `missionAdmin.js` / `MissionAdminPage` | Facções, tipos de missão e sistemas administráveis. |
+| `sc_mission_catalog_v1` | Compatibilidade legada do `missionAdmin.js` | Catálogo antigo migrado para `sc_mission_admin_v1`. |
+| `sc_mission_auto_monitor_v1` | `missionAutoMonitor.js` / `MissionTrackerPage` | Estado do monitor, caminho do Game.log, missões ativas e até 300 eventos AUTO. |
 | `sc_notes_v1` | `NotesPage` | Notas livres. |
 | `sc_uex_texts_v1` | `NotesPage` | Textos UEX reutilizáveis. |
 | `sc_wikelo_missions_v1` | `WikeloTrackerPage` | Missões e progresso Wikelo. |
@@ -322,6 +328,11 @@ A maior parte das telas usa chaves versionadas. Ao criar uma nova chave, inclua-
 | `sc_locations_admin_v1` | `locations.js` | Locais administráveis. |
 | `sc_uex_sales_v1` | `uexSales.js` | Vendas registradas. |
 | `sc_uex_catalog_v1` | `uexSales.js` | Catálogo/sincronização de anúncios. |
+| `sc_uex_market_alerts_v1` | `uexMarketAlerts.js` / `MarketAlertsPage` | Regras dos Alertas de Compra. |
+| `sc_uex_market_alert_settings_v1` | `uexMarketAlerts.js` / `MarketAlertsPage` | Intervalo, limite, análise automática e preferências dos alertas. |
+| `sc_uex_market_alert_events_v1` | `uexMarketAlerts.js` / `MarketAlertsPage` | Anúncios encontrados, agrupados e deduplicados. |
+| `sc_uex_market_alert_dismissed_v1` | `uexMarketAlerts.js` | Grupos removidos da exibição. |
+| `sc_uex_market_alert_focus_v1` | `uexMarketAlerts.js` / `MarketAlertsPage` | Grupo/oferta que deve receber foco ao abrir pela notificação. |
 | `sc_uex_negotiation_reviews_v1` | `uexNegotiationReviews.js` | Avaliações de negociações. |
 | `sc_uex_negotiation_closures_v1` | `uexSales.js` | Fechamentos de negociações. |
 | `sc_uex_token_v1` | `uexNegotiations.js` / `UexApiPage` | Token UEX sensível. |
@@ -332,6 +343,17 @@ A maior parte das telas usa chaves versionadas. Ao criar uma nova chave, inclua-
 | `sc_uex_items_db_v1` | `uexItemsDB.js` | Catálogo local de itens UEX. |
 | `sc_uex_locations_db_v1` | `uexLocationsDB.js` | Locais sincronizados da UEX. |
 | `sc_uex_mining_db_v1` | `uexMiningDB.js` | Minérios sincronizados da UEX. |
+| `sc_uex_marketplace_averages_v1` | `uexMarketDB.js` / `uexInsights.js` | Médias de marketplace por item, qualidade, operação e moeda. |
+| `sc_uex_marketplace_history_v1` | `uexInsights.js` | Histórico de snapshots de preço sob demanda. |
+| `sc_uex_marketplace_trends_v1` | `uexInsights.js` / `UexInsightsPage.js` | Tendências, atividade de negociações, anúncios ativos e médias para o ranking analítico. |
+| `sc_uex_data_monitor_v1` | `uexInsights.js` | Frescor por terminal e tipo de dado. |
+| `sc_uex_commodity_alerts_v1` / `sc_uex_commodity_averages_v1` / `sc_uex_commodity_status_v1` | `uexCommoditiesDB.js` | Alertas, médias e status de commodities. |
+| `sc_uex_refineries_v1` / `sc_uex_refinery_jobs_v1` | `uexRefineriesDB.js` | Métodos, rendimentos, capacidades e jobs autenticados. |
+| `sc_uex_fleet_v1` / `sc_uex_loaners_v1` | `uexInsights.js` / Hangar | Dados externos somente leitura de frota e loaners. |
+| `sc_uex_item_attributes_v1` / `sc_uex_fuel_prices_v1` / `sc_uex_terminal_distances_v1` | `uexInsights.js` | Atributos técnicos, combustível e distâncias. |
+| `sc_uex_vehicles_catalog_v1` | `uexVehicles.js` / `ShipHangarPage` | Catálogo local de naves e veículos sincronizado pela UEX API Live. |
+| `sc_hangar_v1` | `uexVehicles.js` / `ShipHangarPage` | Naves compradas e naves adicionadas manualmente como Wikelo. |
+| `sc_hangar_view_v1` | `ShipHangarPage` | Preferência entre visualização em cards e lista. |
 | `sc_inventory_v1` | fallback browser do inventário | Fallback quando não existe Electron. |
 | `sc_provenance_v1` | `provenance.js` | Procedência de dados. |
 | `sc_nav_collapsed_groups_v1` | `App.js` | Grupos recolhidos da sidebar. |
@@ -358,6 +380,10 @@ A chave `sc_inventory_v1` é o fallback do navegador. No Electron, `InventoryPag
 | `uexItemsDB.js` | Catálogo UEX, normalização de nomes/números e média de preço. | Autocomplete ou “Importar preço”. |
 | `uexLocationsDB.js` | Catálogo de locais UEX e árvores de localização. | Dados sincronizados da UEX. |
 | `uexMiningDB.js` | Catálogo de minérios UEX. | Sincronização de mineração. |
+| `uexInsights.js` | Proxy GET compartilhada, snapshots, preços, histórico, monitor, commodities, refinarias, frota e utilidades. | Endpoint, credencial, formato de retorno ou frescor. |
+| `uexMarketDB.js` | Compatibilidade para preço médio por item/qualidade usado pelo Inventário. | “Importar preço” e matching por `id_item`/nome. |
+| `uexCommoditiesDB.js` | Persistência de alertas, médias e status de commodities. | Cache e eventos de commodities. |
+| `uexRefineriesDB.js` | Persistência de métodos, yields, capacidades e jobs. | Cache e eventos de refinarias. |
 | `uexNegotiationReviews.js` | Avaliações locais e mensagem de fechamento. | Review ou registro de negociação concluída. |
 | `uexNegotiations.js` | Token, endpoints, polling, IDs vistos, deduplicação e tradução. | Sino, chat e tradução. |
 | `uexSales.js` | Vendas, catálogo, fechamento e conversão negociação→venda. | Acompanhamento UEX. |
@@ -437,7 +463,47 @@ O polling atual não é um WebSocket. Para alterar frequência, busca incrementa
 
 A tradução usa MyMemory gratuitamente primeiro. Google Cloud Translation é somente fallback e exige chave salva em `sc_google_translate_api_key_v1`. O endpoint de tradução fica em `electron/main.js`; a composição bilíngue da tela fica em `UexNegotiationsPage.js`.
 
-### 10.8 Locais
+### 10.8 UEX Insights e regras de integração
+
+`UexInsightsPage.js` concentra as consultas adicionais documentadas da UEX. A tela foi separada da `UexApiPage.js` para não transformar a tela de sincronização básica em um painel excessivamente pesado. Ela fica no menu UEX com o identificador `uexinsights`. O conteúdo usa um container vertical próprio (`uex-insights-scroll`), mantendo cabeçalho e abas fixos enquanto tabelas, cards e gráficos descem com scrollbar.
+
+A aba **Análise de lucro** consulta `marketplace_trends` por qualidade, moeda e nome, cruza preço médio de compra/venda, margem estimada, variação contra a média de 30 dias, anúncios ativos, negociações abertas/sucesso e os registros locais de `sc_uex_sales_v1`. Os registros locais são apenas referência de desempenho próprio e nunca são alterados pela consulta pública.
+
+O ranking usa um score ajustado de 0 a 100, sem saturar todas as oportunidades em 100. O cálculo separa margem ajustada, liquidez, confiança da amostra, tendência, spread absoluto e penalidade de risco. Margens extremas, amostras pequenas, tendência negativa e baixo sucesso reportado recebem alertas. O usuário pode escolher as estratégias **Equilibrada**, **Maior margem**, **Mais liquidez**, **Menor risco** e **Maior valor por unidade**.
+
+A tela permite filtrar por margem mínima/máxima, confiança, sucesso reportado, negociações, anúncios, risco, tendência, moeda, qualidade e existência de vendas locais. O modo **Agrupar qualidades** consolida o mesmo item e moeda quando a API devolve preços iguais em vários tiers, informa quantos tiers foram agrupados e mostra a consistência entre eles. Desativar o agrupamento permite auditar cada qualidade individualmente.
+
+Os gráficos incluem ranking de oportunidades, dispersão margem × atividade e distribuição de risco. No gráfico de dispersão, o eixo horizontal representa atividade de negociações, o eixo vertical representa margem, o tamanho do ponto representa profundidade de anúncios e a cor representa risco. Esses dados são indicadores de mercado: `negotiations_count` não deve ser interpretado como vendas concluídas e `listings_count` não representa liquidez garantida.
+
+A análise possui o filtro **Origem do preço**, com as opções **Somente mercado UEX**, **Somente referência in-game** e **Comparar in-game + UEX**. A referência in-game usa apenas `price_buy` e `price_sell` presentes no catálogo local sincronizado pelo endpoint de itens; não utiliza `price_avg`, `price_buy_avg` ou `price_sell_avg`, pois esses campos podem ser médias enriquecidas do marketplace. O mercado de jogadores usa `price_avg_buy`, `price_avg_sell` e os campos de tendência do `marketplace_trends`. Quando a fonte selecionada não possui valor para o item, a linha é omitida ou o campo permanece vazio, sem inventar preço.
+
+A tabela é deliberadamente larga e possui uma barra horizontal visível própria. O cabeçalho informa para arrastar a barra inferior e a largura mínima evita cortar colunas. Os cabeçalhos de Compra usada, Venda usada, Spread, Margem, 30 dias, Negociações, Anúncios e Score são clicáveis e alternam entre maior e menor valor. O seletor **Ordenar por** oferece as mesmas opções para janelas pequenas.
+
+A aba **Mercado por qualidade** foi reformulada para compras: separa “Venda · quero comprar” de “Compra · quero vender”, exibe variação contra 7/30 dias, quantidade de anúncios, confiabilidade da amostra e uma leitura interpretativa. Linhas com 1 anúncio são classificadas como confiabilidade baixa; a média não é tratada como preço garantido. O usuário pode ordenar por menor preço, maior qualidade, quantidade de anúncios e distância da média de 30 dias.
+
+O módulo `src/data/uexMarketAlerts.js` armazena alertas em `sc_uex_market_alerts_v1` e eventos em `sc_uex_market_alert_events_v1`. Cada alerta exige item selecionado pelo ID do catálogo UEX, permite origem (`looted`, `purchased_in_game`, `crafted`, `gifted`, `pledged` ou `pirated`), qualquer qualidade ou faixa numérica de Q0 a Q1000 e menor preço ou teto de preço. O endpoint usado é `marketplace_listings` com `id_item` e `operation=sell`, pois o alerta precisa examinar anúncios ativos individuais, não somente médias.
+
+O sino global consulta os alertas a cada 15 minutos e deduplica cada anúncio por uma chave persistente de alerta/anúncio/preço. A consulta é somente leitura: não compra, reserva, edita nem exclui anúncios. O monitoramento funciona enquanto o Electron estiver aberto; quando o aplicativo é encerrado, o timer não executa consultas em segundo plano. Para monitoramento com o app fechado seria necessária uma execução externa persistente, que não foi adicionada automaticamente.
+
+| Área | Endpoint(s) documentado(s) | Persistência | Regra de uso |
+|---|---|---|---|
+| Mercado por qualidade | `marketplace_prices_averages`, `marketplace_prices_history`, `marketplace_listings` | `sc_uex_marketplace_averages_v1`, `sc_uex_marketplace_history_v1`, `sc_uex_market_alerts_v1`, `sc_uex_market_alert_events_v1` | Médias para comparação; anúncios individuais para alertas de compra. Qualidade real de anúncios é normalizada para Q0–Q1000 a partir do campo documentado 0–100. |
+| Análise de lucro | `marketplace_trends` + catálogo `items` local | `sc_uex_marketplace_trends_v1` + `sc_uex_items_db_v1` | Score ajustado, estratégias, risco, confiança, agrupamento de tiers, ranking, gráficos e filtro de origem in-game/UEX; somente leitura. |
+| Monitor de frescor | `data_monitor` | `sc_uex_data_monitor_v1` | Requer Bearer Token e secret-key; a tela informa quando a credencial não está configurada. |
+| Commodities | `commodities_alerts`, `commodities_averages`, `commodities_status` | `sc_uex_commodity_alerts_v1`, `sc_uex_commodity_averages_v1`, `sc_uex_commodity_status_v1` | Alertas/status podem ser públicos; médias autenticadas exigem credenciais. O score CAX é somente leitura. |
+| Refinarias | `refineries_methods`, `refineries_yields`, `refineries_capacities`, `user_refineries_jobs` | `sc_uex_refineries_v1`, `sc_uex_refinery_jobs_v1` | Métodos, rendimentos e capacidades são catálogo público; jobs pertencem à conta e não são editados pelo app. |
+| Frota e loaners | `fleet`, `vehicles_loaners` | `sc_uex_fleet_v1`, `sc_uex_loaners_v1` | Frota exige autenticação; loaners são consulta pública. Ambos são informativos e não alteram `sc_hangar_v1`. |
+| Utilidades | `items_attributes`, `fuel_prices_all`, `terminals_distances` | `sc_uex_item_attributes_v1`, `sc_uex_fuel_prices_v1`, `sc_uex_terminal_distances_v1` | Consultas manuais e somente leitura; distância exige origem e destino. |
+
+Os módulos usam `window.electronAPI.uexFetch({ endpoint, token, secretKey })`, reaproveitando o proxy HTTPS já existente em `electron/main.js` e `electron/preload.js`. Não crie um segundo cliente HTTP no renderer. No fallback de navegador, somente endpoints públicos devem ser considerados confiáveis, porque os headers secretos não são expostos ao React.
+
+As funções autenticadas verificam a presença de `sc_uex_token_v1` e `sc_uex_secretkey_v1` antes da chamada. A ausência de credenciais produz uma mensagem orientativa, não uma tentativa silenciosa. Nenhuma função nova faz POST ou DELETE. Não foram usados os endpoints deprecated `marketplace_averages_all` ou `commodities_ranking`.
+
+Os snapshots locais têm o formato `{ data, syncedAt, endpoint, ttl }`. Eles são caches de dados externos; não representam posse, saldo, trades ou compras. Em particular, a frota UEX é exibida separadamente do Meu Hangar e não é somada aos registros comprados locais. O Inventário usa `getItemMarketPrice()`/`getMarketPriceForName()` para preferir o preço local compatível com `quality_tier`; se não existir uma linha por qualidade, mantém o fallback da média do catálogo de itens.
+
+Para acrescentar um endpoint futuro, implemente primeiro a função `fetch...` em `src/data/uexInsights.js`, defina uma chave versionada, use `saveUexInsight()` e inclua a chave em `BACKUP_CATEGORIES` antes de expor a ação na página. Se o endpoint for autenticado, chame a verificação de credenciais. Se o retorno puder ser objeto, normalize explicitamente para array antes de usar `.map()`.
+
+### 10.9 Locais
 
 `locations.js` é a única fonte compartilhada para locais administráveis. `buildManagedLocationOptions()` retorna:
 
@@ -500,7 +566,11 @@ O reset remove o override e faz o dataset voltar ao fallback embutido. Ao adicio
 | Armadura não salva posse | `main.js` handlers `toggle-piece` | Schema `user_pieces` | Posse fica em `user_pieces`, não em `armor_pieces`. |
 | Quantidade de armadura falha | `update-piece-quantity` | Schema SQLite | Handler referencia coluna que não existe. |
 | Inventário perde dados | `InventoryPage.js` | `inventory-*` em `main.js` | Confusão entre fallback localStorage e SQLite. |
-| Preço UEX não importa | `uexItemsDB.js` | `UexApiPage.js` | Nome normalizado ou média com formato numérico inesperado. |
+| Preço UEX não importa | `uexItemsDB.js` | `uexMarketDB.js` e `UexApiPage.js` | Nome/ID normalizado, snapshot sem `quality_tier` ou média com formato numérico inesperado. |
+| UEX Insights mostra dados antigos | `UexInsightsPage.js` | `uexInsights.js` e credenciais | Snapshot fora do TTL ou token/secret-key ausentes em endpoint autenticado. |
+| Inteligência UEX não desce a tela | `UexInsightsPage.js` | `App.css` (`uex-insights-scroll`) | A página perdeu `min-height: 0`, `overflow-y: auto` ou a estrutura flex do container rolável. |
+| Ranking de lucro parece vazio | `UexInsightsPage.js` | `sc_uex_marketplace_trends_v1` | É necessário clicar em Atualizar tendências; com “somente com compra e venda”, linhas sem os dois preços são descartadas. |
+| Frota não aparece no Hangar | `ShipHangarPage.js` | `uexVehicles.js` e token/secret-key | A frota é opcional, somente leitura e depende da autenticação; o Meu Hangar local não deve ser substituído. |
 | Unidade SCU errada | `cargoUnits.js` | `OreVaultPage`, `MaterialTrackerPage`, `TransferModal` | Conversão duplicada ou unidade não normalizada. |
 | Tracking mistura qualidades | `materialQueue.js` | `oreVault.js` | Material foi agrupado sem `qualityMin`. |
 | “Concluir do baú” deduz errado | `MaterialTrackerPage.js` | `deductOreEntries()` | Lista de usos ou unidades incompatíveis. |
@@ -658,9 +728,15 @@ A seção **Hangar de Naves** está em `src/pages/ShipHangarPage.js` e usa `src/
 
 ### Catálogo Naves UEX
 
-A aba **Naves UEX** consulta pela proxy HTTPS os endpoints documentados `vehicles`, `vehicles_purchases_prices_all` e `vehicles_rentals_prices_all`. O catálogo exibe nome, nome completo, fabricante, tipo de veículo, funções, carga em SCU, tripulação, dimensões, pad, combustível, links externos e os locais/preços de compra e aluguel disponíveis.
+A aba **Naves UEX** lê o catálogo salvo localmente pela tela **UEX API (Live) → Veículos**. Quando o usuário clica em **Atualizar** na UEX API Live, o aplicativo consulta pela proxy HTTPS os endpoints documentados `vehicles`, `vehicles_purchases_prices_all` e `vehicles_rentals_prices_all` e grava o resultado compartilhado em `sc_uex_vehicles_catalog_v1`. O catálogo exibe nome, nome completo, fabricante, tipo de veículo, funções, carga em SCU, tripulação, dimensões, pad, combustível, links externos e os locais/preços de compra e aluguel disponíveis.
+
+O Hangar não repete essa sincronização. Ao ser aberto, ele carrega o catálogo local com `loadVehicleCatalog()`. O botão **Recarregar dados locais** apenas relê o localStorage e não faz nova chamada externa. Quando a UEX API Live salva um catálogo enquanto o Hangar está aberto, `saveVehicleCatalog()` dispara `UEX_VEHICLES_UPDATED_EVENT` e a tela atualiza os cards automaticamente. Se não existir catálogo local, o Hangar orienta o usuário a abrir a tela UEX API Live e sincronizar a aba Veículos. A consulta detalhada de compra/aluguel por nave continua sob demanda quando o card é expandido e somente para completar informações específicas ausentes no catálogo geral.
 
 Os filtros ficam em `ShipHangarPage.js`, no `useMemo` que monta `vehicles`. A busca procura por nome, nome completo, fabricante e slug. O filtro de tipo separa naves e veículos terrestres; o filtro de função usa as flags `is_cargo`, `is_mining`, `is_salvage`, `is_medical`, `is_exploration`, `is_military`, `is_passenger` e `is_ground_vehicle`. A ordenação pode ser alternada entre nome, carga e tripulação.
+
+O catálogo possui duas visualizações. **Cards** é a visualização padrão e apresenta imagem, funções, especificações, compra, aluguel e ações. **Lista** apresenta as mesmas naves em linhas compactas, com miniatura, fabricante, carga, tripulação, quantidade de ofertas, primeiro terminal conhecido e ações. A preferência é salva em `sc_hangar_view_v1`, permitindo que o usuário continue na última visualização utilizada. O componente `VehicleListRow` e as classes `hangar-vehicle-list-row` em `src/App.css` controlam a versão responsiva para janelas menores.
+
+As duas visualizações utilizam `getPurchasedQuantity(hangar, vehicle)`. Quando a nave está registrada como `source: 'compra'`, o contador soma a quantidade de todos os registros correspondentes por `vehicleId`, usando o nome como fallback para registros antigos. O card ou linha recebe um contorno verde-água e mostra o contador compacto. Registros `source: 'wikelo'` continuam visíveis no Meu Hangar, mas não são misturados no contador de naves compradas.
 
 A busca detalhada de uma nave usa `vehicles_purchases_prices?id_vehicle=...` e `vehicles_rentals_prices?id_vehicle=...` somente quando o card é expandido. Essa decisão evita uma chamada individual para cada veículo durante a sincronização geral. O módulo normaliza números ausentes para `null`, e a interface apresenta `—` quando a UEX não fornece determinada informação.
 
@@ -670,7 +746,7 @@ O campo `url_photo` recebido pela UEX é renderizado pelo componente `UexVehicle
 
 ### Meu Hangar
 
-A aba **Meu Hangar** é um registro local; ela não realiza transações na UEX. O botão **Comprei** abre um modal que solicita somente a quantidade da nave e observações opcionais. A aplicação não pergunta mais em qual local ou hangar a nave está. Ao confirmar, `addToMyHangar()` salva a aquisição em `sc_hangar_v1`, agrupando registros pela origem e pelo veículo e somando a quantidade quando a mesma nave é registrada novamente.
+A aba **Meu Hangar** é um registro local; ela não realiza transações na UEX. O total de unidades de todas as origens é calculado com base em `quantity` e aparece também na Dashboard no indicador **Naves no Hangar**, acompanhado da quantidade de tipos registrados. A Dashboard lê `loadMyHangar()` e reage aos eventos `UEX_VEHICLES_UPDATED_EVENT` e `MY_HANGAR_UPDATED_EVENT`, portanto o indicador é atualizado quando o catálogo, a compra, a quantidade ou a remoção de uma nave muda dentro do aplicativo. O botão **Comprei** abre um modal que solicita somente a quantidade da nave e observações opcionais. A aplicação não pergunta mais em qual local ou hangar a nave está. Ao confirmar, `addToMyHangar()` salva a aquisição em `sc_hangar_v1`, agrupando registros pela origem e pelo veículo e somando a quantidade quando a mesma nave é registrada novamente.
 
 Cada registro do Meu Hangar contém, quando disponível, `vehicleId`, `vehicleName`, `manufacturer`, `source`, `quantity`, `acquiredAt`, `notes`, `image`, `scu`, `crew` e `slug`. A aba permite aumentar ou reduzir a quantidade, editar observações e remover o registro. O componente `HangarEntry` exibe a origem `COMPRADA` ou `WIKELO`, sem exibir campo de local/hangar.
 
@@ -685,3 +761,152 @@ A Pledge Store não faz parte do Hangar. O módulo não consulta mais `vehicles_
 O catálogo sincronizado fica em `sc_uex_vehicles_catalog_v1` e o Meu Hangar fica em `sc_hangar_v1`. As duas chaves estão incluídas na categoria `Hangar de Naves / Meu Hangar` do backup seletivo. O backup completo já inclui automaticamente essas chaves por exportar todas as entradas do localStorage. Os endpoints, campos e regras de compatibilidade estão registrados em `UEX_VEHICLES_API_NOTES.md`.
 
 A API UEX é mantida pela comunidade e pode não representar exatamente o estado atual dos servidores. Por isso, o código preserva a data da última sincronização, trata campos ausentes como `null`/`—` e não inventa preço, local, carga ou característica que não esteja na resposta da API.
+
+
+## 23. Atualizações funcionais recentes e manutenção por domínio
+
+Esta seção registra as alterações mais recentes que devem ser consideradas por qualquer programador que continue o desenvolvimento do projeto. Ela complementa as regras de domínio anteriores e descreve os fluxos que foram implementados depois da documentação inicial.
+
+### 23.1 Tracking de Materiais: coleta em cSCU e SCU
+
+O arquivo `src/pages/MaterialTrackerPage.js` possui o componente `CollectInput`. Quando o material usa uma unidade de carga reconhecida por `src/data/cargoUnits.js`, o componente mostra o seletor **Unidade da coleta** com as opções `cSCU` e `SCU`. Para materiais não relacionados a carga, como `un`, o seletor não aparece e o campo continua usando a unidade do requisito.
+
+O valor digitado não deve ser convertido diretamente na página. O componente envia a quantidade e a unidade selecionada para `handleCollect()` ou `handleUncollect()`, que chama `collectMaterial()` ou `uncollectMaterial()` em `src/data/materialQueue.js`. Essas funções convertem a entrada para a unidade-base cSCU usando `toCargoBase()` antes de somar ou subtrair. A lista calculada depois converte o valor-base novamente para a unidade do requisito com `fromBase()`.
+
+> **Regra invariável:** `100 cSCU` e `1 SCU` precisam gerar o mesmo valor persistido. Não implemente uma segunda fórmula dentro de `MaterialTrackerPage.js`, `OreVaultPage.js` ou `TransferModal.js`.
+
+A prévia apresentada ao usuário usa `fmtSCU()` e mostra a equivalência da entrada, por exemplo `100 cSCU = 1 SCU`. O campo aceita números decimais e o parser `parseCargoInput()` trata a convenção numérica pt-BR.
+
+Cada `MaterialRow` também possui `material-reset-collected-button`. O botão aparece no final do card e fica desabilitado quando `item.collected` é zero. Quando acionado, `handleReset()` localiza o item pela chave composta material + qualidade mínima, pede confirmação com `window.confirm()`, chama `resetMaterialCollected()` e preserva o requisito na fila. O reset remove somente a coleta salva; não remove a blueprint, a exigência, o material manual ou a ordem de prioridade. Ao concluir, `actionMessage` informa o resultado ao usuário.
+
+| Arquivo | Ponto de manutenção | Responsabilidade |
+|---|---|---|
+| `src/pages/MaterialTrackerPage.js` | `CollectInput`, `MaterialRow`, `handleCollect`, `handleUncollect`, `handleReset` | Interface, unidade escolhida, confirmação e atualização visual. |
+| `src/data/materialQueue.js` | `collectMaterial`, `uncollectMaterial`, `resetMaterialCollected`, `calcShoppingList` | Persistência, conversão para cSCU, cálculo de necessário/coletado/faltante e chave por qualidade. |
+| `src/data/cargoUnits.js` | `normalizeCargoUnit`, `toCargoBase`, `fromCargoBase`, `parseCargoInput` | Regra única de conversão e interpretação numérica. |
+| `src/App.css` | `.material-unit-selector`, `.material-reset-collected-button` | Layout responsivo do seletor e do botão de reset. |
+
+### 23.2 Rastreador de Missões: modais, estatísticas e templates
+
+`src/pages/MissionTrackerPage.js` mantém as chaves `sc_missions_v2`, `sc_obj_library_v1` e `sc_daily_losses_v1`. A tela possui as abas **Hoje**, **Histórico** e **Estatísticas**. O estado financeiro considera `Completed` como receita e `Saiu da carteira` como saída negativa, usando `wallet_out_at` para posicionar a perda na data correta.
+
+Os detalhes agora são apresentados por `MissionDetailsModal`. O cabeçalho do card abre uma janela flutuante com status, dificuldade, facção, sistema, localização, recompensa, reputação, tripulação, duração, objetivos, notas, loot e metadados AUTO. O botão de editar dentro do modal abre o formulário existente em uma janela flutuante separada, sem duplicar a lógica de `MissionForm`.
+
+A função **Reaproveitar Missão** é implementada por `ReuseModal`. Ela agrupa registros pela combinação de título, tipo e facção, mas mantém variantes de recompensa, local, sistema e dificuldade. O programador deve preservar essa separação: o template serve para iniciar uma nova missão, enquanto as variantes ajudam o usuário a escolher o registro mais próximo. O modal possui busca textual, filtro por tipo, expansão de variantes e ordenação por mais usadas, maior recompensa e título A-Z. O botão `Usar` cria uma nova missão ativa no formulário, sem alterar o registro original.
+
+A aba Estatísticas usa `StatsTab`. Ela mostra KPIs, período analisado, distribuição por status, receita, perdas e indicadores de desempenho. O botão **Resetar estatísticas e histórico** chama `handleResetStatisticsAndHistory()`, pede confirmação e apaga as listas de `sc_missions_v2` e `sc_daily_losses_v1`. O catálogo de objetivos, o Gerenciador de Missões, o Monitor Automático e suas configurações são preservados. Depois do reset, a página emite o evento `sc_missions_reset` com a quantidade removida e a quantidade de missões ativas que existia antes da operação.
+
+| Componente/função | Onde procurar | Cuidados |
+|---|---|---|
+| Detalhes | `MissionDetailsModal` | Não remover o suporte a missões AUTO e recompensa pendente. |
+| Edição | `MissionForm`, estado `editM` | Reutilizar as opções vindas de `missionAdmin.js`. |
+| Reaproveitamento | `ReuseModal` | Agrupar por título + tipo + facção e preservar variantes. |
+| Estatísticas | `StatsTab` | Respeitar período, status financeiro e perdas da carteira. |
+| Reset | `handleResetStatisticsAndHistory` | Nunca apagar `sc_mission_auto_monitor_v1` nem `sc_mission_admin_v1`. |
+| Loot | `LootDistributionModal`, `calculateLootDistribution` | Manter os modos `equal`, `percentage` e `manual`; porcentagens válidas devem totalizar 100%. |
+
+O loot usa `distribution_version: 2`, `divisionMode`, `distribution_mode`, `members`, `items`, `percentages` e `assignments`. O modo igual distribui com ajuste de arredondamento no último membro; o modo percentual valida a soma; o modo manual valida que as quantidades atribuídas não ultrapassem o total do item.
+
+### 23.3 Gerenciador de Missões
+
+`src/pages/MissionAdminPage.js` e `src/data/missionAdmin.js` administram três catálogos: `factions`, `types` e `systems`. Cada opção possui `id`, `category`, `name`, `active`, `notes`, `builtIn`, `createdAt` e `updatedAt`. A função `getMissionAdminOptions()` retorna somente opções ativas, mas preserva uma opção legada inativa quando uma missão antiga ainda usa aquele valor.
+
+A chave canônica é `sc_mission_admin_v1`. A chave `sc_mission_catalog_v1` é mantida somente para migração de versões antigas. Depois de salvar uma opção, `missionAdmin.js` emite `MISSION_ADMIN_UPDATED_EVENT`; o Rastreador escuta o evento e recarrega os selects de facção, tipo e sistema sem exigir que o usuário reinicie a tela.
+
+Não substitua os valores cadastrados diretamente em `MissionTrackerPage.js`. Para adicionar uma nova facção, tipo ou sistema, use o Gerenciador ou altere os seeds de `DEFAULTS` em `missionAdmin.js`.
+
+### 23.4 Monitor Automático de Missões e Game.log
+
+O Monitor Automático é implementado em três camadas:
+
+| Camada | Arquivo | Responsabilidade |
+|---|---|---|
+| Parser e watcher | `electron/missionWatcher.js` | Lê o Game.log, acompanha alterações, faz replay inicial e emite eventos. |
+| IPC | `electron/main.js` e `electron/preload.js` | Escolhe o arquivo, inicia, pausa, consulta status e encaminha eventos ao renderer. |
+| Estado e integração | `src/data/missionAutoMonitor.js`, `App.js`, `MissionTrackerPage.js` | Persiste eventos, atualiza missões AUTO e mostra o painel integrado. |
+
+A ponte expõe os canais `mission-monitor-choose-log`, `mission-monitor-start`, `mission-monitor-stop`, `mission-monitor-status`, `mission-monitor-event` e `mission-monitor-status-update` por métodos nomeados do `window.electronAPI`. O renderer não deve acessar `fs` nem observar o Game.log diretamente.
+
+O watcher faz replay dos últimos 8 MB do arquivo quando é ligado, para recuperar eventos recentes. O parser trata notificações de aceitação que chegam em duas linhas, mantém um buffer para a linha pendente, prioriza o nome legível da missão sobre o identificador técnico e separa recompensa aUEC de reputação.
+
+Os eventos normalizados usam `auto: true` e `source: 'game_log'`. Os tipos principais são `mission_start`, `mission_complete`, `mission_ended`, `blueprint_received` e `session_reset`. O estado persistido em `sc_mission_auto_monitor_v1` mantém no máximo 300 eventos e a lista de missões ativas detectadas.
+
+Quando uma missão é criada ou atualizada, `upsertAutomaticMissionRecord()` grava no mesmo `sc_missions_v2` usado pelas missões manuais. Uma missão AUTO sem valor monetário recebe `reward: 0` e `auto_reward_status: 'pending'`. Quando o usuário preenche a recompensa pelo formulário completo ou pelo botão rápido do card, o status passa para `filled`. `hasPendingAutoReward()` é a regra única usada pelo badge e pelo filtro **AUTO sem recompensa**.
+
+Os campos importantes de uma missão AUTO são `watcher_guid`, `auto_started_at`, `auto_ended_at`, `duration_sec`, `reputation_min`, `reputation_max`, `reputation_label`, `auto_blueprints`, `contract_definition_id`, `external_generator` e `auto_last_reason`. Se uma missão não for detectada, investigue primeiro o formato real do Game.log, os padrões de `missionWatcher.js`, o caminho escolhido e o estado de replay; não altere somente a interface.
+
+### 23.5 Guia de Mineração e builds de nave
+
+`src/pages/MiningPage.js` agora é uma ferramenta de anotação de builds. A página mantém somente a seção de builds de nave e permite escolher nave, cabeça de mineração, módulos/peças equipadas, status ativo e anotações pessoais. A antiga aba **Naves & Módulos** foi removida.
+
+A interface não deve exibir potência, alcance, multiplicador de extração, instabilidade, capacidade, tripulação, preço, quantidade de lasers ou outros valores de desempenho. Os dados antigos podem continuar presentes em catálogos internos para compatibilidade, mas não devem ser renderizados pela Guia de Mineração. A chave de builds é `sc_mining_builds_v1`.
+
+A fonte de dados de naves detalhada é o Hangar de Naves, em `ShipHangarPage.js` e `uexVehicles.js`. Não reintroduza a antiga mistura entre catálogo técnico da UEX e a página de builds pessoais.
+
+### 23.6 Alertas de Compra em tela dedicada
+
+`src/pages/MarketAlertsPage.js` é a tela dedicada dos Alertas de Compra. `UexInsightsPage.js` não deve renderizar novamente o painel, pois a separação evita estados duplicados e torna a navegação mais clara. O menu usa o identificador `uexalerts`; o Dashboard, o sino de notificações e os atalhos de ofertas devem navegar para esse identificador.
+
+O domínio de persistência está em `src/data/uexMarketAlerts.js`. Um alerta pode usar item do catálogo UEX ou item digitado manualmente, origem do anúncio, qualidade looteada ou faixa Q0–Q1000, preço máximo ou menor preço, critério de atividade do vendedor, intervalo configurável e limite de anúncios. O campo moeda não é configurável: os alertas trabalham com UEC/UEC conforme o contrato da UEX usado pelo projeto.
+
+A análise automática é controlada pelo usuário. O timer só consulta enquanto o Electron está aberto. Cada execução consulta anúncios ativos, aplica os critérios, agrupa por item e deduplica por identidade persistente do anúncio. O evento preserva o link para abrir a oferta, o link copiável, o vendedor, item, qualidade, preço, atividade e horário encontrado. Remover um grupo altera somente a exibição local; não exclui nem altera o anúncio na UEX.
+
+O sino global consulta o estado dos alertas, emite som quando existe nova correspondência — desde que o som não esteja silenciado — e direciona o usuário à página `uexalerts`. Quando a notificação contém um grupo ou anúncio específico, `sc_uex_market_alert_focus_v1` preserva o foco para a tela dedicada abrir o detalhe correspondente.
+
+### 23.7 Refinarias na Inteligência UEX
+
+A aba Refinarias permanece em `UexInsightsPage.js`, mas agora possui uma área própria para busca e filtros. O campo de texto aceita o nome manual da Commodity e filtra rendimentos, capacidades e jobs sem ocultar o catálogo geral de métodos. Isso permite pesquisar itens não selecionados previamente no catálogo.
+
+Os filtros principais são Commodity, terminal, método, ordenação por rendimento atual/7 dias/30 dias/Commodity, somente rendimento positivo, estado dos jobs e melhor resultado. A lista de terminais é construída a partir dos dados sincronizados, evitando uma lista fixa. A página apresenta resumo dinâmico, destaque da melhor combinação, tabela de rendimentos, tabela de capacidades e tabela de jobs com rolagem própria.
+
+`src/data/uexRefineriesDB.js` é responsável pelo cache local. Não confundir catálogo público de métodos, rendimentos e capacidades com jobs da conta. Jobs autenticados exigem as credenciais UEX e não devem ser fabricados no fallback do navegador. Quando os dados não estiverem sincronizados, a tela deve informar o estado vazio, não exibir números inventados.
+
+### 23.8 Layout, responsividade e sidebar
+
+`src/App.css` contém a camada global de responsividade do projeto. O layout usa `min-width: 0`, `min-height: 0`, grids adaptáveis, áreas de rolagem próprias, breakpoints para telas estreitas e tabelas com rolagem horizontal confinada. Páginas densas como Blueprints, Backup, Cofre do Clã, Armadura Personalizada, Inventário, Tracking, Missões, UEX e Hangar receberam classes responsivas específicas.
+
+A barra lateral é controlada por `sidebarCollapsed` em `App.js` e pelas chaves `sc_sidebar_collapsed_v1` e `sc_nav_collapsed_groups_v1`. Em janelas de até 560 px ela começa compacta quando não existe preferência salva, mas o usuário pode expandi-la. No estado compacto, os textos são ocultados, porém `.nav-group-icon`, `.nav-item-icon` e os SVGs precisam continuar com `display` visível, opacidade 1, dimensões fixas e centralização.
+
+Se os botões da sidebar aparecerem apenas como contornos vazios, não altere os imports de ícones primeiro. Verifique as regras finais de `.sidebar-collapsed .nav-group-header`, `.nav-group-icon`, `.nav-item-icon` e seus elementos `svg`. A correção deve preservar tooltips, item ativo, grupos recolhidos e o menu expandido.
+
+### 23.9 Alertas de manutenção rápida
+
+| Sintoma recente | Arquivos para investigar | Verificação |
+|---|---|---|
+| Unidade cSCU/SCU soma errado | `cargoUnits.js`, `materialQueue.js`, `MaterialTrackerPage.js` | Confirmar que a entrada passa uma unidade válida a `collectMaterial()` e que a base é cSCU. |
+| Reset zera o requisito inteiro | `MaterialTrackerPage.js`, `materialQueue.js` | O reset deve apagar somente `collectedMaterials[key]`, nunca `queuedBlueprints`. |
+| Recompensa AUTO continua pendente | `MissionTrackerPage.js`, `missionAutoMonitor.js` | Verificar `reward > 0`, `auto_reward_status` e `hasPendingAutoReward()`. |
+| Missão do Game.log não aparece | `missionWatcher.js`, `main.js`, `preload.js`, `App.js` | Conferir caminho, replay, padrões de duas linhas, eventos IPC e `watcher_guid`. |
+| Reaproveitamento mistura missões | `ReuseModal` em `MissionTrackerPage.js` | Confirmar chave título + tipo + facção e variantes separadas. |
+| Reset de estatísticas apaga configuração | `handleResetStatisticsAndHistory()` | Preservar `sc_mission_admin_v1`, `sc_mission_auto_monitor_v1` e `sc_obj_library_v1`. |
+| Alertas não aparecem na tela antiga | `MarketAlertsPage.js`, `App.js`, `UexNotificationBell.js` | A rota correta é `uexalerts`; não reintroduzir o painel em `UexInsightsPage.js`. |
+| Busca de Refinarias não filtra capacidade | `UexInsightsPage.js`, `uexRefineriesDB.js` | Aplicar a Commodity normalizada às listas de yields, capacities e jobs. |
+| Sidebar compacta vazia | `App.css`, `App.js` | Conferir visibilidade e dimensões dos SVGs no estado `sidebar-collapsed`. |
+
+## 24. Procedimento recomendado para documentar uma nova alteração
+
+Sempre que uma nova função for adicionada, atualize o componente responsável, o módulo de domínio, a tabela de persistência, a tabela de navegação e a seção de troubleshooting correspondente. Se a função usar localStorage, documente a chave e inclua-a no backup seletivo quando for dado de usuário. Se usar SQLite, documente a tabela, o handler IPC, o método do preload e a migração.
+
+Ao corrigir um bug, registre no README o sintoma, a causa, os arquivos alterados, a regra que não pode ser quebrada e o comando usado para validar. Isso é especialmente importante para conversões de carga, qualidade mínima, IPC, integração UEX e migração do diretório central.
+
+Para qualquer mudança visual, prefira classes em `src/App.css` quando o comportamento for compartilhado. Use estilos inline apenas para valores derivados do estado, como cor de um minério, largura de uma barra de progresso ou destaque de um status. Toda tela com lista potencialmente grande precisa definir explicitamente qual container rola e preservar `min-height: 0` quando estiver dentro de um layout flex/grid.
+
+## 25. Checklist atualizado de entrega
+
+| Verificação | Comando ou ação |
+|---|---|
+| Sintaxe do processo principal | `node --check electron/main.js` |
+| Sintaxe do preload | `node --check electron/preload.js` |
+| Sintaxe do watcher | `node --check electron/missionWatcher.js` |
+| Build React | `npm run react-build` |
+| Fluxo de conversão | Testar 100 cSCU e 1 SCU no mesmo requisito e confirmar equivalência. |
+| Reset individual | Confirmar que `Já tenho` volta a zero e o requisito continua na fila. |
+| Reset de missões | Confirmar que somente missões/perdas são removidas. |
+| Monitor Game.log | Escolher um Game.log, iniciar, verificar status, evento AUTO e parar. |
+| Alertas UEX | Testar tela dedicada, link, grupo, deduplicação, limite e desligamento automático. |
+| Refinarias | Pesquisar Commodity, escolher terminal, ordenar e testar estado vazio. |
+| Sidebar | Recolher/expandir em janela larga e estreita; conferir SVGs. |
+| Backup | Exportar/restaurar as novas chaves e não incluir segredos em artefatos compartilhados. |
+| Instalador | `npm run build:win` em Windows, com instalação limpa e atualização sobre dados existentes. |
+
+A documentação deve ser atualizada junto com o código. O README é a referência técnica para o próximo programador: o histórico de conversas não deve ser necessário para descobrir onde uma função está implementada, quais dados ela altera ou qual regra precisa ser preservada.

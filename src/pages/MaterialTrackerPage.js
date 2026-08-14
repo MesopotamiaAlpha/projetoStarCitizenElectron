@@ -311,20 +311,47 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
 // ── Material collect input ─────────────────────────────────────────────────────
 function CollectInput({ material, unit, qualityMin = 0, onCollect, onUncollect }) {
   const [amount, setQuantidade] = useState('');
-  const [mode, setMode]         = useState('add'); // 'add' | 'remove'
-  const isSCU = unit === 'SCU' || unit === 'cSCU';
+  const [mode, setMode] = useState('add'); // 'add' | 'remove'
+  const cargoMaterial = isCargoUnit(unit);
+  const requirementUnit = normalizeCargoUnit(unit || 'un');
+  const [inputUnit, setInputUnit] = useState(() => requirementUnit === 'SCU' ? 'SCU' : 'cSCU');
+
+  useEffect(() => {
+    if (cargoMaterial) setInputUnit(requirementUnit === 'SCU' ? 'SCU' : 'cSCU');
+  }, [cargoMaterial, requirementUnit]);
+
+  function parseAmount(value) {
+    if (cargoMaterial) return parseCargoInput(value, inputUnit);
+    return Number(value);
+  }
+
   function submit() {
-    const n = isSCU ? parseFloat(amount) : Number(amount);
-    if (!n || n <= 0) return;
-    if (mode === 'add') onCollect(material, n, qualityMin, unit);
-    else onUncollect(material, n, qualityMin, unit);
+    const n = parseAmount(amount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const selectedUnit = cargoMaterial ? inputUnit : requirementUnit;
+    if (mode === 'add') onCollect(material, n, qualityMin, selectedUnit);
+    else onUncollect(material, n, qualityMin, selectedUnit);
     setQuantidade('');
   }
-  const fmt = amount && !isNaN(parseFloat(amount)) ? fmtSCU(parseFloat(amount), unit) : null;
+
+  const parsedAmount = amount ? parseAmount(amount) : 0;
+  const fmt = parsedAmount > 0 ? fmtSCU(parsedAmount, cargoMaterial ? inputUnit : requirementUnit) : null;
+  const visibleUnit = cargoMaterial ? inputUnit : requirementUnit;
+
   return (
-    <div style={{ display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end' }}>
+    <div className="material-collect-input" style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-end' }}>
+      {cargoMaterial && (
+        <div className="material-unit-selector">
+          <span>Unidade da coleta</span>
+          <select aria-label="Unidade da coleta" value={inputUnit} onChange={event => setInputUnit(event.target.value)}>
+            <option value="cSCU">cSCU</option>
+            <option value="SCU">SCU</option>
+          </select>
+          <small>1 SCU = 100 cSCU</small>
+        </div>
+      )}
       {/* Toggle add/remove */}
-      <div style={{ display:'flex',borderRadius:5,overflow:'hidden',border:'1px solid var(--border-subtle)' }}>
+      <div style={{ display:'flex', borderRadius:5, overflow:'hidden', border:'1px solid var(--border-subtle)' }}>
         <button onClick={()=>setMode('add')} style={{ padding:'3px 8px',background:mode==='add'?'rgba(52,211,153,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:mode==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
           + Coletei
         </button>
@@ -332,12 +359,12 @@ function CollectInput({ material, unit, qualityMin = 0, onCollect, onUncollect }
           − Remover
         </button>
       </div>
-      <div style={{ display:'flex',gap:6,alignItems:'center' }}>
+      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
         <input
-          type="number" min="0" step={isSCU?'0.01':'1'} value={amount}
-          onChange={e => setQuantidade(e.target.value)}
-          onKeyDown={e => e.key==='Enter' && submit()}
-          placeholder={`Qtd (${unit||'un'})...`}
+          type={cargoMaterial ? 'text' : 'number'} inputMode="decimal" min="0" step={cargoMaterial ? 'any' : '1'} value={amount}
+          onChange={event => setQuantidade(event.target.value)}
+          onKeyDown={event => event.key==='Enter' && submit()}
+          placeholder={`Qtd (${visibleUnit || 'un'})...`}
           style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:`1px solid ${mode==='remove'?'rgba(251,113,133,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
         />
         <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:4,padding:'5px 10px',background:mode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)',border:`1px solid ${mode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`,borderRadius:5,color:mode==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
@@ -414,11 +441,16 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
             <CollectInput material={item.material_name} unit={item.unit} qualityMin={item.quality_min} onCollect={onCollect} onUncollect={onUncollect}/>
           </div>
         )}
-        {isDone && (
-                      <button draggable={false} onClick={e=>{e.stopPropagation();onReset(item.material_name, item.quality_min);}} title="Resetar coleta" style={{ padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer',fontSize:11 }}>
-            <RefreshCw size={11}/>
-          </button>
-        )}
+        <button
+          className="material-reset-collected-button"
+          draggable={false}
+          disabled={item.collected <= 0}
+          onClick={event => { event.stopPropagation(); onReset(item.material_name, item.quality_min); }}
+          title={item.collected > 0 ? 'Zerar toda a coleta deste minério' : 'Nenhuma coleta para zerar'}
+          aria-label={item.collected > 0 ? `Zerar coleta de ${item.material_name}` : `Nenhuma coleta de ${item.material_name}`}
+        >
+          <RefreshCw size={11}/><span>Zerar coleta</span>
+        </button>
         {isManual && onRemoveManual && (
           <button draggable={false} onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
             <Trash2 size={11}/>
@@ -739,8 +771,15 @@ export default function MaterialTrackerPage() {
     refresh();
   }
   function handleReset(materialNome, qualityMin = 0) {
-    resetMaterialCollected(materialNome, normalizeQualityMin(qualityMin));
+    const qmin = normalizeQualityMin(qualityMin);
+    const current = shoppingList.find(item => item.key === materialKey(materialNome, qmin));
+    if (!current || current.collected <= 0) return;
+    const qualityLabel = qmin > 0 ? ` Q≥${qmin}` : '';
+    const confirmed = typeof window === 'undefined' || window.confirm(`Zerar toda a coleta de ${materialNome}${qualityLabel}?\n\nO requisito do material continuará na fila, mas o valor Já tenho voltará a zero.`);
+    if (!confirmed) return;
+    resetMaterialCollected(materialNome, qmin);
     refresh();
+    setActionMessage({ type:'success', text:`Coleta de ${materialNome}${qualityLabel} zerada. O requisito continua na fila para nova coleta.` });
   }
   function handleLimparConcluída() {
     clearCompleted();

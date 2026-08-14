@@ -286,7 +286,7 @@ function BpForm({ initial, onSave, onCancelar }) {
         <button onClick={onCancelar} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px',display:'flex',alignItems:'center' }}><X size={13}/></button>
       </div>
 
-      <div style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10,marginBottom:10 }}>
+      <div className="blueprint-form-primary-grid" style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10,marginBottom:10 }}>
         <div><label style={LS}>Nome *</label><input style={IS} value={bp.name} onChange={e=>setF('name',e.target.value)} placeholder="ex: P6LR, FR-66 Shield..."/></div>
         <div><label style={LS}>Categoria</label>
           <select style={SS} value={bp.category} onChange={e=>setF('category',e.target.value)}>
@@ -296,7 +296,7 @@ function BpForm({ initial, onSave, onCancelar }) {
         <div><label style={LS}>Subcategoria</label><input style={IS} value={bp.subcategory} onChange={e=>setF('subcategory',e.target.value)} placeholder="ex: Assault Rifle..."/></div>
       </div>
 
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:10,marginBottom:10 }}>
+      <div className="blueprint-form-meta-grid" style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr',gap:10,marginBottom:10 }}>
         <div><label style={LS}>Fabricante</label><input style={IS} value={bp.manufacturer} onChange={e=>setF('manufacturer',e.target.value)} placeholder="Behring..."/></div>
         <div><label style={LS}>Tamanho</label><input style={IS} value={bp.item_size} onChange={e=>setF('item_size',e.target.value)} placeholder="Personal / 1 / 2..."/></div>
         <div><label style={LS}>Grade</label><input style={IS} value={bp.grade} onChange={e=>setF('grade',e.target.value)} placeholder="A / B / C..."/></div>
@@ -304,7 +304,7 @@ function BpForm({ initial, onSave, onCancelar }) {
         <div><label style={LS}>Patch</label><input style={IS} value={bp.patch_added} onChange={e=>setF('patch_added',e.target.value)} placeholder="4.7"/></div>
       </div>
 
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10 }}>
+      <div className="blueprint-form-source-grid" style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10 }}>
         <div><label style={LS}>Facção / Fonte</label>
           <select style={SS} value={bp.faction} onChange={e=>setF('faction',e.target.value)}>
             {FACTIONS.map(f=><option key={f}>{f}</option>)}
@@ -329,7 +329,7 @@ function BpForm({ initial, onSave, onCancelar }) {
           </button>
         </div>
         {ings.map((ing,i)=>(
-          <div key={i} style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr auto',gap:8,alignItems:'end',marginBottom:6 }}>
+          <div key={i} className="blueprint-material-row" style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr auto',gap:8,alignItems:'end',marginBottom:6 }}>
             <div>
               {i===0&&<label style={LS}>Material</label>}
               <input style={IS} value={ing.material_name} onChange={e=>updateIng(i,'material_name',e.target.value)} placeholder="ex: Titanium, Orotite..."/>

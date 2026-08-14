@@ -917,13 +917,64 @@ function ProfitAnalysisTab() {
 }
 
 function RefineriesTab() {
-  const [methods, setMethods] = useState(() => readSnapshot(UEX_INSIGHTS_KEYS.refineries, {}).data?.methods || []);
-  const [yields, setYields] = useState(() => readSnapshot(UEX_INSIGHTS_KEYS.refineries, {}).data?.yields || []);
-  const [capacities, setCapacities] = useState(() => readSnapshot(UEX_INSIGHTS_KEYS.refineries, {}).data?.capacities || []);
-  const [jobs, setJobs] = useState(() => readSnapshot(UEX_INSIGHTS_KEYS.refineryJobs, []).data || []);
+  const refinerySnapshot = readSnapshot(UEX_INSIGHTS_KEYS.refineries, {});
+  const jobsSnapshot = readSnapshot(UEX_INSIGHTS_KEYS.refineryJobs, []);
+  const [methods, setMethods] = useState(() => refinerySnapshot.data?.methods || []);
+  const [yields, setYields] = useState(() => refinerySnapshot.data?.yields || []);
+  const [capacities, setCapacities] = useState(() => refinerySnapshot.data?.capacities || []);
+  const [jobs, setJobs] = useState(() => jobsSnapshot.data || []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [snapshot, setSnapshot] = useState(() => readSnapshot(UEX_INSIGHTS_KEYS.refineries, {}));
+  const [snapshot, setSnapshot] = useState(refinerySnapshot);
+  const [commodityQuery, setCommodityQuery] = useState('');
+  const [terminalFilter, setTerminalFilter] = useState('all');
+  const [yieldSort, setYieldSort] = useState('value');
+  const [positiveOnly, setPositiveOnly] = useState(false);
+  const [jobFilter, setJobFilter] = useState('all');
+
+  const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const commodityName = row => row?.commodity_name || row?.commodity || row?.item_name || row?.name_commodity || '—';
+  const terminalName = row => row?.terminal_name || row?.terminal || row?.refinery_name || row?.location || '—';
+  const methodName = row => row?.name || row?.method_name || row?.code || row?.id_refinery_method || 'Método';
+  const currentYield = row => Number(row?.value ?? row?.yield ?? row?.value_current ?? 0) || 0;
+  const weekYield = row => Number(row?.value_week ?? row?.yield_week ?? 0) || 0;
+  const monthYield = row => Number(row?.value_month ?? row?.yield_month ?? 0) || 0;
+  const rawCapacity = row => row?.capacity ?? row?.capacity_scu ?? row?.max_capacity ?? row?.capacity_units ?? row?.quantity;
+  const rowMatches = row => {
+    const query = normalize(commodityQuery);
+    if (!query) return true;
+    const haystack = normalize([commodityName(row), terminalName(row), methodName(row), row?.code, row?.name].join(' '));
+    return haystack.includes(query);
+  };
+
+  const terminalOptions = useMemo(() => Array.from(new Set([
+    ...yields.map(terminalName), ...capacities.map(terminalName), ...jobs.map(terminalName),
+  ].filter(value => value && value !== '—'))).sort((a, b) => a.localeCompare(b, 'pt-BR')), [capacities, jobs, yields]);
+
+  const filteredMethods = useMemo(() => methods.slice(0, 30), [methods]);
+
+  const filteredYields = useMemo(() => [...yields]
+    .filter(row => rowMatches(row) && (terminalFilter === 'all' || terminalName(row) === terminalFilter) && (!positiveOnly || currentYield(row) > 0))
+    .sort((a, b) => {
+      if (yieldSort === 'week') return weekYield(b) - weekYield(a) || currentYield(b) - currentYield(a);
+      if (yieldSort === 'month') return monthYield(b) - monthYield(a) || currentYield(b) - currentYield(a);
+      if (yieldSort === 'commodity') return commodityName(a).localeCompare(commodityName(b), 'pt-BR') || currentYield(b) - currentYield(a);
+      return currentYield(b) - currentYield(a) || weekYield(b) - weekYield(a);
+    }), [yields, commodityQuery, terminalFilter, positiveOnly, yieldSort]);
+
+  const filteredCapacities = useMemo(() => capacities.filter(row => rowMatches(row) && (terminalFilter === 'all' || terminalName(row) === terminalFilter)), [capacities, commodityQuery, terminalFilter]);
+  const filteredJobs = useMemo(() => jobs.filter(row => {
+    if (!rowMatches(row) || (terminalFilter !== 'all' && terminalName(row) !== terminalFilter)) return false;
+    if (jobFilter === 'all') return true;
+    const expiration = row?.date_expiration ? new Date(row.date_expiration).getTime() : 0;
+    const expired = expiration > 0 && expiration < Date.now();
+    return jobFilter === 'expired' ? expired : !expired;
+  }), [jobs, commodityQuery, terminalFilter, jobFilter]);
+
+  const uniqueCommodities = new Set(filteredYields.map(commodityName).filter(value => value !== '—')).size;
+  const uniqueTerminals = new Set(filteredYields.map(terminalName).filter(value => value !== '—')).size;
+  const bestYield = filteredYields[0];
+
   async function sync() {
     setLoading(true); setError('');
     const [methodsResult, yieldsResult, capacitiesResult, jobsResult] = await Promise.allSettled([fetchRefineryMethods(), fetchRefineryYields(), fetchRefineryCapacities(), fetchUserRefineryJobs()]);
@@ -936,13 +987,28 @@ function RefineriesTab() {
     if (jobsResult.status === 'fulfilled') saveUexInsight(UEX_INSIGHTS_KEYS.refineryJobs, nextJobs, { endpoint: 'user_refineries_jobs', ttl: 'realtime' });
     setMethods(nextMethods); setYields(nextYields); setCapacities(nextCapacities); setJobs(nextJobs); setSnapshot(next); setLoading(false);
   }
+
+  function clearFilters() {
+    setCommodityQuery(''); setTerminalFilter('all'); setYieldSort('value'); setPositiveOnly(false); setJobFilter('all');
+  }
+
   return <div style={panelStyle}>
-    <SectionHeader icon={Pickaxe} color="#34d399" title="Acompanhamento de refinarias" description="Compara métodos, rendimento, capacidade estimada e jobs autenticados. A consulta de jobs requer secret-key; o catálogo público continua disponível sem ela." action={<Freshness snapshot={snapshot} ttl={24} />} />
-    <LoadingButton loading={loading} onClick={sync} tone="green">Sincronizar refinarias</LoadingButton><ErrorBox error={error} />
-    <div className="uex-insights-mini-grid" style={{ marginTop: 14 }}><div className="uex-insights-stat"><span>Métodos</span><strong>{methods.length}</strong></div><div className="uex-insights-stat"><span>Rendimentos</span><strong>{yields.length}</strong></div><div className="uex-insights-stat"><span>Capacidades</span><strong>{capacities.length}</strong></div><div className="uex-insights-stat"><span>Jobs da conta</span><strong>{jobs.length}</strong></div></div>
-    {methods.length > 0 && <div style={{ marginTop: 16 }}><strong style={{ fontSize: 13 }}>Métodos disponíveis</strong><div className="uex-insights-card-grid">{methods.slice(0, 30).map((row, index) => <div className="uex-insights-card" key={row.id || index}><strong>{row.name || row.code || 'Método'}</strong><span>Rendimento: {row.rating_yield ?? '—'} · Custo: {row.rating_cost ?? '—'}</span><small>Velocidade: {row.rating_speed ?? '—'}</small></div>)}</div></div>}
-    {yields.length > 0 && <div style={{ marginTop: 16 }}><strong style={{ fontSize: 13 }}>Melhores rendimentos por terminal</strong><div className="uex-insights-table-wrap"><table className="uex-insights-table"><thead><tr><th>Commodity</th><th>Terminal</th><th>Atual</th><th>7 dias</th><th>30 dias</th></tr></thead><tbody>{[...yields].sort((a, b) => Number(b.value || 0) - Number(a.value || 0)).slice(0, 60).map((row, index) => <tr key={row.id || index}><td>{row.commodity_name || '—'}</td><td>{row.terminal_name || '—'}</td><td><strong style={{ color: '#34d399' }}>+{row.value ?? 0}%</strong></td><td>+{row.value_week ?? 0}%</td><td>+{row.value_month ?? 0}%</td></tr>)}</tbody></table></div></div>}
-    {jobs.length > 0 && <div style={{ marginTop: 16 }}><strong style={{ fontSize: 13 }}>Jobs da conta UEX</strong><div className="uex-insights-table-wrap"><table className="uex-insights-table"><thead><tr><th>Terminal</th><th>Método</th><th>Custo</th><th>Duração</th><th>Expiração</th><th>Itens</th></tr></thead><tbody>{jobs.map((row, index) => <tr key={row.id || index}><td>{row.terminal_name || '—'}</td><td>{row.id_refinery_method || '—'}</td><td>{formatUec(row.cost)}</td><td>{row.time_minutes ?? '—'} min</td><td>{formatUexDate(row.date_expiration)}</td><td>{Array.isArray(row.items) ? row.items.length : '—'}</td></tr>)}</tbody></table></div></div>}
+    <SectionHeader icon={Pickaxe} color="#34d399" title="Acompanhamento de refinarias" description="Compare métodos, rendimento, capacidade estimada e jobs autenticados. Pesquise uma Commodity pelo nome e refine os resultados por terminal, período e situação do job." action={<Freshness snapshot={snapshot} ttl={24} />} />
+    <div className="refinery-toolbar">
+      <label className="refinery-search-field"><Search size={14}/><span className="sr-only">Pesquisar Commodity</span><input type="search" value={commodityQuery} onChange={event => setCommodityQuery(event.target.value)} placeholder="Pesquisar Commodity, terminal ou método..." /></label>
+      <label><span>Terminal</span><select value={terminalFilter} onChange={event => setTerminalFilter(event.target.value)}><option value="all">Todos os terminais</option>{terminalOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+      <label><span>Ordenar rendimentos</span><select value={yieldSort} onChange={event => setYieldSort(event.target.value)}><option value="value">Maior rendimento atual</option><option value="week">Melhor em 7 dias</option><option value="month">Melhor em 30 dias</option><option value="commodity">Commodity A-Z</option></select></label>
+      <label className="refinery-check"><input type="checkbox" checked={positiveOnly} onChange={event => setPositiveOnly(event.target.checked)} /> Somente rendimento positivo</label>
+      <button type="button" className="refinery-clear-button" onClick={clearFilters} disabled={!commodityQuery && terminalFilter === 'all' && yieldSort === 'value' && !positiveOnly && jobFilter === 'all'}><X size={13}/> Limpar filtros</button>
+    </div>
+    <div className="refinery-job-filter-row"><span>Jobs da conta</span><button type="button" className={jobFilter === 'all' ? 'active' : ''} onClick={() => setJobFilter('all')}>Todos</button><button type="button" className={jobFilter === 'active' ? 'active' : ''} onClick={() => setJobFilter('active')}>Ativos</button><button type="button" className={jobFilter === 'expired' ? 'active' : ''} onClick={() => setJobFilter('expired')}>Expirados</button><LoadingButton loading={loading} onClick={sync} tone="green">Sincronizar refinarias</LoadingButton></div>
+    <ErrorBox error={error} />
+    <div className="uex-insights-mini-grid refinery-summary-grid" style={{ marginTop: 14 }}><div className="uex-insights-stat"><span>Métodos</span><strong>{methods.length}</strong><small>{filteredMethods.length} visíveis</small></div><div className="uex-insights-stat"><span>Rendimentos</span><strong>{filteredYields.length}</strong><small>{uniqueCommodities} Commodities · {uniqueTerminals} terminais</small></div><div className="uex-insights-stat"><span>Capacidades</span><strong>{filteredCapacities.length}</strong><small>registros filtrados</small></div><div className="uex-insights-stat"><span>Jobs</span><strong>{filteredJobs.length}</strong><small>{jobFilter === 'all' ? 'todos os estados' : jobFilter === 'active' ? 'ativos' : 'expirados'}</small></div></div>
+    {bestYield && <div className="refinery-highlight"><Trophy size={16}/><div><span>Melhor combinação encontrada para o filtro atual</span><strong>{commodityName(bestYield)} · {terminalName(bestYield)}</strong></div><b>+{currentYield(bestYield)}%</b></div>}
+    {methods.length > 0 && <div className="refinery-section"><div className="refinery-section-heading"><div><strong>Métodos disponíveis</strong><span>{filteredMethods.length} exibidos · ratings de rendimento, custo e velocidade</span></div></div><div className="uex-insights-card-grid refinery-method-grid">{filteredMethods.map((row, index) => <div className="uex-insights-card refinery-method-card" key={row.id || index}><strong>{methodName(row)}</strong><div><span>Rendimento <b>{row.rating_yield ?? '—'}</b></span><span>Custo <b>{row.rating_cost ?? '—'}</b></span><span>Velocidade <b>{row.rating_speed ?? '—'}</b></span></div></div>)}</div>{filteredMethods.length === 0 && <EmptyState text="Nenhum método corresponde à busca atual." />}</div>}
+    <div className="refinery-section"><div className="refinery-section-heading"><div><strong>Melhores rendimentos por terminal</strong><span>Filtre por Commodity e escolha o melhor período para ordenar.</span></div><b>{filteredYields.length} resultados</b></div>{filteredYields.length > 0 ? <div className="uex-insights-table-wrap refinery-table-wrap"><table className="uex-insights-table refinery-table"><thead><tr><th>Commodity</th><th>Terminal</th><th>Atual</th><th>7 dias</th><th>30 dias</th></tr></thead><tbody>{filteredYields.slice(0, 100).map((row, index) => <tr key={row.id || `${commodityName(row)}-${terminalName(row)}-${index}`}><td><strong>{commodityName(row)}</strong></td><td>{terminalName(row)}</td><td><strong className="refinery-current-yield">+{currentYield(row)}%</strong></td><td>+{weekYield(row)}%</td><td>+{monthYield(row)}%</td></tr>)}</tbody></table></div> : <EmptyState text={commodityQuery ? `Nenhum rendimento encontrado para “${commodityQuery}”.` : 'Sincronize as refinarias para carregar os rendimentos.'} />}</div>
+    {capacities.length > 0 && <div className="refinery-section"><div className="refinery-section-heading"><div><strong>Capacidades por terminal</strong><span>Capacidades estimadas disponíveis no catálogo UEX.</span></div><b>{filteredCapacities.length} resultados</b></div>{filteredCapacities.length > 0 ? <div className="uex-insights-table-wrap refinery-table-wrap"><table className="uex-insights-table refinery-table"><thead><tr><th>Commodity</th><th>Terminal</th><th>Capacidade</th><th>Detalhe</th></tr></thead><tbody>{filteredCapacities.slice(0, 100).map((row, index) => { const capacity = rawCapacity(row); return <tr key={row.id || index}><td>{commodityName(row)}</td><td>{terminalName(row)}</td><td><strong>{capacity === null || capacity === undefined || capacity === '' ? '—' : Number.isFinite(Number(capacity)) ? `${Number(capacity).toLocaleString('pt-BR')} SCU` : String(capacity)}</strong></td><td>{row.type || row.category || row.description || 'Catálogo UEX'}</td></tr>; })}</tbody></table></div> : <EmptyState text="Nenhuma capacidade corresponde aos filtros atuais." />}</div>}
+    {jobs.length > 0 && <div className="refinery-section"><div className="refinery-section-heading"><div><strong>Jobs da conta UEX</strong><span>A consulta de jobs exige token e secret-key configurados.</span></div><b>{filteredJobs.length} resultados</b></div>{filteredJobs.length > 0 ? <div className="uex-insights-table-wrap refinery-table-wrap"><table className="uex-insights-table refinery-table"><thead><tr><th>Terminal</th><th>Método</th><th>Custo</th><th>Duração</th><th>Expiração</th><th>Itens</th></tr></thead><tbody>{filteredJobs.map((row, index) => <tr key={row.id || index}><td>{terminalName(row)}</td><td>{row.id_refinery_method || row.method_name || '—'}</td><td>{formatUec(row.cost)}</td><td>{row.time_minutes ?? '—'} min</td><td>{formatUexDate(row.date_expiration)}</td><td>{Array.isArray(row.items) ? row.items.length : '—'}</td></tr>)}</tbody></table></div> : <EmptyState text="Nenhum job corresponde aos filtros atuais." />}</div>}
   </div>;
 }
 

@@ -1229,7 +1229,7 @@ function upsertAutomaticMission(missions, event, missionCatalog) {
 }
 
 // ── Mission Card ──────────────────────────────────────────────────────────────
-function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onRewardQuickSave }) {
+function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onRewardQuickSave, onOpenDetails }) {
   const [expanded,setExpandired]=useState(false);
   const [quickRewardOpen,setQuickRewardOpen]=useState(false);
   const [quickReward,setQuickReward]=useState('');
@@ -1263,7 +1263,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
       border:`1px solid ${rewardPending?'rgba(251,191,36,0.35)':mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':isWalletOut(mission)?'rgba(251,113,133,0.25)':'var(--border-subtle)'}`,
       borderRadius:8,overflow:'hidden',marginBottom:6,
     }}>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 13px',cursor:'pointer'}} onClick={()=>setExpandired(!expanded)}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 13px',cursor:'pointer'}} onClick={()=>onOpenDetails ? onOpenDetails(mission) : setExpandired(!expanded)}>
         <TipoIcon size={15} style={{color:DIFF_COLORS[mission.difficulty]||'var(--text-muted)',flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:2}}>
@@ -1319,7 +1319,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
             ):(
               <button onClick={e=>{e.stopPropagation();setDelConf(true);}} style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(251,113,133,0.2)',background:'rgba(251,113,133,0.08)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Trash2 size={10}/></button>
             )}
-            {expanded?<ChevronUp size={13} style={{color:'var(--text-muted)'}}/>:<ChevronDown size={13} style={{color:'var(--text-muted)'}}/>}
+            <button className="mission-inline-toggle" type="button" title={expanded?'Ocultar resumo rápido':'Mostrar resumo rápido'} aria-label={expanded?'Ocultar resumo rápido':'Mostrar resumo rápido'} onClick={e=>{e.stopPropagation();setExpandired(value=>!value);}}>{expanded?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>
           </div>
         </div>
       </div>
@@ -1350,6 +1350,53 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MissionDetailsModal({ mission, onClose, onEdit }) {
+  if (!mission) return null;
+  const objects = mission.objectives || [];
+  const doneObjects = objects.filter(item => item.done).length;
+  const reward = Math.abs(Number(mission.reward) || 0);
+  const auto = mission.auto === true;
+  const isOut = isWalletOut(mission);
+  const lootMembers = mission.loot?.members || [];
+  return (
+    <div className="mission-modal-overlay" role="dialog" aria-modal="true" aria-label="Detalhes da missão" onMouseDown={onClose}>
+      <div className="mission-detail-dialog" onMouseDown={event => event.stopPropagation()}>
+        <div className="mission-detail-header">
+          <div className="mission-detail-heading">
+            <span className="mission-detail-icon"><Crosshair size={18}/></span>
+            <div>
+              <div className="mission-detail-kicker">DETALHES DA MISSÃO</div>
+              <h2>{mission.title || 'Missão sem título'}</h2>
+              <div className="mission-detail-subtitle">{mission.type || 'Outro'}{mission.faction ? ` · ${mission.faction}` : ''}{mission.system ? ` · ${mission.system}` : ''}</div>
+            </div>
+          </div>
+          <button className="mission-detail-close" type="button" onClick={onClose} aria-label="Fechar detalhes"><X size={16}/></button>
+        </div>
+        <div className="mission-detail-chip-row">
+          <span className="mission-detail-chip" style={{'--chip-color': STATUS_COLORS[mission.status] || 'var(--text-muted)'}}>{mission.status}</span>
+          <span className="mission-detail-chip" style={{'--chip-color': DIFF_COLORS[mission.difficulty] || 'var(--text-muted)'}}>{mission.difficulty || '—'}</span>
+          {auto && <span className="mission-auto-badge"><Tag size={9}/> AUTO</span>}
+          {hasPendingAutoReward(mission) && <span className="mission-reward-pending-badge"><DollarSign size={9}/> AUEC PENDENTE</span>}
+        </div>
+        <div className="mission-detail-grid">
+          <div className="mission-detail-stat"><span>Recompensa</span><strong className={isOut ? 'danger' : 'gold'}>{reward > 0 ? `${isOut ? '-' : ''}${ptMoney(reward)} aUEC` : 'Não preenchida'}</strong></div>
+          <div className="mission-detail-stat"><span>Localização</span><strong>{mission.location || 'Não informada'}</strong></div>
+          <div className="mission-detail-stat"><span>Tripulação</span><strong>{mission.crew_needed || 1} jogador(es)</strong></div>
+          <div className="mission-detail-stat"><span>Tempo registrado</span><strong>{mission.timer_elapsed > 0 ? fmtDuration(mission.timer_elapsed) : 'Não cronometrado'}</strong></div>
+          <div className="mission-detail-stat"><span>Reputação</span><strong>{mission.reputation_label || (mission.reputation_gain ? `+${mission.reputation_gain} Rep` : '—')}</strong></div>
+          <div className="mission-detail-stat"><span>Objetivos</span><strong>{objects.length > 0 ? `${doneObjects}/${objects.length} concluídos` : 'Nenhum objetivo'}</strong></div>
+        </div>
+        {auto && <div className="mission-detail-callout mission-detail-callout-auto"><Tag size={14}/><div><strong>Registro automático</strong><span>{mission.reputation_label || 'Dados capturados do Game.log.'}{mission.watcher_guid ? ` GUID: ${mission.watcher_guid}.` : ''}</span>{mission.auto_blueprints?.length > 0 && <span>Blueprints: {mission.auto_blueprints.map(item => item.productName).filter(Boolean).join(', ')}</span>}</div></div>}
+        {objects.length > 0 && <div className="mission-detail-section"><div className="mission-detail-section-title">OBJETIVOS <span>{doneObjects}/{objects.length}</span></div><div className="mission-detail-objectives">{objects.map((item, index) => <div key={`${item.text}-${index}`} className={item.done ? 'done' : ''}>{item.done ? <CheckCircle2 size={13}/> : <span className="mission-detail-object-dot"/>}<span>{item.text}</span></div>)}</div></div>}
+        {mission.notes && <div className="mission-detail-section"><div className="mission-detail-section-title">NOTAS</div><p className="mission-detail-notes">{mission.notes}</p></div>}
+        {mission.bug_description && <div className="mission-detail-callout mission-detail-callout-bug"><Bug size={14}/><div><strong>Descrição do bug</strong><span>{mission.bug_description}</span></div></div>}
+        {mission.loot && <div className="mission-detail-callout mission-detail-callout-loot"><Gift size={14}/><div><strong>Loot distribuído</strong><span>{lootMembers.length} participante(s) · {lootMembers.filter(member => member.delivered).length} entrega(s) confirmada(s)</span></div></div>}
+        <div className="mission-detail-footer"><span>{mission.completed_at ? `Concluída em ${fmtHora(mission.completed_at)}` : mission.created_at ? `Registrada em ${fmtHora(mission.created_at)}` : 'Registro local'}</span><div><button className="mission-detail-secondary" type="button" onClick={onClose}>Fechar</button><button className="mission-detail-primary" type="button" onClick={() => onEdit(mission)}><Edit3 size={13}/> Editar missão</button></div></div>
+      </div>
     </div>
   );
 }
@@ -1590,6 +1637,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [expandedKey, setExpandedKey] = useState(null);
+  const [sortMode, setSortMode] = useState('count');
   const [delConf, setDelConf] = useState(null); // id da missão aguardando confirmação de delete
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
@@ -1637,9 +1685,15 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
     });
   }, [groups, search, filterType]);
 
+  const sortedFiltered = useMemo(() => [...filtered].sort((a, b) => {
+    if (sortMode === 'reward') return (Number(b.best.reward) || 0) - (Number(a.best.reward) || 0);
+    if (sortMode === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'pt-BR', { sensitivity: 'base' });
+    return b.count - a.count || String(a.title || '').localeCompare(String(b.title || ''), 'pt-BR', { sensitivity: 'base' });
+  }), [filtered, sortMode]);
+
   return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
-      <div style={{background:'var(--bg-card)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:12,padding:20,width:'100%',maxWidth:580,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+    <div className="mission-modal-overlay mission-reuse-overlay" role="dialog" aria-modal="true" aria-label="Reaproveitar missão" onMouseDown={onClose}>
+      <div className="mission-reuse-dialog" onMouseDown={event => event.stopPropagation()}>
 
         {/* Header */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
@@ -1649,12 +1703,12 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)'}}><X size={15}/></button>
         </div>
-        <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:12}}>
+        <div className="mission-reuse-description">
           Missões agrupadas por título · tipo · facção. Clique para usar o template ou expanda para ver variantes com recompensas diferentes.
         </div>
 
         {/* Filtros */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 160px',gap:8,marginBottom:12}}>
+        <div className="mission-reuse-filters" style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) 160px 150px',gap:8,marginBottom:12}}>
           <div style={{position:'relative'}}>
             <Search size={12} style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none'}}/>
             <input style={{...IS,paddingLeft:28}} placeholder="Buscar por título, facção, tipo..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -1663,23 +1717,27 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
             <option value="all">Todos os tipos</option>
             {missionTypes.map(option=><option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
+          <select style={SS} value={sortMode} onChange={e=>setSortMode(e.target.value)} aria-label="Ordenar templates">
+            <option value="count">Mais usadas</option>
+            <option value="reward">Maior recompensa</option>
+            <option value="title">Título A-Z</option>
+          </select>
         </div>
-        <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,fontFamily:'Share Tech Mono,monospace'}}>
-          {filtered.length} template{filtered.length!==1?'s':''} únicos de {missions.length} missões
-        </div>
+        <div className="mission-reuse-summary"><strong>{sortedFiltered.length}</strong> template{sortedFiltered.length!==1?'s':''} únicos de <strong>{missions.length}</strong> missões <span>· {groups.reduce((sum, group) => sum + group.variants.length, 0)} variantes catalogadas</span></div>
 
         {/* Lista agrupada */}
-        <div style={{overflowY:'auto',flex:1}}>
-          {filtered.length === 0 ? (
+        <div className="mission-reuse-list" style={{overflowY:'auto',flex:1}}>
+          {sortedFiltered.length === 0 ? (
             <div style={{textAlign:'center',padding:'30px 0',color:'var(--text-muted)',fontSize:12}}>Nenhuma missão encontrada</div>
           ) : (
-            filtered.map(g => {
+            sortedFiltered.map(g => {
               const Icon = TYPE_ICONS[g.type] || Crosshair;
               const isExpanded = expandedKey === g.key;
               const hasVariants = g.variants.length > 1;
 
               return (
-                <div key={g.key} style={{marginBottom:5}}>
+                                  <div key={g.key} className="mission-reuse-template-card" style={{marginBottom:5}}>
+
                   {/* Card principal do grupo */}
                   <div style={{
                     background:'var(--bg-panel)',border:'1px solid var(--border-subtle)',borderRadius:8,
@@ -1687,7 +1745,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
                   }}>
                     <div style={{display:'flex',alignItems:'center',gap:0}}>
                       {/* Botão principal — usa o representante (maior recompensa) */}
-                      <button onClick={()=>onSelect(g.best)} style={{
+                      <button className="mission-reuse-template-button" onClick={()=>onSelect(g.best)} style={{
                         flex:1,textAlign:'left',padding:'10px 12px',background:'none',border:'none',
                         cursor:'pointer',display:'block',
                       }}
@@ -1700,7 +1758,9 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
                           <span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.2)',color:'var(--accent-primary)',fontWeight:700,flexShrink:0}}>
                             ×{g.count}
                           </span>
-                          {g.best.reward>0&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0}}>{ptMoney(g.best.reward)} aUEC</span>}
+                                                        {g.best.reward>0&&<span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',flexShrink:0}}>{ptMoney(g.best.reward)} aUEC</span>}
+                              <span className="mission-reuse-use-hint"><RefreshCw size={10}/> Usar</span>
+
                         </div>
                         <div style={{display:'flex',gap:8,fontSize:10,color:'var(--text-muted)',paddingLeft:21,flexWrap:'wrap'}}>
                           <span>{g.type}</span>
@@ -1815,6 +1875,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const [pendingOnly,setPendingOnly] = useState(false);
   const [selected,setSelected]     = useState(new Set());
   const [showReuse,setShowReuse]   = useState(false);
+  const [detailM,setDetailM]       = useState(null);
   const today = todayStr();
   const todayMissions = missions.filter(m=>missionBelongsToDate(m,today));
   const filtered = todayMissions.filter(m => (filterStatus==='all' || m.status===filterStatus) && (!pendingOnly || hasPendingAutoReward(m)));
@@ -1874,8 +1935,13 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
         <ReuseModal missions={missions} missionTypes={getMissionAdminOptions('types', '', missionCatalog)} onSelect={handleReuse} onDelete={onDelete} onClose={()=>setShowReuse(false)}/>
       )}
       {(showForm||editM)&&(
-        <MissionForm initial={editM} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditM(null);}} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
+        <div className="mission-modal-overlay" role="dialog" aria-modal="true" aria-label={editM?.id ? 'Editar missão' : 'Nova missão'} onMouseDown={()=>{setShowForm(false);setEditM(null);}}>
+          <div className="mission-editor-dialog" onMouseDown={event=>event.stopPropagation()}>
+            <MissionForm initial={editM} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditM(null);}} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
+          </div>
+        </div>
       )}
+      <MissionDetailsModal mission={detailM} onClose={()=>setDetailM(null)} onEdit={mission=>{setDetailM(null);setEditM(mission);setShowForm(false);}} />
       {todayMissions.length>0&&(
         <DaySummary date={today} missions={todayMissions} losses={losses}/>
       )}
@@ -1946,7 +2012,8 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
                 onEdit={m=>{setEditM(m);setShowForm(false);}}
                 onDelete={onDelete} onStatusChange={handleStatusChange} onClockUpdate={onClockUpdate}
                 onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
-                onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}/>
+                onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}
+                onOpenDetails={setDetailM}/>
             </div>
           </div>
         ))}
@@ -1959,6 +2026,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 // ── TAB 2: History ────────────────────────────────────────────────────────────
 function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary, missionCatalog }) {
   const [editM, setEditM] = useState(null);
+  const [detailM, setDetailM] = useState(null);
   const [pendingOnly, setPendingOnly] = useState(false);
   const visibleMissions = useMemo(() => pendingOnly ? missions.filter(hasPendingAutoReward) : missions, [missions, pendingOnly]);
   function handleSaveEdit(m) { onSave(m); setEditM(null); }
@@ -1979,8 +2047,13 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
   return (
     <div className="mission-history-responsive" style={{display:'grid',gridTemplateColumns:'280px minmax(0,1fr)',gap:16,height:'100%'}}>
       {editM && (
-        <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
+        <div className="mission-modal-overlay" role="dialog" aria-modal="true" aria-label="Editar missão" onMouseDown={()=>setEditM(null)}>
+          <div className="mission-editor-dialog" onMouseDown={event=>event.stopPropagation()}>
+            <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
+          </div>
+        </div>
       )}
+      <MissionDetailsModal mission={detailM} onClose={()=>setDetailM(null)} onEdit={mission=>{setDetailM(null);setEditM(mission);}} />
       <div className="mission-history-calendar" style={{borderRight:'1px solid var(--border-subtle)',overflowY:'auto',paddingRight:12}}>
         <div style={{display:'flex',gap:7,marginBottom:8,flexWrap:'wrap'}}>
           <select style={{...SS,flex:1,minWidth:0}} value={selYear} onChange={e=>{setSelYear(Number(e.target.value));setSelDay(null);}}>
@@ -2082,7 +2155,8 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
                     onStatusChange={onStatusChange}
                     onClockUpdate={onClockUpdate}
                     onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
-                    onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}/>
+                    onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}
+                    onOpenDetails={setDetailM}/>
                 ))
               )}
             </div>
@@ -2094,7 +2168,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
 }
 
 // ── TAB 3: Global Estatísticas ──────────────────────────────────────────────────
-function StatsTab({ missions, losses }) {
+function StatsTab({ missions, losses, onReset }) {
   const [period,setPeriod]=useState(30);
   const cutdef=useMemo(()=>{const d=new Date();d.setDate(d.getDate()-period);return localDateStr(d);},[period]);
   const inAlcance=useMemo(()=>missions.filter(m=>financialDateStr(m)>=cutdef),[missions,cutdef]);
@@ -2129,13 +2203,14 @@ function StatsTab({ missions, losses }) {
 
   return (
     <div>
-      <div style={{display:'flex',gap:6,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+      <div className="mission-stats-toolbar" style={{display:'flex',gap:6,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
         <span style={{fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Período:</span>
         {[{v:7,l:'7 dias'},{v:14,l:'14 dias'},{v:30,l:'30 dias'},{v:90,l:'3 meses'},{v:365,l:'12 meses'}].map(o=>(
           <button key={o.v} className={`filter-chip ${period===o.v?'active':''}`} onClick={()=>setPeriod(o.v)}>{o.l}</button>
         ))}
+        <button className="mission-stats-reset-button" type="button" onClick={onReset} title="Apagar todas as missões e perdas usadas no histórico e nas estatísticas"><Trash2 size={12}/> Resetar estatísticas e histórico</button>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
+      <div className="mission-stats-kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
         {[
           {l:'Ganho Total',       v:`${ptMoney(totalEarned)} aUEC`, c:'var(--accent-green)',   s:'missões concluídas'},
           {l:'Saídas da Carteira',v:`${ptMoney(totalWalletOut)} aUEC`,c:'var(--accent-red)',     s:'pagamentos e compras'},
@@ -2147,14 +2222,14 @@ function StatsTab({ missions, losses }) {
           {l:'Média por Missão',  v:`${ptMoney(avgReward)} aUEC`,   c:'var(--accent-gold)',    s:'missões concluídas'},
           {l:'Tempo Médio',       v:avgMin>0?`${avgMin} min`:'—',   c:'var(--accent-primary)', s:'por missão cronometrada'},
         ].map(({l,v,c,s})=>(
-          <div key={l} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px 13px'}}>
+          <div key={l} className="mission-stats-kpi" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px 13px'}}>
             <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:c,marginBottom:2}}>{v}</div>
             <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{l}</div>
             <div style={{fontSize:10,color:'var(--text-muted)',marginTop:2,fontStyle:'italic'}}>{s}</div>
           </div>
         ))}
       </div>
-      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px',marginBottom:14}}>
+      <div className="mission-stats-status-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px',marginBottom:14}}>
         <div className="modal-section-title">Distribuição de Status — {inAlcance.length} missões</div>
         <div style={{display:'flex',gap:20,justifyContent:'center',flexWrap:'wrap'}}>
           <DonutStat value={inAlcance.filter(m=>m.status==='Completed').length}  total={inAlcance.length} label="Concluídas"  color="var(--accent-green)"/>
@@ -2166,8 +2241,8 @@ function StatsTab({ missions, losses }) {
           <DonutStat value={inAlcance.filter(m=>m.status==='Saiu da carteira').length} total={inAlcance.length} label="Saídas" color="var(--accent-red)"/>
         </div>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+      <div className="mission-stats-chart-grid" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
           <div className="modal-section-title"><TrendingUp size={11}/> Lucro por Dia (aUEC)</div>
           <BarChart data={dailyData} valueKey="earned" labelKey="label" color="var(--accent-green)" height={100}/>
           <div style={{display:'flex',gap:10,marginTop:5,fontSize:10,color:'var(--text-muted)'}}>
@@ -2175,7 +2250,7 @@ function StatsTab({ missions, losses }) {
             <span>Pico: <span style={{color:'var(--accent-primary)'}}>{ptMoney(Math.max(...dailyData.map(d=>d.earned)))}</span></span>
           </div>
         </div>
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
           <div className="modal-section-title"><DollarSign size={11}/> Resultado Líquido (NET)</div>
           <BarChart data={dailyData} valueKey="net" labelKey="label" color="var(--accent-primary)" height={100}/>
           <div style={{display:'flex',gap:10,marginTop:5,fontSize:10,color:'var(--text-muted)'}}>
@@ -2183,21 +2258,21 @@ function StatsTab({ missions, losses }) {
             <span style={{color:netTotal>=0?'var(--accent-green)':'var(--accent-red)',fontWeight:700}}>NET: {ptMoney(netTotal)}</span>
           </div>
         </div>
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
           <div className="modal-section-title"><BarChart3 size={11}/> Missões por Dia</div>
           <BarChart data={dailyData} valueKey="count" labelKey="label" color="var(--accent-primary)" height={100}/>
           <div style={{display:'flex',gap:10,marginTop:5,fontSize:10,color:'var(--text-muted)'}}>
             <span>Total: {inAlcance.length}</span><span>Média: {inAlcance.length>0?(inAlcance.length/period).toFixed(1):0}/dia</span>
           </div>
         </div>
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
           <div className="modal-section-title"><Clock size={11}/> Tempo por Missão (min)</div>
           <BarChart data={timedM.slice(-20).map(m=>({label:m.title.slice(0,10),duration:Math.round((m.timer_elapsed||0)/60000)}))} valueKey="duration" labelKey="label" color="var(--accent-gold)" height={100} suffix=" min" noDataMsg="Nenhuma missão cronometrada"/>
           <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Média: {avgMin} min · {timedM.length} cronometradas</div>
         </div>
       </div>
       {(totalFailed>0||totalBugged>0)&&(
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px'}}>
+        <div className="mission-stats-loss-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px'}}>
           <div className="modal-section-title">⚠️ Recompensas Perdidas — Falha vs Bug</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div style={{padding:'11px',background:'rgba(251,113,133,0.06)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:7}}>
@@ -2364,6 +2439,17 @@ export default function MissionTrackerPage() {
   }
   function handleDelete(id)           { persistMissions(missions.filter(m=>m.id!==id)); }
 
+  function handleResetStatisticsAndHistory() {
+    const active = missions.filter(mission => mission.status === 'Active');
+    const autoActive = missions.filter(mission => mission.auto === true && mission.status === 'Active');
+    const confirmed = window.confirm(`Isso apagará ${missions.length} registro(s) do Rastreador e ${losses.length} perda(s) do histórico. O catálogo de objetivos, o Monitor Automático e as configurações serão preservados.\n\nDeseja continuar?`);
+    if (!confirmed) return;
+    persistMissions([]);
+    persistLosses([]);
+    setLootMission(null);
+    window.dispatchEvent(new CustomEvent('sc_missions_reset', { detail: { removedMissions: missions.length, removedLosses: losses.length, activeMissions: active.length, activeAutoMissions: autoActive.length } }));
+  }
+
   function handleStatusChange(id, status) {
     const mission = missions.find(m => m.id === id);
     const updated = missions.map(m => m.id === id ? {
@@ -2469,7 +2555,8 @@ export default function MissionTrackerPage() {
         {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}
           onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange}
           onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} objLibrary={objLibrary} missionCatalog={missionCatalog}/>}
-        {activeTab==='stats'&&<StatsTab missions={missions} losses={losses}/>}
+                {activeTab==='stats'&&<StatsTab missions={missions} losses={losses} onReset={handleResetStatisticsAndHistory}/>} 
+
       </div>
     </div>
   );

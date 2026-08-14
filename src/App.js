@@ -186,7 +186,11 @@ export default function App() {
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { return false; }
+    try {
+      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (saved !== null) return saved === '1';
+    } catch {}
+    return typeof window !== 'undefined' && window.innerWidth <= 560;
   });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }

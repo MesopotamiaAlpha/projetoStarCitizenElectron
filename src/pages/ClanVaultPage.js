@@ -38,7 +38,7 @@ function AddVaultForm({ knownOwners, onSave, onCancel }) {
         <span style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--accent-gold)',letterSpacing:'0.06em' }}>ADICIONAR AO COFRE DO CLÃ</span>
         <button onClick={onCancel} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px' }}>✕</button>
       </div>
-      <div style={{ display:'grid',gridTemplateColumns:'1.3fr 1fr 0.8fr 0.7fr 0.7fr',gap:10,marginBottom:10 }}>
+      <div className="clan-vault-entry-form-grid" style={{ display:'grid',gridTemplateColumns:'1.3fr 1fr 0.8fr 0.7fr 0.7fr',gap:10,marginBottom:10 }}>
         <div><label style={LS}>Dono</label>
           <input style={IS} list="vault-owners" value={owner} onChange={e=>setOwner(e.target.value)} placeholder="Nome do jogador"/>
           <datalist id="vault-owners">{knownOwners.map(o=><option key={o} value={o}/>)}</datalist>
@@ -149,7 +149,7 @@ function VaultEntryCard({ entry, onToggleStatus, onDelete, onUseQuantity }) {
 
       {/* Formulário de uso / redução */}
       {showUse&&(
-        <div style={{ marginTop:10,paddingTop:10,borderTop:'1px solid var(--border-subtle)',display:'grid',gridTemplateColumns:'1fr 1.3fr 1.3fr auto',gap:8,alignItems:'end' }}>
+        <div className="clan-vault-use-form-grid" style={{ marginTop:10,paddingTop:10,borderTop:'1px solid var(--border-subtle)',display:'grid',gridTemplateColumns:'1fr 1.3fr 1.3fr auto',gap:8,alignItems:'end' }}>
           <div><label style={LS}>Quantidade Usada ({unit})</label>
             <input style={IS} type="number" min="0" max={entry.quantity} step="0.001" value={useAmount} onChange={e=>setUseAmount(e.target.value)} placeholder="0"/>
           </div>
@@ -252,7 +252,7 @@ export default function ClanVaultPage() {
         )}
       </div>
 
-      <div style={{ flex:1,display:'grid',gridTemplateColumns:'230px 1fr',overflow:'hidden' }}>
+      <div className="clan-vault-layout" style={{ flex:1,display:'grid',gridTemplateColumns:'230px 1fr',overflow:'hidden' }}>
         {/* Painel esquerdo: resumo por participante */}
         <div style={{ borderRight:'1px solid var(--border-subtle)',overflowY:'auto',padding:12 }}>
           <div style={{ fontFamily:'Michroma,sans-serif',fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:6 }}>

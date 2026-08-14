@@ -58,8 +58,8 @@ function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
       </div>
 
       {open&&(
-        <div style={{ padding:'14px',display:'flex',flexDirection:'column',gap:12 }}>
-          <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+        <div className="custom-armor-form-content" style={{ padding:'14px',display:'flex',flexDirection:'column',gap:12 }}>
+          <div className="custom-armor-identity-grid" style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
             <div>
               <label style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 }}>Tipo de Peça</label>
               <select value={piece.piece_type} onChange={e=>set('piece_type',e.target.value)} className="filter-select" style={{ width:'100%' }}>
@@ -75,7 +75,7 @@ function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
           {piece.piece_type!=='Backpack'&&(
             <div>
               <div style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>Resistências</div>
-              <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8 }}>
+              <div className="custom-armor-resistance-grid" style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8 }}>
                 <NumInput label="Física"       name="resistance_physical"    value={piece.resistance_physical}    onChange={set}/>
                 <NumInput label="Energia"      name="resistance_energy"      value={piece.resistance_energy}      onChange={set}/>
                 <NumInput label="Distorção"    name="resistance_distortion"  value={piece.resistance_distortion}  onChange={set}/>
@@ -86,7 +86,7 @@ function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
             </div>
           )}
 
-          <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10 }}>
+          <div className="custom-armor-attribute-grid" style={{ display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10 }}>
             {piece.piece_type!=='Backpack'&&<NumInput label="Penalidade Mob. %" name="mobility_penalty" value={piece.mobility_penalty} onChange={set}/>}
             <NumInput label="Slots"       name="slots"      value={piece.slots}      onChange={set}/>
             <NumInput label="Preço (aUEC)" name="price_auec" value={piece.price_auec} onChange={set}/>

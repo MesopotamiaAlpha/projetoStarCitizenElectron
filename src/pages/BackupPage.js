@@ -261,7 +261,7 @@ export default function BackupPage() {
           </div>
         </div>
 
-        <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))',gap:20 }}>
+        <div className="backup-sections-grid" style={{ display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(420px, 1fr))',gap:20 }}>
           <BackupSection/>
           <RestoreSection/>
         </div>
