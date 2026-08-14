@@ -14,17 +14,19 @@ import ClanVaultPage      from './pages/ClanVaultPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
+import UexInsightsPage    from './pages/UexInsightsPage';
 import BackupPage         from './pages/BackupPage';
 import DataDirectoryPage  from './pages/DataDirectoryPage';
 import NotesPage          from './pages/NotesPage';
 import LocationsAdminPage from './pages/LocationsAdminPage';
+import { MissionAdminPage } from './pages/MissionAdminPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
-import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -131,42 +133,45 @@ function buildMockAPI() {
 export const api = window.electronAPI || buildMockAPI();
 
 const NAV_GROUPS = [
-  { id:'inicio', label:'Início', pages:[
+  { id:'inicio', label:'Início', hint:'Visão geral', accent:'#38bdf8', groupIcon:BarChart3, pages:[
     { id:'dashboard',  label:'Dashboard',          icon:BarChart3  },
   ]},
-  { id:'armaduras', label:'Armaduras', pages:[
+  { id:'armaduras', label:'Armaduras', hint:'Coleção e proteção', accent:'#a78bfa', groupIcon:Shield, pages:[
     { id:'all',        label:'Todas as Armaduras',  icon:Shield     },
     { id:'collection', label:'Minha Coleção',       icon:Package    },
     { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
   ]},
-  { id:'itens', label:'Itens & Crafting', pages:[
+  { id:'itens', label:'Itens & Crafting', hint:'Inventário e projetos', accent:'#22d3ee', groupIcon:Package, pages:[
     { id:'inventory',  label:'Inventário de Itens', icon:Archive    },
     { id:'blueprints', label:'Blueprints',          icon:Cpu        },
     { id:'materials',  label:'Tracking Materiais',  icon:Hammer     },
   ]},
-  { id:'mineracao', label:'Mineração', pages:[
+  { id:'mineracao', label:'Mineração', hint:'Extração e armazenamento', accent:'#34d399', groupIcon:Pickaxe, pages:[
     { id:'mining',       label:'Guia de Mineração',  icon:Pickaxe },
-    { id:'mininggroup',  label:'Mineração em Grupo', icon:Users   },
+    { id:'mininggroup', label:'Mineração em Grupo', icon:Users   },
     { id:'orevault',     label:'Baú de Minério',     icon:Archive },
   ]},
-  { id:'cla', label:'Clã & Missões', pages:[
+  { id:'cla', label:'Clã & Missões', hint:'Operações compartilhadas', accent:'#fb923c', groupIcon:Users, pages:[
     { id:'clanvault',  label:'Cofre do Clã', icon:Lock       },
     { id:'missions',   label:'Missões',      icon:ListChecks },
   ]},
-  { id:'uex', label:'UEX', pages:[
+  { id:'uex', label:'UEX', hint:'Mercado e negociações', accent:'#fbbf24', groupIcon:TrendingUp, pages:[
     { id:'uexsales',        label:'Acompanhamento UEX',   icon:ShoppingBag   },
     { id:'uexnegotiations', label:'Negociações UEX',      icon:MessageSquare },
     { id:'wikelo',          label:'Acompanhamento Wikelo',icon:Star          },
     { id:'uexapi',          label:'UEX API (Live)',       icon:Globe         },
-    { id:'shiphangar',      label:'Hangar de Naves',       icon:Rocket        },
+    { id:'uexinsights',     label:'Inteligência UEX',     icon:TrendingUp    },
+    { id:'shiphangar',      label:'Hangar de Naves',      icon:Rocket         },
   ]},
-  { id:'sistema', label:'Sistema', pages:[
+  { id:'sistema', label:'Sistema', hint:'Dados e configurações', accent:'#94a3b8', groupIcon:FolderCog, pages:[
     { id:'backup', label:'Backup & Restauração', icon:Save },
     { id:'data-directory', label:'Diretório de Dados', icon:FolderCog },
     { id:'notes',  label:'Bloco de Notas',          icon:Edit3 },
     { id:'locations', label:'Adicionar Local',       icon:Globe  },
+    { id:'mission-admin', label:'Gerenciador de Missões', icon:ListChecks },
   ]},
 ];
+
 const PAGES = NAV_GROUPS.flatMap(g => g.pages);
 const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
 const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
@@ -265,23 +270,25 @@ export default function App() {
         <nav className="sidebar-nav">
           {NAV_GROUPS.map(group => {
             const isCollapsed = collapsedGroups.includes(group.id);
+            const hasActivePage = group.pages.some(page => page.id === activePage);
+            const GroupIcon = group.groupIcon || FolderCog;
             return (
-              <div key={group.id} className="nav-group">
-                <button className="nav-group-header" onClick={()=>toggleGroup(group.id)}>
-                  <span>{group.label}</span>
-                  <ChevronDown size={12} className={`nav-group-chevron ${isCollapsed?'collapsed':''}`}/>
+              <div key={group.id} className={`nav-group ${hasActivePage ? 'has-active' : ''}`} style={{ '--group-accent': group.accent }}>
+                <button className="nav-group-header" onClick={()=>toggleGroup(group.id)} aria-expanded={!isCollapsed} aria-controls={`nav-group-${group.id}`}>
+                  <span className="nav-group-heading"><span className="nav-group-icon"><GroupIcon size={13} /></span><span className="nav-group-copy"><strong>{group.label}</strong><small>{group.hint}</small></span></span>
+                  <span className="nav-group-meta"><span className="nav-group-count">{group.pages.length}</span><ChevronDown size={13} className={`nav-group-chevron ${isCollapsed?'collapsed':''}`}/></span>
                 </button>
-                {!isCollapsed && group.pages.map(({id,label,icon:Icon})=>(
-                  <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)} title={sidebarCollapsed ? label : undefined}>
-                    <Icon size={16} />
-                    <span>{label}</span>
+                {!isCollapsed && <div id={`nav-group-${group.id}`} className="nav-group-items">{group.pages.map(({id,label,icon:Icon})=>(
+                  <button key={id} data-page-id={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)} title={sidebarCollapsed ? label : undefined} style={{ '--item-accent': group.accent }}>
+                    <span className="nav-item-icon"><Icon size={16} /></span>
+                    <span className="nav-item-label">{label}</span>
                     {id==='custom'&&customCount>0 ? (
-                      <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(56,189,248,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
+                      <span className="nav-item-badge">{customCount}</span>
                     ) : activePage===id ? (
                       <ChevronRight size={13} className="nav-arrow" />
                     ) : null}
                   </button>
-                ))}
+                ))}</div>}
               </div>
             );
           })}
@@ -309,11 +316,13 @@ export default function App() {
         {activePage==='uexnegotiations' && <UexNegotiationsPage />}
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
+        {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
         {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
         {activePage==='backup'     && <BackupPage />}
         {activePage==='data-directory' && <DataDirectoryPage />}
         {activePage==='notes'      && <NotesPage />}
         {activePage==='locations'   && <LocationsAdminPage />}
+        {activePage==='mission-admin' && <MissionAdminPage />}
       </main>
 
       <UexNotificationBell onNavigate={goToPage} />

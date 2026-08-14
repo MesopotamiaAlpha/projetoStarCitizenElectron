@@ -9,9 +9,10 @@ import { setBatchProvenance, SOURCES } from '../data/provenance';
 import { saveUexItemsDB, loadUexItemsDB, normalizeUexNumber, normalizeUexItemName, getUexItemAveragePrice } from '../data/uexItemsDB';
 import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
 import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
-import { syncUexVehicles } from '../data/uexVehicles';
+import { loadVehicleCatalog, saveVehicleCatalog, syncUexVehicles } from '../data/uexVehicles';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
 import { loadGoogleTranslateApiKey, saveGoogleTranslateApiKey } from '../data/uexNegotiations';
+import { loadMarketPrices, syncMarketPrices } from '../data/uexMarketDB';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
@@ -658,7 +659,14 @@ function VeículosTab() {
     setLoading(true); setError('');
     try {
       const catalog = await syncUexVehicles();
-      const result = catalog.vehicles || [];
+      // Gravação explícita e verificação: o Hangar e a UEX Live precisam ler
+      // exatamente o mesmo objeto na mesma chave do localStorage.
+      const savedCatalog = saveVehicleCatalog(catalog);
+      const verifiedCatalog = loadVehicleCatalog();
+      if (!verifiedCatalog?.vehicles?.length) {
+        throw new Error('A sincronização terminou, mas o catálogo local de veículos não pôde ser confirmado.');
+      }
+      const result = savedCatalog.vehicles || verifiedCatalog.vehicles || [];
       setData(result);
       setBatchProvenance('vehicle', result.map(v => v.name), SOURCES.UEX_API, {
         endpoint: 'veículos', gameVersion: '4.8.1',
@@ -1174,6 +1182,30 @@ function ItemDBSyncButton() {
   );
 }
 
+function MarketPricesSyncButton() {
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [count, setCount] = useState(() => loadMarketPrices().length);
+
+  async function handleSync() {
+    setSyncing(true); setError(''); setMessage('');
+    try {
+      const rows = await syncMarketPrices();
+      setCount(rows.length);
+      setMessage(`${rows.length.toLocaleString('pt-BR')} médias por qualidade salvas localmente.`);
+    } catch (err) { setError(err.message || 'Não foi possível sincronizar médias por qualidade.'); }
+    setSyncing(false);
+  }
+
+  return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+    <button onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: syncing ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 6, color: 'var(--accent-gold)', fontSize: 11, fontWeight: 700, fontFamily: '"Exo 2",sans-serif', textTransform: 'uppercase', cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.75 : 1 }}><TrendingUp size={13} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />{syncing ? 'Sincronizando médias…' : 'Sync Preços / Qualidade'}</button>
+    {count > 0 && !syncing && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'Share Tech Mono,monospace' }}>{count.toLocaleString('pt-BR')} linhas no cache local</span>}
+    {message && <span style={{ fontSize: 9, color: 'var(--accent-green)', maxWidth: 240, textAlign: 'right' }}>{message}</span>}
+    {error && <span style={{ fontSize: 9, color: 'var(--accent-red)', maxWidth: 240, textAlign: 'right' }}>{error}</span>}
+  </div>;
+}
+
 export default function UexApiPage() {
   const [activeTab, setActiveTab] = useState('commodities');
   const [apiStatus, setApiStatus] = useState(null); // null | true | false
@@ -1200,6 +1232,7 @@ export default function UexApiPage() {
         </div>
         <div style={{ display:'flex',gap:8,alignItems:'center' }}>
           <ItemDBSyncButton/>
+          <MarketPricesSyncButton/>
           <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
             style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
             <ExternalLink size={13}/> Documentação

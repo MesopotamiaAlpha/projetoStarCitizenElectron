@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { getMissionAdminOptions, loadMissionAdmin, MISSION_ADMIN_UPDATED_EVENT } from '../data/missionAdmin';
 import {
   Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
   Search, MapPin, Users, Package, Crosshair, Edit3, X, Save,
@@ -17,9 +18,6 @@ function load(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? 
 function save(key, v)   { localStorage.setItem(key, JSON.stringify(v)); }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const MISSION_TYPES = ['Bounty Hunt','Delivery','Carga Run','Mining','Salvage','FPS Combat','Escort','Investigation','PVP','Base Assault','Drug Run','Mercenary','Blockade Run','Outro'];
-const FACTIONS      = ['Foxwell Enforcement','Headhunters','Covalex','Shubin Interstellar','Ling Family','InterSec','Rayari','Mile Eckhart','Nine Tails','UEE Navy','Advocacy','CDF','Hurston Security','Levski Security','Free','Outro'];
-const SYSTEMS       = ['Stanton','Pyro','Nyx','Terra'];
 const DIFFICULTIES  = ['Easy','Médio','Hard','Very Hard','Elite'];
 const STATUSES      = ['Active','Completed','Failed','Abandoned','Pending','Bugged','Saiu da carteira'];
 const MONTHS_PT     = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -657,10 +655,13 @@ function LootDistributionModal({ mission, initialLoot, onSave, onSkip }) {
 }
 
 // ── Mission Form ──────────────────────────────────────────────────────────────
-function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
+function MissionForm({ initial, onSave, onCancelar, objLibrary, missionCatalog }) {
+  const typeOptions = getMissionAdminOptions('types', initial?.type || '', missionCatalog);
+  const factionOptions = getMissionAdminOptions('factions', initial?.faction || '', missionCatalog);
+  const systemOptions = getMissionAdminOptions('systems', initial?.system || '', missionCatalog);
   const [data,setData]=useState(()=>initial?{...initial,objectives:initial.objectives?.map(o=>({...o}))||[]}:{
-    id:null,title:'',type:'Bounty Hunt',faction:'Foxwell Enforcement',
-    system:'Stanton',location:'',difficulty:'Médio',status:'Active',
+    id:null,title:'',type:typeOptions[0]?.name || 'Bounty Hunt',faction:factionOptions[0]?.name || 'Free',
+    system:systemOptions[0]?.name || 'Stanton',location:'',difficulty:'Médio',status:'Active',
     reward:0,reputation_gain:0,crew_needed:1,notes:'',bug_description:'',
     created_at:localISOString(),completed_at:null,
     objectives:[],timer_elapsed:0,
@@ -709,7 +710,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
 
       <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:9,marginBottom:9}}>
         <div><label style={LS}>Título *</label><input style={IS} value={data.title} onChange={e=>set('title',e.target.value)} placeholder="Nome da missão..."/></div>
-        <div><label style={LS}>Tipo</label><select style={SS} value={data.type} onChange={e=>set('type',e.target.value)}>{MISSION_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+        <div><label style={LS}>Tipo</label><select style={SS} value={data.type} onChange={e=>set('type',e.target.value)}>{typeOptions.map(option=><option key={option.id} value={option.name}>{option.name}{option.active === false ? ' (inativo)' : ''}</option>)}</select></div>
         <div><label style={LS}>Status</label>
           <select style={{...SS,color:STATUS_COLORS[data.status]||'var(--text-primary)'}} value={data.status} onChange={e=>set('status',e.target.value)}>
             {STATUSES.map(s=><option key={s} style={{color:'var(--text-primary)'}}>{s}</option>)}
@@ -725,8 +726,8 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary }) {
       )}
 
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:9,marginBottom:9}}>
-        <div><label style={LS}>Facção</label><select style={SS} value={data.faction} onChange={e=>set('faction',e.target.value)}>{FACTIONS.map(f=><option key={f}>{f}</option>)}</select></div>
-        <div><label style={LS}>Sistema</label><select style={SS} value={data.system} onChange={e=>set('system',e.target.value)}>{SYSTEMS.map(s=><option key={s}>{s}</option>)}</select></div>
+        <div><label style={LS}>Facção</label><select style={SS} value={data.faction} onChange={e=>set('faction',e.target.value)}>{factionOptions.map(option=><option key={option.id} value={option.name}>{option.name}{option.active === false ? ' (inativa)' : ''}</option>)}</select></div>
+        <div><label style={LS}>Sistema</label><select style={SS} value={data.system} onChange={e=>set('system',e.target.value)}>{systemOptions.map(option=><option key={option.id} value={option.name}>{option.name}{option.active === false ? ' (inativo)' : ''}</option>)}</select></div>
         <div><label style={LS}>Dificuldade</label><select style={SS} value={data.difficulty} onChange={e=>set('difficulty',e.target.value)}>{DIFFICULTIES.map(d=><option key={d}>{d}</option>)}</select></div>
         <div><label style={LS}>Tripulação</label>
           <input style={IS} type="number" min="1" max="30" value={data.crew_needed}
@@ -1456,7 +1457,7 @@ function SelectionSummaryPanel({ selected, missions, onClear }) {
 }
 
 // ── Modal de reaproveitar missão ──────────────────────────────────────────────
-function ReuseModal({ missions, onSelect, onDelete, onClose }) {
+function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [expandedKey, setExpandedKey] = useState(null);
@@ -1531,7 +1532,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
           </div>
           <select style={SS} value={filterType} onChange={e=>setFilterType(e.target.value)}>
             <option value="all">Todos os tipos</option>
-            {MISSION_TYPES.map(t=><option key={t}>{t}</option>)}
+            {missionTypes.map(option=><option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
         </div>
         <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:8,fontFamily:'Share Tech Mono,monospace'}}>
@@ -1678,7 +1679,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose }) {
 }
 
 // ── TAB 1: Today's missions ───────────────────────────────────────────────────
-function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onAddLoss, onRemoveLoss, objLibrary, onLootSave, onLootUpdate }) {
+function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onAddLoss, onRemoveLoss, objLibrary, onLootSave, onLootUpdate, missionCatalog }) {
   const [showForm,setShowForm]     = useState(false);
   const [editM,setEditM]           = useState(null);
   const [filterStatus,setFilter]   = useState('all');
@@ -1740,10 +1741,10 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   return (
     <div>
       {showReuse && (
-        <ReuseModal missions={missions} onSelect={handleReuse} onDelete={onDelete} onClose={()=>setShowReuse(false)}/>
+        <ReuseModal missions={missions} missionTypes={getMissionAdminOptions('types', '', missionCatalog)} onSelect={handleReuse} onDelete={onDelete} onClose={()=>setShowReuse(false)}/>
       )}
       {(showForm||editM)&&(
-        <MissionForm initial={editM} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditM(null);}} objLibrary={objLibrary}/>
+        <MissionForm initial={editM} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditM(null);}} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
       )}
       {todayMissions.length>0&&(
         <DaySummary date={today} missions={todayMissions} losses={losses}/>
@@ -1820,7 +1821,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 }
 
 // ── TAB 2: History ────────────────────────────────────────────────────────────
-function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary }) {
+function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary, missionCatalog }) {
   const [editM, setEditM] = useState(null);
   function handleSaveEdit(m) { onSave(m); setEditM(null); }
 
@@ -1840,7 +1841,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
   return (
     <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16,height:'100%'}}>
       {editM && (
-        <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary}/>
+        <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
       )}
       <div style={{borderRight:'1px solid var(--border-subtle)',overflowY:'auto',paddingRight:12}}>
         <div style={{display:'flex',gap:7,marginBottom:12}}>
@@ -2078,7 +2079,33 @@ function StatsTab({ missions, losses }) {
 export default function MissionTrackerPage() {
   const [missions,setMissions]=useState(()=>load(MISSIONS_KEY,[]));
   const [losses,setLosses]    =useState(()=>load(LOSSES_KEY,[]));
+  const [missionCatalog,setMissionCatalog]=useState(()=>loadMissionAdmin());
   const [activeTab,setActiveTab]=useState('today');
+  const syncMissionCatalog = useCallback(() => {
+    setMissionCatalog(current => {
+      const next = loadMissionAdmin();
+      return JSON.stringify(current) === JSON.stringify(next) ? current : next;
+    });
+  }, []);
+  useEffect(() => {
+    const refreshMissionCatalog = () => syncMissionCatalog();
+    const refreshFromStorage = event => {
+      if (!event.key || event.key === 'sc_mission_admin_v1' || event.key === 'sc_mission_catalog_v1') refreshMissionCatalog();
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshMissionCatalog();
+    };
+    window.addEventListener(MISSION_ADMIN_UPDATED_EVENT, refreshMissionCatalog);
+    window.addEventListener('storage', refreshFromStorage);
+    window.addEventListener('focus', refreshMissionCatalog);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener(MISSION_ADMIN_UPDATED_EVENT, refreshMissionCatalog);
+      window.removeEventListener('storage', refreshFromStorage);
+      window.removeEventListener('focus', refreshMissionCatalog);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [syncMissionCatalog]);
   const [lootMission,setLootMission]=useState(null); // missão aguardando modal de loot
   const {lib:objLibrary,addToLib}=useObjLibrary();
 
@@ -2188,11 +2215,11 @@ export default function MissionTrackerPage() {
             onSave={handleSave} onDelete={handleDelete}
             onStatusChange={handleStatusChange} onClockUpdate={handleClockUpdate}
             onAddLoss={handleAddLoss} onRemoveLoss={handleRemoveLoss}
-            objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate}/>
+            objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate} missionCatalog={missionCatalog}/>
         )}
         {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}
           onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange}
-          onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} objLibrary={objLibrary}/>}
+          onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} objLibrary={objLibrary} missionCatalog={missionCatalog}/>}
         {activeTab==='stats'&&<StatsTab missions={missions} losses={losses}/>}
       </div>
     </div>

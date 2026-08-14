@@ -217,6 +217,18 @@ export async function syncUexVehicles() {
 }
 
 /** Consulta preços detalhados de um veículo expandido na tela. */
+export async function fetchVehicleLoaners(vehicleId) {
+  const id = Number(vehicleId);
+  if (!Number.isFinite(id)) throw new Error('ID de veículo inválido para consultar loaners.');
+  return unwrapRows(await requestUex(`vehicles_loaners?id_vehicle=${encodeURIComponent(id)}`));
+}
+
+export async function fetchUserFleet() {
+  if (!loadToken()) throw new Error('Configure o Bearer Token da UEX antes de consultar sua frota.');
+  if (!loadSecretKey()) throw new Error('Configure a secret-key da UEX antes de consultar sua frota.');
+  return unwrapRows(await requestUex('fleet'));
+}
+
 export async function fetchVehicleMarketDetails(vehicleId) {
   const id = Number(vehicleId);
   if (!Number.isFinite(id)) throw new Error('ID de veículo inválido.');

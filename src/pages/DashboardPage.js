@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // ── Leitura do inventário ──────────────────────────────────────────────────
 // IMPORTANTE: no app Electron (uso real), o inventário é salvo via IPC
@@ -74,10 +74,103 @@ function readOreVault() {
 function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
-import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2, Rocket } from 'lucide-react';
+
+function readDashboardOverview(inventoryItems = []) {
+  const inventoryQuantity = inventoryItems.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0);
+  const inventoryValue = inventoryItems.reduce((total, item) => {
+    const unitValue = Number(item.value_auec ?? item.value ?? item.price_auec ?? item.price ?? 0) || 0;
+    return total + Math.max(0, Number(item.quantity) || 0) * Math.max(0, unitValue);
+  }, 0);
+  const inventoryLocations = new Set(inventoryItems.map(item => String(item.location_name || item.location || '').trim()).filter(Boolean)).size;
+
+  const queue = loadQueue();
+  const shopping = calcShoppingList(queue);
+  const pendingMaterials = shopping.filter(item => Number(item.remaining) > 0);
+  const completeMaterials = shopping.filter(item => Number(item.remaining) <= 0);
+  const craftProgress = shopping.length
+    ? Math.round((completeMaterials.length / shopping.length) * 100)
+    : 0;
+  const bottleneck = pendingMaterials.slice().sort((a, b) => Number(b.remaining || 0) - Number(a.remaining || 0))[0] || null;
+
+  const oreEntries = loadVault().entries || [];
+  const activeOre = oreEntries.filter(entry => Number(entry.quantity) > 0);
+  const cargoTotal = cargoEquivalentTotal(activeOre, 'SCU');
+  const qualityOre = activeOre.filter(entry => numericQuality(entry.quality) !== null && numericQuality(entry.quality) > 0).length;
+
+  const sales = loadUexSales();
+  const saleRevenue = sales.reduce((total, sale) => total + Math.max(0, Number(sale.total_revenue) || (Number(sale.price) || 0) * (Number(sale.qty) || 1)), 0);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayRevenue = sales.reduce((total, sale) => {
+    const timestamp = Number(sale.date) > 0 ? Number(sale.date) * 1000 : Date.parse(sale.created_at || '');
+    return timestamp >= todayStart.getTime() ? total + Math.max(0, Number(sale.total_revenue) || (Number(sale.price) || 0) * (Number(sale.qty) || 1)) : total;
+  }, 0);
+  const salesByItem = Object.values(sales.reduce((map, sale) => {
+    const name = String(sale.title || sale.listing_title || 'Item sem nome');
+    const value = Math.max(0, Number(sale.total_revenue) || (Number(sale.price) || 0) * (Number(sale.qty) || 1));
+    map[name] = map[name] || { name, revenue: 0, quantity: 0 };
+    map[name].revenue += value;
+    map[name].quantity += Math.max(0, Number(sale.qty) || 0);
+    return map;
+  }, {})).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  const latestSale = sales.slice().sort((a, b) => (Number(b.date) || 0) - (Number(a.date) || 0))[0] || null;
+
+  const marketAlerts = loadMarketAlerts().filter(alert => alert.enabled);
+  const marketEvents = loadMarketAlertEvents();
+  const alertSettings = loadMarketAlertSettings();
+  const activeAlertMatches = marketEvents.length;
+
+  return {
+    inventoryQuantity,
+    inventoryValue,
+    inventoryLocations,
+    queueBlueprints: (queue.queuedBlueprints || []).length,
+    manualMaterials: (queue.manualMaterials || []).length,
+    pendingMaterials: pendingMaterials.length,
+    completeMaterials: completeMaterials.length,
+    craftProgress,
+    bottleneck,
+    oreTypes: activeOre.length,
+    oreScu: cargoTotal.total,
+    oreUnit: cargoTotal.unit,
+    qualityOre,
+    saleCount: sales.length,
+    saleRevenue,
+    todayRevenue,
+    salesByItem,
+    latestSale,
+    marketAlerts: marketAlerts.length,
+    activeAlertMatches,
+    alertSettings,
+  };
+}
+
+function DashboardMiniMetric({ icon: Icon, label, value, sub, color = 'var(--accent-primary)', onClick }) {
+  const content = <><div className="dashboard-mini-icon" style={{ color }}><Icon size={16} /></div><div className="dashboard-mini-copy"><strong>{value}</strong><span>{label}</span>{sub && <small>{sub}</small>}</div></>;
+  return onClick ? <button type="button" className="dashboard-mini-metric" onClick={onClick}>{content}</button> : <div className="dashboard-mini-metric">{content}</div>;
+}
+
+function DashboardProgressRow({ label, value, color, detail }) {
+  const safe = Math.max(0, Math.min(100, Number(value) || 0));
+  return <div className="dashboard-progress-row"><div><span>{label}</span><strong>{safe}%</strong></div><div className="dashboard-progress-track"><div style={{ width: `${safe}%`, background: color }} /></div>{detail && <small>{detail}</small>}</div>;
+}
+
+function dashboardCountdown(nextCheckAt) {
+  if (!nextCheckAt) return 'sem horário definido';
+  const seconds = Math.max(0, Math.ceil((Number(nextCheckAt) - Date.now()) / 1000));
+  if (seconds <= 0) return 'verificando agora';
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}min` : `${minutes}min`;
+}
+import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2, Rocket, BarChart3, Bell, Boxes, CircleDollarSign, Clock3, Database, Gauge, TrendingUp, CheckCircle2 } from 'lucide-react';
 import { isScriptItem, isWikeloFavorItem, calcWikeloFavors } from '../data/wikelo';
 import { calcDchsExecutiveHangars } from '../data/dchsCards';
 import { loadMyHangar, MY_HANGAR_UPDATED_EVENT, UEX_VEHICLES_UPDATED_EVENT } from '../data/uexVehicles';
+import { loadQueue, calcShoppingList } from '../data/materialQueue';
+import { loadVault, numericQuality } from '../data/oreVault';
+import { cargoEquivalentTotal } from '../data/cargoUnits';
+import { loadUexSales } from '../data/uexSales';
+import { MARKET_ALERTS_CHECKED_EVENT, MARKET_ALERTS_UPDATED_EVENT, MARKET_ALERT_SETTINGS_UPDATED_EVENT, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertSettings } from '../data/uexMarketAlerts';
 
 const PIECE_ICONS  = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
 const PIECE_PT_PLU = { Helmet:'Capacetes', Torso:'Torsos', Arms:'Braços', Legs:'Pernas', Backpack:'Mochilas' };
@@ -133,9 +226,35 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
     return { activeSession, pendingVault, oreTypes, activeMissionsCount: activeMissions.length, activeReward };
   }, []);
 
-  // Busca o inventário real (via Electron IPC, com fallback pro navegador) ao montar o Dashboard
+  // Busca o inventário real e mantém os novos indicadores sincronizados com os dados locais.
   const [inventoryItems, setInventoryItems] = useState([]);
-  useEffect(() => { fetchInventoryItems().then(setInventoryItems); }, []);
+  const [overview, setOverview] = useState(() => readDashboardOverview([]));
+  const refreshOverview = useCallback(async () => {
+    const items = await fetchInventoryItems();
+    setInventoryItems(items);
+    setOverview(readDashboardOverview(items));
+  }, []);
+  useEffect(() => {
+    refreshOverview();
+    const eventNames = [
+      'sc_inventory_updated',
+      'sc_ore_vault_updated',
+      'sc_material_queue_updated',
+      'sc_missions_updated',
+      'sc_uex_sales_updated',
+      MARKET_ALERTS_CHECKED_EVENT,
+      MARKET_ALERTS_UPDATED_EVENT,
+      MARKET_ALERT_SETTINGS_UPDATED_EVENT,
+      MY_HANGAR_UPDATED_EVENT,
+      UEX_VEHICLES_UPDATED_EVENT,
+    ];
+    eventNames.forEach(name => window.addEventListener(name, refreshOverview));
+    const timer = window.setInterval(refreshOverview, 15000);
+    return () => {
+      eventNames.forEach(name => window.removeEventListener(name, refreshOverview));
+      window.clearInterval(timer);
+    };
+  }, [refreshOverview]);
   const pafSummary     = useMemo(() => calcPafLocal(inventoryItems),  [inventoryItems]);
   const wfTotal        = useMemo(() => calcWikeloLocal(inventoryItems), [inventoryItems]);
   const dchsSummary    = useMemo(() => calcDchsExecutiveHangars(inventoryItems), [inventoryItems]);
@@ -220,6 +339,34 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
             <span>{stats?.totalPieces||0}</span>
           </div>
         </div>
+
+        {/* Visão operacional consolidada */}
+        <section className="dashboard-overview-block">
+          <div className="dashboard-section-heading"><div><BarChart3 size={16} /><span>VISÃO GERAL OPERACIONAL</span></div><small>Indicadores cruzados das funções do projeto</small></div>
+          <div className="dashboard-mini-grid">
+            <DashboardMiniMetric icon={Boxes} label="Itens no inventário" value={overview.inventoryQuantity.toLocaleString('pt-BR')} sub={`${inventoryItems.length} registros · ${overview.inventoryLocations} locais`} color="var(--accent-primary)" onClick={() => onNavigate('inventory')} />
+            <DashboardMiniMetric icon={CircleDollarSign} label="Valor estimado" value={`${Math.round(overview.inventoryValue).toLocaleString('pt-BR')} aUEC`} sub="quantidade × valor aUEC" color="var(--accent-green)" onClick={() => onNavigate('inventory')} />
+            <DashboardMiniMetric icon={Pickaxe} label="Baú de minério" value={`${Number(overview.oreScu || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} SCU`} sub={`${overview.oreTypes} entradas · ${overview.qualityOre} com qualidade`} color="var(--accent-gold)" onClick={() => onNavigate('orevault')} />
+            <DashboardMiniMetric icon={Database} label="Fila de craft" value={overview.queueBlueprints} sub={`${overview.pendingMaterials} materiais pendentes`} color="#a29bfe" onClick={() => onNavigate('materials')} />
+            <DashboardMiniMetric icon={TrendingUp} label="Receita UEX" value={`${Math.round(overview.saleRevenue).toLocaleString('pt-BR')} aUEC`} sub={`${Math.round(overview.todayRevenue).toLocaleString('pt-BR')} hoje · ${overview.saleCount} venda${overview.saleCount !== 1 ? 's' : ''}`} color="var(--accent-green)" onClick={() => onNavigate('uexsales')} />
+            <DashboardMiniMetric icon={Bell} label="Alertas de compra" value={overview.marketAlerts} sub={!overview.alertSettings.automaticEnabled ? 'análise automática desligada' : overview.activeAlertMatches ? `${overview.activeAlertMatches} oferta${overview.activeAlertMatches !== 1 ? 's' : ''} encontrada${overview.activeAlertMatches !== 1 ? 's' : ''}` : `próxima em ${dashboardCountdown(overview.alertSettings.nextCheckAt)}`} color="var(--accent-gold)" onClick={() => onNavigate('uexinsights')} />
+          </div>
+          <div className="dashboard-overview-columns">
+            <div className="dashboard-overview-card">
+              <div className="dashboard-overview-card-title"><Gauge size={14} /> PROGRESSO E PENDÊNCIAS</div>
+              <DashboardProgressRow label="Coleção de armaduras" value={pct} color="var(--accent-primary)" detail={`${stats?.ownedPieces || 0} de ${stats?.totalPieces || 0} peças obtidas`} />
+              <DashboardProgressRow label="Materiais para craft" value={overview.craftProgress} color="#a29bfe" detail={`${overview.completeMaterials} completos de ${overview.completeMaterials + overview.pendingMaterials} materiais`} />
+              <div className={`dashboard-attention-callout ${overview.bottleneck ? 'warning' : 'success'}`}>
+                {overview.bottleneck ? <><AlertTriangle size={14} /><span><strong>Próximo gargalo:</strong> {overview.bottleneck.material_name} {overview.bottleneck.quality_min > 0 ? `Q≥${overview.bottleneck.quality_min}` : ''} · faltam {Number(overview.bottleneck.remaining).toLocaleString('pt-BR')} {overview.bottleneck.unit || 'un'}.</span></> : <><CheckCircle2 size={14} /><span>Nenhum material pendente na fila de craft.</span></>}
+              </div>
+            </div>
+            <div className="dashboard-overview-card">
+              <div className="dashboard-overview-card-title"><TrendingUp size={14} /> RECEITA POR ITEM</div>
+              {overview.salesByItem.length === 0 ? <div className="dashboard-empty-note">Nenhuma venda UEX registrada ainda.</div> : <div className="dashboard-revenue-list">{overview.salesByItem.map((sale, index) => { const max = Math.max(1, overview.salesByItem[0]?.revenue || 1); const width = Math.max(4, Math.round((sale.revenue / max) * 100)); return <div className="dashboard-revenue-row" key={sale.name}><div><span className="dashboard-rank">{index + 1}</span><strong title={sale.name}>{sale.name}</strong><small>{sale.quantity} unidade{sale.quantity !== 1 ? 's' : ''}</small></div><div className="dashboard-revenue-track"><div style={{ width: `${width}%` }} /></div><b>{Math.round(sale.revenue).toLocaleString('pt-BR')}</b></div>; })}</div>}
+              {overview.latestSale && <div className="dashboard-latest-sale"><Clock3 size={12} /> Última venda: <strong>{overview.latestSale.title || 'Item UEX'}</strong> · {Math.round(Number(overview.latestSale.total_revenue || overview.latestSale.price || 0)).toLocaleString('pt-BR')} aUEC</div>}
+            </div>
+          </div>
+        </section>
 
         {/* Atividade do grupo — mineração, cofre, baú, missões */}
         <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'18px 22px',marginBottom:20 }}>

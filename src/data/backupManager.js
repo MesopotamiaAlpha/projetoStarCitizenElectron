@@ -19,11 +19,13 @@ export const BACKUP_CATEGORIES = [
   { id:'wikelo',      label:'Acompanhamento Wikelo',           keys:['sc_wikelo_missions_v1'] },
   { id:'materials',   label:'Fila de Materiais',               keys:['sc_material_queue_v1'] },
   { id:'locations',   label:'Locais Administrados',              keys:['sc_locations_admin_v1'] },
+  { id:'missionadmin', label:'Gerenciador de Missões',              keys:['sc_mission_admin_v1'] },
   { id:'blueprints',  label:'Blueprints Customizadas',         electron:'blueprints' },
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
   { id:'uexnegotiations', label:'Negociações UEX / Avaliações', keys:['sc_uex_negotiation_reviews_v1'] },
   { id:'uexconfig',   label:'Configuração e Sincronização UEX', keys:['sc_uex_token_v1','sc_uex_secretkey_v1','sc_uex_username_v1','sc_uex_notif_state_v1','sc_uex_items_db_v1','sc_uex_locations_db_v1','sc_uex_mining_db_v1'], sensitive:true },
   { id:'hangar',       label:'Hangar de Naves / Meu Hangar', keys:['sc_uex_vehicles_catalog_v1','sc_hangar_v1'] },
+  { id:'uexinsights',  label:'Inteligência UEX (Mercado/Commodities/Refinarias/Frota)', keys:['sc_uex_marketplace_averages_v1','sc_uex_marketplace_history_v1','sc_uex_marketplace_trends_v1','sc_uex_data_monitor_v1','sc_uex_commodity_alerts_v1','sc_uex_commodity_averages_v1','sc_uex_commodity_status_v1','sc_uex_refineries_v1','sc_uex_refinery_jobs_v1','sc_uex_fleet_v1','sc_uex_loaners_v1','sc_uex_item_attributes_v1','sc_uex_fuel_prices_v1','sc_uex_terminal_distances_v1','sc_uex_market_alerts_v1','sc_uex_market_alert_events_v1','sc_uex_market_alert_settings_v1','sc_uex_market_alert_dismissed_v1'] },
   { id:'dataoverride',label:'Personalizações de Dados (Mineração/Trade/DPS/Cargo/Market)', keys:[], dynamicPrefix: DATA_OVERRIDE_PREFIX },
   { id:'provenance',  label:'Procedência dos Dados',           keys:['sc_provenance_v1'] },
 ];

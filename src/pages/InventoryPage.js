@@ -7,6 +7,7 @@ import {
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
 import { searchUexItems, loadUexItemsDB, getUexItemAveragePrice, normalizeUexNumber, normalizeUexItemName } from '../data/uexItemsDB';
+import { getItemMarketPrice, getMarketPriceForName } from '../data/uexMarketDB';
 import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
@@ -15,6 +16,32 @@ import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
 const WIKELO_COLOR = '#a29bfe';
+
+function qualityTierFromUexItem(item) {
+  if (item?.quality_tier !== undefined && item?.quality_tier !== null && item?.quality_tier !== '') return item.quality_tier;
+  const quality = Number(item?.quality);
+  if (!Number.isFinite(quality)) return null;
+  if (quality <= 0) return 0;
+  if (quality < 500) return 1;
+  if (quality < 600) return 2;
+  if (quality < 700) return 3;
+  if (quality < 800) return 4;
+  if (quality < 900) return 5;
+  if (quality < 950) return 6;
+  return 7;
+}
+
+function getUexItemAveragePriceByQuality(item) {
+  if (!item) return 0;
+  const qualityTier = qualityTierFromUexItem(item);
+  const fromMarketById = item.id !== undefined && item.id !== null
+    ? (getItemMarketPrice(item.id, qualityTier, 'sell') || getItemMarketPrice(item.id, qualityTier, 'buy'))
+    : null;
+  const fromMarketByName = !fromMarketById && item.name
+    ? getMarketPriceForName(item.name, qualityTier, 'sell') || getMarketPriceForName(item.name, qualityTier, 'buy')
+    : null;
+  return getUexItemAveragePrice(fromMarketById || fromMarketByName || item);
+}
 
 // O Electron/SQLite pode devolver craft_status como texto JSON, enquanto o
 // fallback local já pode devolvê-lo como array. Todas as camadas passam por
@@ -539,7 +566,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
 
   // Ao escolher uma sugestão — abre modal de importação
   function handleSelectSuggestion(uexItem) {
-    const averagePrice = getUexItemAveragePrice(uexItem);
+    const averagePrice = getUexItemAveragePriceByQuality(uexItem);
     setData(prev => ({
       ...prev,
       name: uexItem.name,
@@ -605,14 +632,14 @@ function ItemForm({ initial, onSave, onCancelar }) {
     if (fields.includes('grade')        && uexItem.color)        updates.grade = uexItem.color;
     // Preço: usar a média salva no sync e os campos documentados como fallback.
     if (fields.includes('price')) {
-      const price = getUexItemAveragePrice(uexItem);
+      const price = getUexItemAveragePriceByQuality(uexItem);
       if (price > 0) updates.value_auec = price;
     }
     setData(p => ({ ...p, ...updates }));
     setImportModal(null);
   }
 
-  const importPrice = importModal ? getUexItemAveragePrice(importModal) : 0;
+  const importPrice = importModal ? getUexItemAveragePriceByQuality(importModal) : 0;
   const [locationsVersion, setLocationsVersion] = useState(0);
   useEffect(() => {
     const refreshLocations = () => setLocationsVersion(version => version + 1);
@@ -775,7 +802,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
                 💡 Sugestões da UEX — clique para preencher
               </div>
               {suggestions.map(s => {
-                const price = getUexItemAveragePrice(s);
+                const price = getUexItemAveragePriceByQuality(s);
                 return (
                   <button key={s.id} onMouseDown={()=>handleSelectSuggestion(s)} style={{
                     display:'flex',alignItems:'center',justifyContent:'space-between',

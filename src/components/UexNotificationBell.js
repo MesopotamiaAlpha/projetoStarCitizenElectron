@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { loadToken, checkForUpdates, messageIdentity, notificationIdentity, isCrossFeedDuplicate } from '../data/uexNegotiations';
+import { checkMarketAlerts, focusMarketAlert, loadMarketAlertSettings, MARKET_ALERT_SETTINGS_UPDATED_EVENT } from '../data/uexMarketAlerts';
 
-const POLL_INTERVAL_MS = 90 * 1000; // 90s
+const POLL_INTERVAL_MS = 90 * 1000; // 90s para negociações
 const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
 
 function dedupeNotificationItems(list) {
@@ -48,6 +49,9 @@ export default function UexNotificationBell({ onNavigate }) {
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
   const wrapRef = useRef(null);
   const checkingRef = useRef(false);
+  const marketCheckingRef = useRef(false);
+  const initialMarketSettings = loadMarketAlertSettings();
+  const marketNextCheckRef = useRef(initialMarketSettings.nextCheckAt);
 
   function toggleMuted() {
     setMuted(prev => {
@@ -87,11 +91,59 @@ export default function UexNotificationBell({ onNavigate }) {
     }
   }, [muted]);
 
+  const runMarketCheck = useCallback(async (silent = true) => {
+    if (marketCheckingRef.current) return;
+    marketCheckingRef.current = true;
+    try {
+      const result = await checkMarketAlerts({ silent, automatic: true });
+      const mapped = (result?.newEvents || []).map(event => ({
+        kind: 'market-alert',
+        key: event.key,
+        dateAdded: event.dateAdded || Date.now(),
+        ...event,
+      }));
+      if (mapped.length) {
+        setItems(prev => {
+          const existingKeys = new Set(prev.map(item => item.key));
+          const freshOnes = mapped.filter(item => !existingKeys.has(item.key));
+          if (freshOnes.length && !muted) playNotificationSound();
+          return dedupeNotificationItems([...freshOnes, ...prev]).sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 80);
+        });
+      }
+    } catch (e) {
+      if (!silent) setError(e.message || 'Não foi possível verificar os alertas de compra.');
+    } finally {
+      marketCheckingRef.current = false;
+      marketNextCheckRef.current = loadMarketAlertSettings().nextCheckAt;
+    }
+  }, [muted]);
+
   useEffect(() => {
     runCheck(true);
     const id = setInterval(() => runCheck(true), POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [runCheck]);
+
+  useEffect(() => {
+    const initial = loadMarketAlertSettings();
+    marketNextCheckRef.current = initial.nextCheckAt;
+    if (initial.automaticEnabled && (!initial.nextCheckAt || Date.now() >= initial.nextCheckAt)) runMarketCheck(true);
+    const syncSettings = () => {
+      const next = loadMarketAlertSettings();
+      marketNextCheckRef.current = next.nextCheckAt;
+    };
+    const timer = setInterval(() => {
+      const current = loadMarketAlertSettings();
+      marketNextCheckRef.current = current.nextCheckAt;
+      if (!current.automaticEnabled) return;
+      if (current.nextCheckAt && Date.now() >= current.nextCheckAt && !marketCheckingRef.current) runMarketCheck(true);
+    }, 1000);
+    window.addEventListener(MARKET_ALERT_SETTINGS_UPDATED_EVENT, syncSettings);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener(MARKET_ALERT_SETTINGS_UPDATED_EVENT, syncSettings);
+    };
+  }, [runMarketCheck]);
 
   useEffect(() => {
     function onClickOutside(e) {
@@ -125,7 +177,7 @@ export default function UexNotificationBell({ onNavigate }) {
     <div ref={wrapRef} style={{ position: 'fixed', top: 12, right: 12, zIndex: 999, pointerEvents: 'none' }}>
       <button
         onClick={() => {
-          if (!hasToken) { onNavigate && onNavigate('uexapi'); return; }
+          if (!hasToken && !items.some(item => item.kind === 'market-alert')) { onNavigate && onNavigate('uexapi'); return; }
           setOpen(o => !o);
         }}
         title={hasToken ? 'Notificações UEX' : 'Configure seu token UEX para ativar notificações'}
@@ -165,7 +217,7 @@ export default function UexNotificationBell({ onNavigate }) {
             padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
           }}>
             <span style={{ fontFamily: '"Exo 2",sans-serif', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
-              Mensagens da UEX
+              Mensagens e alertas da UEX
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button onClick={toggleMuted} title={muted ? 'Ativar som de notificação' : 'Silenciar som de notificação'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted ? 'var(--text-muted)' : 'var(--accent-primary)', display: 'flex' }}>
@@ -200,9 +252,15 @@ export default function UexNotificationBell({ onNavigate }) {
                 padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)',
                 display: 'flex', gap: 10, alignItems: 'flex-start',
               }}>
-                <MessageSquare size={14} style={{ color: 'var(--accent-primary)', marginTop: 2, flexShrink: 0 }} />
+                <MessageSquare size={14} style={{ color: item.kind === 'market-alert' ? '#fbbf24' : 'var(--accent-primary)', marginTop: 2, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {item.kind === 'message' ? (
+                  {item.kind === 'market-alert' ? (
+                    <button type="button" onClick={() => { focusMarketAlert(item.key); setOpen(false); onNavigate && onNavigate('uexinsights'); }} style={{ display: 'block', width: '100%', padding: 0, color: 'inherit', background: 'none', border: 0, textAlign: 'left', cursor: 'pointer' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>Alerta de compra · {item.itemName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2 }}>{Number(item.price || 0).toLocaleString('pt-BR')} {item.currency || 'UEC'}{item.quality !== null && item.quality !== undefined ? ` · qualidade ${item.quality}/1000` : ''}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>{item.location || 'Local não informado'}{item.seller ? ` · ${item.seller}` : ''}{item.source ? ` · ${item.source}` : ''}</div>
+                    </button>
+                  ) : item.kind === 'message' ? (
                     <>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
                         {item.fromUser || 'Comprador/Vendedor'} · {item.listingTitle}
@@ -227,7 +285,7 @@ export default function UexNotificationBell({ onNavigate }) {
 
           <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border-subtle)' }}>
             <button
-              onClick={() => runCheck(false)}
+              onClick={() => Promise.all([runCheck(false), runMarketCheck(false)])}
               disabled={checking}
               style={{
                 width: '100%', padding: '6px 0', background: 'rgba(56,189,248,0.08)',
@@ -237,7 +295,7 @@ export default function UexNotificationBell({ onNavigate }) {
                 opacity: checking ? 0.6 : 1,
               }}
             >
-              {checking ? 'Verificando...' : 'Verificar agora'}
+              {checking ? 'Verificando negociações...' : 'Verificar negociações e alertas'}
             </button>
           </div>
         </div>

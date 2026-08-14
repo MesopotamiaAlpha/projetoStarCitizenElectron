@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import {
   addToMyHangar,
+  fetchVehicleLoaners,
   fetchVehicleMarketDetails,
+  fetchUserFleet,
   getCatalogStats,
   getPurchaseRows,
   getRentalRows,
@@ -19,6 +21,7 @@ import {
   UEX_VEHICLES_UPDATED_EVENT,
   VEHICLE_ROLE_LABELS,
 } from '../data/uexVehicles';
+import { UEX_INSIGHTS_KEYS, saveUexInsight } from '../data/uexInsights';
 
 const HANGAR_VIEW_KEY = 'sc_hangar_view_v1';
 
@@ -166,7 +169,7 @@ function MarketLines({ title, icon: Icon, color, rows, kind, onLoadDetails, load
   );
 }
 
-function VehicleDetails({ details, color = COLORS.blue }) {
+function VehicleDetails({ details, color = COLORS.blue, vehicleId, loaners = [], onLoadLoaners, loadingLoaners = false }) {
   if (!details) return null;
   const purchases = details.purchases || [];
   const rentals = details.rentals || [];
@@ -193,6 +196,10 @@ function VehicleDetails({ details, color = COLORS.blue }) {
             </div>
           )) : <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Sem local de aluguel informado.</span>}
         </div>
+      </div>
+      <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}><span style={{ color: COLORS.purple, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}><Rocket size={12} style={{ verticalAlign: 'middle', marginRight: 5 }} />Loaners associados</span><button onClick={onLoadLoaners} disabled={loadingLoaners} style={{ ...secondaryButtonStyle, padding: '5px 8px' }}>{loadingLoaners ? <Loader2 size={11} className="spin" /> : <RefreshCw size={11} />} Consultar</button></div>
+        {loaners.length > 0 ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>{loaners.map((loaner, index) => <span key={loaner.id || loaner.id_vehicle || index} style={{ padding: '4px 6px', color: 'var(--text-secondary)', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 4, fontSize: 10 }}>{loaner.name_full || loaner.name || loaner.vehicle_name || 'Loaner'}</span>)}</div> : <div style={{ marginTop: 6, color: 'var(--text-muted)', fontSize: 10 }}>Clique em consultar para buscar os loaners documentados pela UEX.</div>}
       </div>
     </div>
   );
@@ -262,7 +269,7 @@ function getPurchasedQuantity(hangar = [], vehicle) {
     .reduce((total, entry) => total + Math.max(0, Number(entry?.quantity) || 0), 0);
 }
 
-function VehicleCard({ vehicle, catalog, purchasedQuantity = 0, onBought, expanded, onToggleExpanded, details, onLoadDetails, loadingDetails }) {
+function VehicleCard({ vehicle, catalog, purchasedQuantity = 0, onBought, expanded, onToggleExpanded, details, onLoadDetails, loadingDetails, loaners, onLoadLoaners, loadingLoaners }) {
   const purchases = getPurchaseRows(catalog, vehicle.id);
   const rentals = getRentalRows(catalog, vehicle.id);
   const roles = getVehicleRoles(vehicle);
@@ -289,7 +296,7 @@ function VehicleCard({ vehicle, catalog, purchasedQuantity = 0, onBought, expand
           <MarketLines title="Compra" icon={ShoppingCart} color={COLORS.green} rows={purchases} kind="buy" onLoadDetails={onLoadDetails} loadingDetails={loadingDetails} />
           <MarketLines title="Aluguel" icon={HandCoins} color={COLORS.purple} rows={rentals} kind="rent" onLoadDetails={onLoadDetails} loadingDetails={loadingDetails} />
         </div>
-        {expanded && <VehicleDetails details={details} color={COLORS.orange} />}
+        {expanded && <VehicleDetails details={details} color={COLORS.orange} vehicleId={vehicle.id} loaners={loaners} onLoadLoaners={onLoadLoaners} loadingLoaners={loadingLoaners} />}
         <div style={{ display: 'flex', gap: 6, marginTop: 'auto', paddingTop: 2 }}>
           <button onClick={onBought} style={{ ...primaryButtonStyle, flex: 1, justifyContent: 'center' }}><Check size={13} /> Comprei</button>
           <button onClick={onToggleExpanded} style={{ ...secondaryButtonStyle, justifyContent: 'center' }} title={expanded ? 'Ocultar detalhes' : 'Ver detalhes'}>{expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button>
@@ -300,7 +307,7 @@ function VehicleCard({ vehicle, catalog, purchasedQuantity = 0, onBought, expand
   );
 }
 
-function VehicleListRow({ vehicle, catalog, purchasedQuantity = 0, onBought, expanded, onToggleExpanded, details, onLoadDetails, loadingDetails }) {
+function VehicleListRow({ vehicle, catalog, purchasedQuantity = 0, onBought, expanded, onToggleExpanded, details, onLoadDetails, loadingDetails, loaners, onLoadLoaners, loadingLoaners }) {
   const purchases = getPurchaseRows(catalog, vehicle.id);
   const rentals = getRentalRows(catalog, vehicle.id);
   const roles = getVehicleRoles(vehicle);
@@ -313,7 +320,7 @@ function VehicleListRow({ vehicle, catalog, purchasedQuantity = 0, onBought, exp
       <div className="hangar-list-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 5, color: 'var(--text-secondary)', fontSize: 10 }}><span><Package size={10} style={{ verticalAlign: 'middle', marginRight: 3, color: COLORS.gold }} />{vehicle.scu !== null ? `${formatNumber(vehicle.scu, 2)} SCU` : '—'}</span><span><Users size={10} style={{ verticalAlign: 'middle', marginRight: 3, color: COLORS.blue }} />{safeString(vehicle.crew)}</span><span><ShoppingCart size={10} style={{ verticalAlign: 'middle', marginRight: 3, color: COLORS.green }} />{purchases.length} compra{purchases.length === 1 ? '' : 's'}</span><span><HandCoins size={10} style={{ verticalAlign: 'middle', marginRight: 3, color: COLORS.purple }} />{rentals.length} aluguel{rentals.length === 1 ? '' : 'es'}</span></div>
       <div className="hangar-list-market" style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--text-muted)', fontSize: 9 }}><span>Compra: {purchases[0]?.terminal_name || '—'}</span><span>Aluguel: {rentals[0]?.terminal_name || '—'}</span></div>
       <div className="hangar-list-actions" style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}><button onClick={onBought} style={{ ...primaryButtonStyle, padding: '6px 8px' }} title="Registrar compra"><Check size={12} /> Comprei</button><button onClick={onToggleExpanded} style={{ ...secondaryButtonStyle, padding: '6px 8px' }} title={expanded ? 'Ocultar detalhes' : 'Ver detalhes'}>{expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</button>{(vehicle.url_store || vehicle.url_brochure || vehicle.url_hotsite) && <a href={vehicle.url_store || vehicle.url_brochure || vehicle.url_hotsite} target="_blank" rel="noreferrer" style={{ ...secondaryButtonStyle, padding: '6px 8px', textDecoration: 'none' }} title="Abrir fonte externa"><ExternalLink size={12} /></a>}</div>
-      {expanded && <div className="hangar-list-details" style={{ gridColumn: '1 / -1' }}><VehicleDetails details={details} color={COLORS.orange} /></div>}
+      {expanded && <div className="hangar-list-details" style={{ gridColumn: '1 / -1' }}><VehicleDetails details={details} color={COLORS.orange} vehicleId={vehicle.id} loaners={loaners} onLoadLoaners={onLoadLoaners} loadingLoaners={loadingLoaners} /></div>}
     </article>
   );
 }
@@ -349,6 +356,13 @@ function EditHangarModal({ entry, onClose, onSave }) {
   );
 }
 
+function UexFleetPanel({ rows, loading, onRefresh, onClose }) {
+  return <div style={{ marginBottom: 12, padding: 12, border: '1px solid rgba(167,139,250,0.28)', borderRadius: 9, background: 'linear-gradient(135deg, rgba(167,139,250,0.08), rgba(56,189,248,0.04))' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}><div><strong style={{ color: '#c4b5fd', fontSize: 12 }}><Rocket size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />Comparar com frota UEX</strong><div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 10 }}>Somente leitura. A frota externa não altera o Meu Hangar local nem os contadores de compras.</div></div><div style={{ display: 'flex', gap: 6 }}><button onClick={onRefresh} disabled={loading} style={{ ...secondaryButtonStyle, padding: '6px 9px' }}>{loading ? <Loader2 size={11} className="spin" /> : <RefreshCw size={11} />} Atualizar frota</button><button onClick={onClose} style={{ ...secondaryButtonStyle, padding: '6px 8px' }} title="Fechar"><X size={12} /></button></div></div>
+    {rows.length > 0 ? <div style={{ marginTop: 10, overflowX: 'auto' }}><table className="uex-insights-table" style={{ minWidth: 610 }}><thead><tr><th>Modelo</th><th>Nome</th><th>Serial</th><th>Organização</th><th>Origem</th></tr></thead><tbody>{rows.slice(0, 40).map((row, index) => <tr key={row.id || index}><td>{row.model_name || row.vehicle_name || '—'}</td><td>{row.name || '—'}</td><td>{row.serial || row.serial_number || '—'}</td><td>{row.organization_name || row.org_name || '—'}</td><td>{row.source || 'UEX'}</td></tr>)}</tbody></table></div> : <div style={{ marginTop: 12, color: 'var(--text-muted)', fontSize: 11 }}>{loading ? 'Consultando a frota autenticada…' : 'Nenhuma frota carregada. Clique em Atualizar frota.'}</div>}
+  </div>;
+}
+
 export default function ShipHangarPage({ onNavigate }) {
   const [tab, setTab] = useState('catalog');
   const [catalog, setCatalog] = useState(() => loadVehicleCatalog());
@@ -367,6 +381,11 @@ export default function ShipHangarPage({ onNavigate }) {
   const [buyVehicle, setBuyVehicle] = useState(null);
   const [showWikelo, setShowWikelo] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
+  const [loanersByVehicle, setLoanersByVehicle] = useState({});
+  const [loadingLoaners, setLoadingLoaners] = useState(null);
+  const [showUexFleet, setShowUexFleet] = useState(false);
+  const [uexFleet, setUexFleet] = useState([]);
+  const [loadingFleet, setLoadingFleet] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(HANGAR_VIEW_KEY, viewMode); } catch { /* preferência opcional */ }
@@ -422,6 +441,28 @@ export default function ShipHangarPage({ onNavigate }) {
     finally { setLoadingDetails(null); }
   }
 
+  async function loadLoaners(vehicleId) {
+    setLoadingLoaners(vehicleId); setError('');
+    try {
+      const rows = await fetchVehicleLoaners(vehicleId);
+      setLoanersByVehicle(previous => ({ ...previous, [vehicleId]: rows }));
+      saveUexInsight(UEX_INSIGHTS_KEYS.loaners, rows, { endpoint: 'vehicles_loaners', ttl: '12h' });
+      setMessage(`${rows.length} loaner${rows.length === 1 ? '' : 's'} encontrado${rows.length === 1 ? '' : 's'} para o veículo.`);
+    } catch (err) { setError(err.message || 'Não foi possível consultar os loaners.'); }
+    finally { setLoadingLoaners(null); }
+  }
+
+  async function loadUexFleet() {
+    setLoadingFleet(true); setError('');
+    try {
+      const rows = await fetchUserFleet();
+      setUexFleet(rows);
+      saveUexInsight(UEX_INSIGHTS_KEYS.fleet, rows, { endpoint: 'fleet', ttl: 'realtime' });
+      setMessage(`Frota UEX carregada em modo somente leitura: ${rows.length} registro${rows.length === 1 ? '' : 's'}.`);
+    } catch (err) { setError(err.message || 'Não foi possível consultar a frota UEX.'); }
+    finally { setLoadingFleet(false); }
+  }
+
   function confirmBought(vehicle, options) {
     const next = addToMyHangar(vehicle, { ...options, source: 'compra' });
     setHangar(next); setBuyVehicle(null); setMessage(`${vehicle.name_full || vehicle.name} foi adicionada ao Meu Hangar.`);
@@ -447,8 +488,11 @@ export default function ShipHangarPage({ onNavigate }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 18px' }}>
         {tab === 'catalog' ? (
           <>
-            <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}><div style={{ flex: '1 1 220px', position: 'relative' }}><Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-muted)' }} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nave, fabricante ou slug..." style={{ ...inputStyle, marginTop: 0, paddingLeft: 29 }} /></div><select value={type} onChange={event => setType(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 150 }}><option value="all">Todos os veículos</option><option value="spaceship">Somente naves</option><option value="ground">Somente terrestres</option></select><select value={role} onChange={event => setRole(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 145 }}><option value="all">Todas as funções</option>{ROLE_FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button onClick={() => setSort(sort === 'name' ? 'cargo' : sort === 'cargo' ? 'crew' : 'name')} style={{ ...secondaryButtonStyle, height: 32 }} title="Alterar ordenação">{sort === 'name' ? <ArrowDownAZ size={13} /> : sort === 'cargo' ? <Package size={13} /> : <Users size={13} />} {sort === 'name' ? 'Nome' : sort === 'cargo' ? 'Carga' : 'Tripulação'}</button><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: 2, border: '1px solid var(--border-subtle)', borderRadius: 5, marginLeft: 'auto' }}><button onClick={() => setViewMode('cards')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'cards' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'cards' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em cards"><LayoutGrid size={13} /> Cards</button><button onClick={() => setViewMode('list')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'list' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'list' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em lista"><List size={13} /> Lista</button></div></div>
-            {!catalog?.vehicles?.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Rocket size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>CATÁLOGO AINDA NÃO SINCRONIZADO</div><p style={{ maxWidth: 470, margin: '0 auto 14px', fontSize: 12, lineHeight: 1.6 }}>Primeiro sincronize a aba <strong>UEX API (Live) → Veículos</strong>. O Hangar reutiliza o catálogo salvo localmente, incluindo carga, fabricantes, características, compra e aluguel.</p><button onClick={() => onNavigate ? onNavigate('uexapi') : sync()} style={primaryButtonStyle}><Globe2 size={13} /> Abrir UEX API (Live)</button></div> : <><div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 8 }}>{vehicles.length} veículo(s) exibido(s) · os preços são dados comunitários da UEX e podem variar por patch</div>{viewMode === 'cards' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,330px),1fr))', gap: 10 }}>{vehicles.map(vehicle => <VehicleCard key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} />)}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{vehicles.map(vehicle => <VehicleListRow key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} />)}</div>}</>}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}><button onClick={() => { setShowUexFleet(value => !value); if (!showUexFleet && !uexFleet.length) loadUexFleet(); }} style={{ ...secondaryButtonStyle, padding: '6px 9px', color: '#c4b5fd', borderColor: 'rgba(167,139,250,0.3)' }}><Rocket size={12} /> {showUexFleet ? 'Ocultar frota UEX' : 'Comparar com frota UEX'}</button></div>
+            {showUexFleet && <UexFleetPanel rows={uexFleet} loading={loadingFleet} onRefresh={loadUexFleet} onClose={() => setShowUexFleet(false)} />}
+            <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}><div style={{ flex: '1 1 220px', position: 'relative' }}>
+<Search size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-muted)' }} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nave, fabricante ou slug..." style={{ ...inputStyle, marginTop: 0, paddingLeft: 29 }} /></div><select value={type} onChange={event => setType(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 150 }}><option value="all">Todos os veículos</option><option value="spaceship">Somente naves</option><option value="ground">Somente terrestres</option></select><select value={role} onChange={event => setRole(event.target.value)} style={{ ...inputStyle, marginTop: 0, width: 145 }}><option value="all">Todas as funções</option>{ROLE_FILTERS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button onClick={() => setSort(sort === 'name' ? 'cargo' : sort === 'cargo' ? 'crew' : 'name')} style={{ ...secondaryButtonStyle, height: 32 }} title="Alterar ordenação">{sort === 'name' ? <ArrowDownAZ size={13} /> : sort === 'cargo' ? <Package size={13} /> : <Users size={13} />} {sort === 'name' ? 'Nome' : sort === 'cargo' ? 'Carga' : 'Tripulação'}</button><div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: 2, border: '1px solid var(--border-subtle)', borderRadius: 5, marginLeft: 'auto' }}><button onClick={() => setViewMode('cards')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'cards' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'cards' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em cards"><LayoutGrid size={13} /> Cards</button><button onClick={() => setViewMode('list')} style={{ ...secondaryButtonStyle, padding: '6px 8px', border: 'none', background: viewMode === 'list' ? 'rgba(56,189,248,0.14)' : 'transparent', color: viewMode === 'list' ? 'var(--accent-primary)' : 'var(--text-muted)' }} title="Visualização em lista"><List size={13} /> Lista</button></div></div>
+            {!catalog?.vehicles?.length ? <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 9 }}><Rocket size={42} style={{ opacity: 0.25, marginBottom: 10 }} /><div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 7 }}>CATÁLOGO AINDA NÃO SINCRONIZADO</div><p style={{ maxWidth: 470, margin: '0 auto 14px', fontSize: 12, lineHeight: 1.6 }}>Primeiro sincronize a aba <strong>UEX API (Live) → Veículos</strong>. O Hangar reutiliza o catálogo salvo localmente, incluindo carga, fabricantes, características, compra e aluguel.</p><button onClick={() => onNavigate ? onNavigate('uexapi') : sync()} style={primaryButtonStyle}><Globe2 size={13} /> Abrir UEX API (Live)</button></div> : <><div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 8 }}>{vehicles.length} veículo(s) exibido(s) · os preços são dados comunitários da UEX e podem variar por patch</div>{viewMode === 'cards' ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,330px),1fr))', gap: 10 }}>{vehicles.map(vehicle => <VehicleCard key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{vehicles.map(vehicle => <VehicleListRow key={vehicle.id || vehicle.uuid || vehicle.name} vehicle={vehicle} catalog={catalog} purchasedQuantity={getPurchasedQuantity(hangar, vehicle)} onBought={() => setBuyVehicle(vehicle)} expanded={expandedId === vehicle.id} onToggleExpanded={() => loadDetails(vehicle.id)} details={details[vehicle.id]} onLoadDetails={() => loadDetails(vehicle.id)} loadingDetails={loadingDetails === vehicle.id} loaners={loanersByVehicle[vehicle.id] || []} onLoadLoaners={() => loadLoaners(vehicle.id)} loadingLoaners={loadingLoaners === vehicle.id} />)}</div>}</>}
           </>
         ) : (
           <div>
