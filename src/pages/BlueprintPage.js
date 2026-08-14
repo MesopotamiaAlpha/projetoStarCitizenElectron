@@ -493,6 +493,8 @@ export default function BlueprintPage() {
   const [queue,       setQueue]       = useState(loadQueue());
   const [scmdbImporting, setScmdbImporting] = useState(false);
   const [scmdbMessage, setScmdbMessage] = useState(null);
+  const [trackingToast, setTrackingToast] = useState(false);
+  const trackingToastTimerRef = useRef(null);
   const scmdbInputRef = useRef(null);
 
   const api = useMemo(()=>getBpAPI(),[]);
@@ -507,6 +509,10 @@ export default function BlueprintPage() {
   },[api]);
 
   useEffect(()=>{ loadData(); },[loadData]);
+
+  useEffect(() => () => {
+    if (trackingToastTimerRef.current) clearTimeout(trackingToastTimerRef.current);
+  }, []);
 
   const refreshQueue = () => setQueue(loadQueue());
 
@@ -563,10 +569,15 @@ export default function BlueprintPage() {
   function handleQueue(bp) {
     if (isBlueprintQueued(bp.id)) {
       dequeueBlueprint(bp.id);
-    } else {
-      queueBlueprint(bp, 1);
+      refreshQueue();
+      return;
     }
+
+    queueBlueprint(bp, 1);
     refreshQueue();
+    setTrackingToast(true);
+    if (trackingToastTimerRef.current) clearTimeout(trackingToastTimerRef.current);
+    trackingToastTimerRef.current = setTimeout(() => setTrackingToast(false), 3000);
   }
 
   const filtered = useMemo(()=>{
@@ -612,6 +623,7 @@ export default function BlueprintPage() {
         </div>
       </div>
 
+      {trackingToast&&<div role="status" aria-live="polite" style={{ position:'fixed',top:20,left:'50%',transform:'translateX(-50%)',zIndex:2500,display:'flex',alignItems:'center',gap:9,padding:'11px 18px',borderRadius:9,border:'1px solid rgba(52,211,153,0.42)',background:'linear-gradient(135deg,rgba(16,49,45,0.97),rgba(18,37,48,0.97))',boxShadow:'0 12px 34px rgba(0,0,0,0.32),0 0 24px rgba(52,211,153,0.16)',color:'var(--accent-green)',fontSize:12,fontWeight:700,letterSpacing:'0.02em',animation:'blueprintQueueToastIn 180ms ease-out'}}><CheckCircle2 size={16}/><span>bp enviada para a fila de tracking de material</span></div>}
       {scmdbMessage&&<div style={{ margin:'0 32px 10px',padding:'9px 12px',borderRadius:6,border:`1px solid ${scmdbMessage.type==='error'?'rgba(251,113,133,0.35)':scmdbMessage.type==='ok'?'rgba(52,211,153,0.3)':'rgba(167,139,250,0.3)'}`,background:scmdbMessage.type==='error'?'rgba(251,113,133,0.08)':scmdbMessage.type==='ok'?'rgba(52,211,153,0.08)':'rgba(167,139,250,0.08)',color:scmdbMessage.type==='error'?'var(--accent-red)':scmdbMessage.type==='ok'?'var(--accent-green)':'var(--accent-purple)',fontSize:11,lineHeight:1.5,display:'flex',alignItems:'center',gap:7}}>{scmdbMessage.type==='error'?<AlertTriangle size={13}/>:scmdbMessage.type==='ok'?<CheckCircle2 size={13}/>:<RefreshCw size={13}/>}<span>{scmdbMessage.text}</span></div>}
 
       {/* Stats bar */}

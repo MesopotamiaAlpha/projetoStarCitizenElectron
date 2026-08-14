@@ -21,9 +21,10 @@ import LocationsAdminPage from './pages/LocationsAdminPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
+import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
-import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -157,6 +158,7 @@ const NAV_GROUPS = [
     { id:'uexnegotiations', label:'Negociações UEX',      icon:MessageSquare },
     { id:'wikelo',          label:'Acompanhamento Wikelo',icon:Star          },
     { id:'uexapi',          label:'UEX API (Live)',       icon:Globe         },
+    { id:'shiphangar',      label:'Hangar de Naves',       icon:Rocket        },
   ]},
   { id:'sistema', label:'Sistema', pages:[
     { id:'backup', label:'Backup & Restauração', icon:Save },
@@ -286,6 +288,7 @@ export default function App() {
         </nav>
         <div className="sidebar-footer">
           <span className="version-badge">v1.0</span>
+          <span className="game-version">SC 4.8.2</span>
         </div>
       </aside>
 
@@ -306,6 +309,7 @@ export default function App() {
         {activePage==='uexnegotiations' && <UexNegotiationsPage />}
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
+        {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
         {activePage==='backup'     && <BackupPage />}
         {activePage==='data-directory' && <DataDirectoryPage />}
         {activePage==='notes'      && <NotesPage />}

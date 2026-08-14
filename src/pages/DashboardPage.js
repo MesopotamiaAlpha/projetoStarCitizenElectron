@@ -74,9 +74,10 @@ function readOreVault() {
 function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
-import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2 } from 'lucide-react';
+import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2, Rocket } from 'lucide-react';
 import { isScriptItem, isWikeloFavorItem, calcWikeloFavors } from '../data/wikelo';
 import { calcDchsExecutiveHangars } from '../data/dchsCards';
+import { loadMyHangar, MY_HANGAR_UPDATED_EVENT, UEX_VEHICLES_UPDATED_EVENT } from '../data/uexVehicles';
 
 const PIECE_ICONS  = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
 const PIECE_PT_PLU = { Helmet:'Capacetes', Torso:'Torsos', Arms:'Braços', Legs:'Pernas', Backpack:'Mochilas' };
@@ -146,6 +147,22 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
   const hasWfData       = hasScriptItems || hasDirectFavors;
   const hasDchsData     = dchsSummary.hasAnyCard;
 
+  const [hangarEntries, setHangarEntries] = useState(() => loadMyHangar());
+  useEffect(() => {
+    const refreshHangar = () => setHangarEntries(loadMyHangar());
+    refreshHangar();
+    window.addEventListener(UEX_VEHICLES_UPDATED_EVENT, refreshHangar);
+    window.addEventListener(MY_HANGAR_UPDATED_EVENT, refreshHangar);
+    return () => {
+      window.removeEventListener(UEX_VEHICLES_UPDATED_EVENT, refreshHangar);
+      window.removeEventListener(MY_HANGAR_UPDATED_EVENT, refreshHangar);
+    };
+  }, []);
+  const hangarSummary = useMemo(() => ({
+    totalUnits: hangarEntries.reduce((total, entry) => total + Math.max(0, Number(entry?.quantity) || 0), 0),
+    types: hangarEntries.length,
+  }), [hangarEntries]);
+
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -170,6 +187,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
             {value:stats?.ownedPieces||0, label:'Peças Obtidas',    sub:`${pct}% do total`,                 color:'var(--accent-primary)',   Icon:Package, cls:'cyan'},
             {value:stats?.completeSets||0,label:'Sets Completos',   sub:`De ${stats?.totalSets||0} sets`,   color:'var(--accent-green)',     Icon:Trophy,  cls:'green'},
             {value:stats?.wishlistPieces||0,label:'wishlist',sub:'Peças para obter',                color:'var(--accent-gold)',      Icon:Star,    cls:'gold'},
+            {value:hangarSummary.totalUnits,label:'Naves no Hangar',sub:`${hangarSummary.types} tipo${hangarSummary.types!==1?'s':''} · compras e Wikelo`, color:'var(--accent-primary)', Icon:Rocket, cls:'cyan'},
           ].map(({value,label,sub,color,Icon,cls})=>(
             <div key={label} className={`stat-card ${cls}`}>
               <div className="stat-card-icon" style={{color}}><Icon size={40}/></div>

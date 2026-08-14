@@ -9,6 +9,7 @@ import { setBatchProvenance, SOURCES } from '../data/provenance';
 import { saveUexItemsDB, loadUexItemsDB, normalizeUexNumber, normalizeUexItemName, getUexItemAveragePrice } from '../data/uexItemsDB';
 import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
 import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
+import { syncUexVehicles } from '../data/uexVehicles';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
 import { loadGoogleTranslateApiKey, saveGoogleTranslateApiKey } from '../data/uexNegotiations';
 
@@ -656,7 +657,8 @@ function VeículosTab() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const result = await uexFetch('vehicles');
+      const catalog = await syncUexVehicles();
+      const result = catalog.vehicles || [];
       setData(result);
       setBatchProvenance('vehicle', result.map(v => v.name), SOURCES.UEX_API, {
         endpoint: 'veículos', gameVersion: '4.8.1',

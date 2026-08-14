@@ -538,7 +538,7 @@ function buildBlueprintRequirements(bp, shoppingList) {
   return Object.values(map).map(req => {
     const current = shoppingList.find(item => item.key === req.key);
     const collectedBase = current ? toBase(Number(current.collected) || 0, current.unit) : 0;
-    const alreadyCollected = fromBase(collectedBase, unit);
+    const alreadyCollected = fromBase(collectedBase, req.unit);
     return { ...req, quantity: Math.max(0, req.quantity - alreadyCollected) };
   }).filter(req => req.quantity > 0);
 }

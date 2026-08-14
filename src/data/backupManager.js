@@ -23,6 +23,7 @@ export const BACKUP_CATEGORIES = [
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
   { id:'uexnegotiations', label:'Negociações UEX / Avaliações', keys:['sc_uex_negotiation_reviews_v1'] },
   { id:'uexconfig',   label:'Configuração e Sincronização UEX', keys:['sc_uex_token_v1','sc_uex_secretkey_v1','sc_uex_username_v1','sc_uex_notif_state_v1','sc_uex_items_db_v1','sc_uex_locations_db_v1','sc_uex_mining_db_v1'], sensitive:true },
+  { id:'hangar',       label:'Hangar de Naves / Meu Hangar', keys:['sc_uex_vehicles_catalog_v1','sc_hangar_v1'] },
   { id:'dataoverride',label:'Personalizações de Dados (Mineração/Trade/DPS/Cargo/Market)', keys:[], dynamicPrefix: DATA_OVERRIDE_PREFIX },
   { id:'provenance',  label:'Procedência dos Dados',           keys:['sc_provenance_v1'] },
 ];

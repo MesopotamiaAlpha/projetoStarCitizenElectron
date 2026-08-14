@@ -650,3 +650,38 @@ Ao alterar IPC, reinicie o Electron completamente. Hot reload do React não rein
 O projeto passou por correções de normalização de nomes UEX, controles de quantidade do inventário, responsividade dos cards, identidade visual das notas, cores de minérios, cálculo PAF, tradução bilíngue no chat UEX, deduplicação de notificações, tracking por qualidade, ordenação manual, transferência entre locais, conversões de carga, centralização de dados e empacotamento Windows-only.
 
 Ao fazer manutenção futura, preserve as regras centrais: **uma única fonte para conversões de carga, uma única fonte para locais, qualidade mínima separada no tracking, IPC explícito, backup compatível e banco SQLite migrado sem perda de dados**.
+
+
+## 22. Hangar de Naves
+
+A seção **Hangar de Naves** está em `src/pages/ShipHangarPage.js` e usa `src/data/uexVehicles.js`. Ela aparece no grupo **UEX** do `src/App.js` com o identificador `shiphangar`.
+
+### Catálogo Naves UEX
+
+A aba **Naves UEX** consulta pela proxy HTTPS os endpoints documentados `vehicles`, `vehicles_purchases_prices_all` e `vehicles_rentals_prices_all`. O catálogo exibe nome, nome completo, fabricante, tipo de veículo, funções, carga em SCU, tripulação, dimensões, pad, combustível, links externos e os locais/preços de compra e aluguel disponíveis.
+
+Os filtros ficam em `ShipHangarPage.js`, no `useMemo` que monta `vehicles`. A busca procura por nome, nome completo, fabricante e slug. O filtro de tipo separa naves e veículos terrestres; o filtro de função usa as flags `is_cargo`, `is_mining`, `is_salvage`, `is_medical`, `is_exploration`, `is_military`, `is_passenger` e `is_ground_vehicle`. A ordenação pode ser alternada entre nome, carga e tripulação.
+
+A busca detalhada de uma nave usa `vehicles_purchases_prices?id_vehicle=...` e `vehicles_rentals_prices?id_vehicle=...` somente quando o card é expandido. Essa decisão evita uma chamada individual para cada veículo durante a sincronização geral. O módulo normaliza números ausentes para `null`, e a interface apresenta `—` quando a UEX não fornece determinada informação.
+
+### Imagens da UEX
+
+O campo `url_photo` recebido pela UEX é renderizado pelo componente `UexVehicleImage`. No Electron, a imagem passa por `window.electronAPI.uexImage()`, exposta em `electron/preload.js` e tratada pelo handler `uex-image` em `electron/main.js`. O handler permite somente HTTPS, o host oficial `assets.uexcorp.space` e caminhos `/img/`, evitando uma proxy aberta. Ele envia os headers necessários, transforma a resposta em `data URL` e aplica limite de 10 MB. Quando a imagem não pode ser carregada, o card mostra o ícone de nave como fallback.
+
+### Meu Hangar
+
+A aba **Meu Hangar** é um registro local; ela não realiza transações na UEX. O botão **Comprei** abre um modal que solicita somente a quantidade da nave e observações opcionais. A aplicação não pergunta mais em qual local ou hangar a nave está. Ao confirmar, `addToMyHangar()` salva a aquisição em `sc_hangar_v1`, agrupando registros pela origem e pelo veículo e somando a quantidade quando a mesma nave é registrada novamente.
+
+Cada registro do Meu Hangar contém, quando disponível, `vehicleId`, `vehicleName`, `manufacturer`, `source`, `quantity`, `acquiredAt`, `notes`, `image`, `scu`, `crew` e `slug`. A aba permite aumentar ou reduzir a quantidade, editar observações e remover o registro. O componente `HangarEntry` exibe a origem `COMPRADA` ou `WIKELO`, sem exibir campo de local/hangar.
+
+### Naves recebidas pelo Wikelo
+
+O botão **Nave do Wikelo** abre um formulário manual para nome, fabricante, quantidade, carga em SCU e observações. O registro é salvo com `source: 'wikelo'` e aparece separado visualmente das naves compradas. Essa entrada manual é necessária porque o acompanhamento Wikelo existente registra missões e recompensas, mas não possui um catálogo estruturado de naves recebidas para importação automática.
+
+### Escopo removido e persistência
+
+A Pledge Store não faz parte do Hangar. O módulo não consulta mais `vehicles_prices`, não mantém `pledgePrices`, não importa `getPledgeRows()` e não exibe preços, Warbond, pacotes ou status de oferta. A sincronização se limita ao catálogo, à compra in-game e ao aluguel in-game.
+
+O catálogo sincronizado fica em `sc_uex_vehicles_catalog_v1` e o Meu Hangar fica em `sc_hangar_v1`. As duas chaves estão incluídas na categoria `Hangar de Naves / Meu Hangar` do backup seletivo. O backup completo já inclui automaticamente essas chaves por exportar todas as entradas do localStorage. Os endpoints, campos e regras de compatibilidade estão registrados em `UEX_VEHICLES_API_NOTES.md`.
+
+A API UEX é mantida pela comunidade e pode não representar exatamente o estado atual dos servidores. Por isso, o código preserva a data da última sincronização, trata campos ausentes como `null`/`—` e não inventa preço, local, carga ou característica que não esteja na resposta da API.
