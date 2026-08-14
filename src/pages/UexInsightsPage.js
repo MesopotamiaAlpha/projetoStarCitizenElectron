@@ -240,7 +240,6 @@ function MarketTab() {
       {grouped.length > 0 ? (
         <div className="uex-insights-table-wrap"><table className="uex-insights-table uex-market-quality-table"><thead><tr><th>Item</th><th>Faixa de qualidade</th><th>Operação</th><th>Preço atual</th><th>Média 7d</th><th>Média 30d</th><th>Variação 30d</th><th>Anúncios</th><th>Confiabilidade</th><th>Leitura</th></tr></thead><tbody>{grouped.slice(0, 120).map((row, index) => <tr key={`${row.id || row.item_uuid || index}`}><td><strong>{row.item_name || '—'}</strong><small>{row.currency || 'UEC'} · unidade {row.unit || 'un'}</small></td><td><strong style={{ color: '#fbbf24' }}>{qualityTierLabel(row.quality_tier)}</strong><small>aprox. Q{row.qualityMin}–{row.qualityMax}</small></td><td>{row.operation === 'sell' ? 'Venda · compra' : 'Compra · venda'}</td><td><strong>{formatUec(row.price_avg)}</strong></td><td>{formatUec(row.price_avg_week)}<small>{row.change7 === null ? '—' : `${row.change7 > 0 ? '+' : ''}${row.change7.toFixed(1)}% vs atual`}</small></td><td>{formatUec(row.price_avg_month)}</td><td style={{ color: row.change30 !== null && row.change30 <= -10 ? '#34d399' : row.change30 !== null && row.change30 >= 10 ? '#fb7185' : 'var(--text-secondary)' }}>{row.change30 === null ? '—' : `${row.change30 > 0 ? '+' : ''}${row.change30.toFixed(1)}%`}</td><td>{row.listings_count ?? '—'}</td><td><strong style={{ color: row.reliability.color }}>{row.reliability.label}</strong></td><td><strong style={{ color: row.reading.color }}>{row.reading.label}</strong></td></tr>)}</tbody></table></div>
       ) : <EmptyState text="Informe um item ou nome e consulte as médias por qualidade." />}
-      <MarketAlertPanel />
       <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}><strong style={{ fontSize: 13, color: 'var(--text-primary)' }}><History size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Histórico de preço</strong><span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Até 1.000 snapshots; use o nome do item para manter a consulta leve.</span></div>
         <div className="uex-insights-filter-grid history-grid">
@@ -315,7 +314,7 @@ function MarketAlertDetailsModal({ group, onClose, onDismiss }) {
   </div>;
 }
 
-function MarketAlertPanel() {
+export function MarketAlertPanel() {
   const [alerts, setAlerts] = useState(() => loadMarketAlerts());
   const [events, setEvents] = useState(() => loadMarketAlertEvents());
   const [focusedEventKey, setFocusedEventKey] = useState(() => loadMarketAlertFocus()?.eventKey || '');

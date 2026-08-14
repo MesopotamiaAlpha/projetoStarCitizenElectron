@@ -20,6 +20,7 @@ export const BACKUP_CATEGORIES = [
   { id:'materials',   label:'Fila de Materiais',               keys:['sc_material_queue_v1'] },
   { id:'locations',   label:'Locais Administrados',              keys:['sc_locations_admin_v1'] },
   { id:'missionadmin', label:'Gerenciador de Missões',              keys:['sc_mission_admin_v1'] },
+  { id:'mission-auto-monitor', label:'Monitor Automático de Missões', keys:['sc_mission_auto_monitor_v1'] },
   { id:'blueprints',  label:'Blueprints Customizadas',         electron:'blueprints' },
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
   { id:'uexnegotiations', label:'Negociações UEX / Avaliações', keys:['sc_uex_negotiation_reviews_v1'] },

@@ -1,6 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Pickaxe, Gem, Star, BarChart3, RefreshCw, Plus, Trash2, Edit3, Save, X, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
-import { useDataset, DATASETS } from '../data/dataStore';
+import React, { useState } from 'react';
+import { Pickaxe, Star, Plus, Trash2, Edit3, Save, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const DEFAULT_MINEABLE_ORES = [
   { name:'Quantainium', value:7950, rarity:'Raro', locations:['Yela Asteroid Belt','Aaron Halo','Cellin','Daymar'], color:'#34d399', hazardous:true, notes:'Instável — pode explodir. Use laser em baixa potência. Vale a pena pelo alto valor.' },
@@ -31,9 +30,9 @@ export const DEFAULT_MINEABLE_ORES = [
 // removidos: Orion não possui cabeça de mineração size 3 disponível na UEX e Expanse/Cutlass Blue
 // não são naves de mineração de verdade — foram removidas por não corresponderem à realidade do jogo).
 export const DEFAULT_MINING_SHIPS = [
-  { name:'Prospector', cargo:48, lasers:1, crew:1, notes:'MISC. Mineradora solo padrão. 4 contêineres de 12 SCU (48 SCU). Aceita qualquer cabeça size 1.' },
-  { name:'MOLE',       cargo:96, lasers:3, crew:4, notes:'Argo. Mineradora de grupo — 1 piloto + 3 operadores. 3 lasers size 2 simultâneos, carrega até 8 módulos de 12 SCU (96 SCU) por vez.' },
-  { name:'Golem',      cargo:32, lasers:1, crew:1, notes:'Drake. Mineradora solo de entrada, com o laser Pitman (size 1) dedicado à nave. 2 contêineres de 16 SCU (32 SCU).' },
+  { name:'Prospector', cargo:48, lasers:1, crew:1, notes:'MISC. Mineradora solo padrão. Compatível com cabeças e módulos de mineração.' },
+  { name:'MOLE',       cargo:96, lasers:3, crew:4, notes:'Argo. Mineradora para operações em grupo. Permite organizar cabeças e módulos de mineração.' },
+  { name:'Golem',      cargo:32, lasers:1, crew:1, notes:'Drake. Mineradora solo de entrada, com cabeça de mineração dedicada.' },
 ];
 
 export const DEFAULT_MINING_LOCATIONS = {
@@ -126,9 +125,9 @@ const MODULE_TYPE_COLORS = {
 
 // Slots correspondem ao que cada nave realmente aceita no jogo.
 const SHIP_CONFIGS = {
-  'Prospector': { lasers:[{ id:'l1', size:1, label:'Laser Principal' }], moduleSlots:3, desc:'1 laser size 1 · até 3 módulos nessa cabeça' },
-  'MOLE':       { lasers:[{ id:'l1', size:2, label:'Laser Centro' },{ id:'l2', size:2, label:'Laser Esquerda' },{ id:'l3', size:2, label:'Laser Direita' }], moduleSlots:3, desc:'3 lasers size 2 · até 3 módulos em cada cabeça' },
-  'Golem':      { lasers:[{ id:'l1', size:1, label:'Laser Pitman (fixo)' }], moduleSlots:3, desc:'1 laser size 1 (Pitman) · até 3 módulos nessa cabeça' },
+  'Prospector': { lasers:[{ id:'l1', size:1, label:'Cabeça principal' }], moduleSlots:3, desc:'Configure a cabeça e os módulos que você utiliza nesta nave.' },
+  'MOLE':       { lasers:[{ id:'l1', size:2, label:'Cabeça central' },{ id:'l2', size:2, label:'Cabeça esquerda' },{ id:'l3', size:2, label:'Cabeça direita' }], moduleSlots:3, desc:'Organize as cabeças e os módulos utilizados em cada posição.' },
+  'Golem':      { lasers:[{ id:'l1', size:1, label:'Cabeça dedicada' }], moduleSlots:3, desc:'Registre a cabeça e os módulos que fazem parte da sua configuração.' },
 };
 
 const BUILDS_KEY = 'sc_mining_builds_v1';
@@ -146,28 +145,22 @@ function newCraftInfo() {
   };
 }
 function newHeadConfig() {
-  return { moduleSlotCount: 1, modules: [], craft: newCraftInfo() };
+  return { moduleSlotCount: 3, modules: [], craft: newCraftInfo() };
 }
-/** Garante que a build tenha headConfig para cada slot de laser da nave (migra builds antigas). */
+/** Garante que a build tenha uma configuração de peças para cada posição da nave. */
 function ensureHeadConfig(build, cfg) {
   const hc = { ...(build?.headConfig || {}) };
-  cfg.lasers.forEach(slot => { if (!hc[slot.id]) hc[slot.id] = newHeadConfig(); });
+  cfg.lasers.forEach(slot => {
+    const previous = hc[slot.id] || {};
+    hc[slot.id] = {
+      ...newHeadConfig(),
+      ...previous,
+      modules: Array.isArray(previous.modules) ? previous.modules : [],
+      craft: previous.craft || newCraftInfo(),
+    };
+  });
   return hc;
 }
-/** Aplica os ajustes de craft (potência/integridade) por cima dos stats base do laser. */
-function effectiveLaserStats(laser, craft) {
-  if (!laser) return null;
-  if (!craft?.isCrafted) return { power: laser.power, instab: laser.instab, crafted:false };
-  const powerMult = 1 + (Number(craft.powerChangePct) || 0) / 100;
-  const integrityMult = 1 - (Number(craft.integrityChangePct) || 0) / 100;
-  return {
-    power: Math.max(0, Math.round(laser.power * powerMult)),
-    instab: Math.max(0, Math.min(1, laser.instab * integrityMult)),
-    crafted: true,
-  };
-}
-function ptDate(iso)    { return iso ? new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
-
 // ── Build Editor ───────────────────────────────────────────────────────────────
 function BuildEditor({ build, onSave, onCancel }) {
   const [name,    setName]    = useState(build?.name    || '');
@@ -190,16 +183,10 @@ function BuildEditor({ build, onSave, onCancel }) {
   function updateHead(slotId, patch) {
     setHeadConfig(p => ({ ...p, [slotId]: { ...p[slotId], ...patch } }));
   }
-  function setModuleSlotCount(slotId, count) {
-    setHeadConfig(p => {
-      const head = p[slotId] || newHeadConfig();
-      return { ...p, [slotId]: { ...head, moduleSlotCount: count, modules: head.modules.slice(0, count) } };
-    });
-  }
   function addModuleToHead(slotId, mod) {
     setHeadConfig(p => {
       const head = p[slotId] || newHeadConfig();
-      if (head.modules.length >= head.moduleSlotCount) return p;
+      if (head.modules.length >= cfg.moduleSlots) return p;
       return { ...p, [slotId]: { ...head, modules: [...head.modules, mod] } };
     });
   }
@@ -207,25 +194,6 @@ function BuildEditor({ build, onSave, onCancel }) {
     setHeadConfig(p => {
       const head = p[slotId] || newHeadConfig();
       return { ...p, [slotId]: { ...head, modules: head.modules.filter((_,i)=>i!==idx) } };
-    });
-  }
-  function toggleCrafted(slotId) {
-    setHeadConfig(p => {
-      const head = p[slotId] || newHeadConfig();
-      return { ...p, [slotId]: { ...head, craft: { ...head.craft, isCrafted: !head.craft.isCrafted } } };
-    });
-  }
-  function updateCraft(slotId, patch) {
-    setHeadConfig(p => {
-      const head = p[slotId] || newHeadConfig();
-      return { ...p, [slotId]: { ...head, craft: { ...head.craft, ...patch } } };
-    });
-  }
-  function updateCraftOre(slotId, oreIdx, patch) {
-    setHeadConfig(p => {
-      const head = p[slotId] || newHeadConfig();
-      const ores = head.craft.ores.map((o,i)=> i===oreIdx ? { ...o, ...patch } : o);
-      return { ...p, [slotId]: { ...head, craft: { ...head.craft, ores } } };
     });
   }
 
@@ -280,13 +248,12 @@ function BuildEditor({ build, onSave, onCancel }) {
           const available = lasersBySize(slot.size);
           const laser  = MINING_LASERS_DB.find(l=>l.name===lasers[slot.id]);
           const head   = headConfig[slot.id] || newHeadConfig();
-          const eff    = effectiveLaserStats(laser, head.craft);
           const usedModuleNames = head.modules.map(m=>m.name);
 
           return (
             <div key={slot.id} style={{ padding:'12px 14px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:8 }}>
               <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>
-                {slot.label} (Size {slot.size})
+                {slot.label}
               </div>
 
               <select style={{...SS, marginBottom:8}} value={lasers[slot.id]||''} onChange={e=>setLaser(slot.id,e.target.value)}>
@@ -294,76 +261,18 @@ function BuildEditor({ build, onSave, onCancel }) {
                 {available.map(l=><option key={l.name} value={l.name}>{l.name} · {l.tier}</option>)}
               </select>
 
-              {laser && eff && (
-                <div style={{ marginBottom:10, fontSize:10, color:'var(--text-muted)', lineHeight:1.4 }}>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:3 }}>
-                    <span>⚡ {eff.power} MW{eff.crafted && eff.power!==laser.power ? <em style={{ color: eff.power>laser.power?'var(--accent-green)':'var(--accent-red)', fontStyle:'normal' }}> ({eff.power>laser.power?'+':''}{Math.round((eff.power/laser.power-1)*100)}%)</em> : null}</span>
-                    <span>📏 {laser.range}m</span>
-                    <span style={{ color: eff.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>
-                      Instab: {Math.round(eff.instab*100)}%{eff.crafted && eff.instab!==laser.instab ? ` (base ${Math.round(laser.instab*100)}%)` : ''}
-                    </span>
-                  </div>
-                  <div style={{ color:'var(--text-secondary)', fontStyle:'italic' }}>{laser.notes}</div>
-                </div>
-              )}
-
-              {/* Craftado? */}
-              <label style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8, cursor:'pointer' }}>
-                <input type="checkbox" checked={head.craft.isCrafted} onChange={()=>toggleCrafted(slot.id)}/>
-                <span style={{ fontSize:11, fontWeight:700, color: head.craft.isCrafted ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>Craftado?</span>
-              </label>
-
-              {head.craft.isCrafted && (
-                <div style={{ marginBottom:10, padding:'10px', background:'rgba(251,191,36,0.05)', border:'1px solid rgba(251,191,36,0.2)', borderRadius:6 }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Minérios usados no craft</div>
-                  {head.craft.ores.map((ore,i)=>(
-                    <div key={i} style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:6, marginBottom:5 }}>
-                      <input style={miniIS} value={ore.name} onChange={e=>updateCraftOre(slot.id,i,{name:e.target.value})} placeholder={`Minério ${i+1}...`}/>
-                      <input style={miniIS} type="number" value={ore.quality} onChange={e=>updateCraftOre(slot.id,i,{quality:e.target.value})} placeholder="Qualidade"/>
-                    </div>
-                  ))}
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:6 }}>
-                    <div>
-                      <label style={LS}>Potência (% aumento/redução)</label>
-                      <input style={miniIS} type="number" value={head.craft.powerChangePct} onChange={e=>updateCraft(slot.id,{powerChangePct:e.target.value})} placeholder="ex: 15 ou -10"/>
-                    </div>
-                    <div>
-                      <label style={LS}>Integridade (% aumento/redução)</label>
-                      <input style={miniIS} type="number" value={head.craft.integrityChangePct} onChange={e=>updateCraft(slot.id,{integrityChangePct:e.target.value})} placeholder="ex: 20 ou -5"/>
-                    </div>
-                  </div>
-                  <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:6, fontStyle:'italic' }}>Esses valores são somados aos stats base do laser acima.</div>
-                </div>
-              )}
-
-              {/* Qtd. de módulos desta cabeça */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                <label style={{ ...LS, marginBottom:0 }}>Módulos nesta cabeça:</label>
-                <div style={{ display:'flex', gap:4 }}>
-                  {[1,2,3].map(n=>(
-                    <button key={n} onClick={()=>setModuleSlotCount(slot.id,n)} style={{
-                      width:24, height:24, borderRadius:4, cursor:'pointer',
-                      background: head.moduleSlotCount===n ? 'rgba(56,189,248,0.2)' : 'transparent',
-                      border:`1px solid ${head.moduleSlotCount===n ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                      color: head.moduleSlotCount===n ? 'var(--accent-primary)' : 'var(--text-muted)',
-                      fontSize:11, fontWeight:700,
-                    }}>{n}</button>
-                  ))}
-                </div>
-              </div>
-
+              <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Peças equipadas nesta cabeça</div>
               {/* Módulos equipados nesta cabeça */}
               <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
                 {head.modules.map((m,i) => (
                   <div key={i} style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}18`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}44` }}>
                     <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
-                    <span style={{ fontSize:9, color:'var(--text-muted)' }}>{m.effect}</span>
                     <button onClick={()=>removeModuleFromHead(slot.id,i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:0, display:'flex', alignItems:'center' }}><X size={10}/></button>
                   </div>
                 ))}
                 {head.modules.length === 0 && <span style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Nenhum módulo equipado</span>}
               </div>
-              {head.modules.length < head.moduleSlotCount && (
+              {head.modules.length < cfg.moduleSlots && (
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:5 }}>
                   {MINING_MODULES_DB.filter(m=>!usedModuleNames.includes(m.name)).map(m => (
                     <button key={m.name} onClick={()=>addModuleToHead(slot.id,m)} style={{
@@ -375,9 +284,7 @@ function BuildEditor({ build, onSave, onCancel }) {
                     onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:5 }}>
                         <span style={{ fontSize:11, fontWeight:700, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)' }}>{m.name}</span>
-                        <span style={{ fontSize:8, padding:'1px 5px', borderRadius:3, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}22`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.type}</span>
                       </div>
-                      <div style={{ fontSize:9, color:'var(--text-muted)', marginTop:2 }}>{m.effect}</div>
                     </button>
                   ))}
                 </div>
@@ -389,8 +296,9 @@ function BuildEditor({ build, onSave, onCancel }) {
 
       {/* Notas */}
       <div style={{ marginBottom:12 }}>
-        <label style={LS}>Notas / Estratégia</label>
-        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Melhor para Quantainium, usar em Yela, rodar com tripulação..."
+        <label style={LS}>Anotações da configuração</label>
+                  <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anote observações sobre esta configuração..."
+
           style={{ width:'100%', minHeight:44, padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', resize:'vertical', boxSizing:'border-box' }}/>
       </div>
 
@@ -415,7 +323,6 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
   const laserList = cfg.lasers.map(slot => ({
     slot, laser: MINING_LASERS_DB.find(l=>l.name===build.lasers?.[slot.id]), head: headConfig[slot.id],
   }));
-  const totalModules = laserList.reduce((a,{head})=>a+(head?.modules?.length||0),0);
 
   return (
     <div style={{
@@ -435,10 +342,10 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
           <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
             {laserList.map(({slot,laser,head}) => laser && (
               <span key={slot.id} style={{ display:'flex', alignItems:'center', gap:3 }}>
-                🔫 {laser.name}{head?.craft?.isCrafted ? ' ⚒️' : ''}
+                🔫 {laser.name}{head?.craft?.isCrafted ? ' · craftado' : ''}
               </span>
             ))}
-            {totalModules > 0 && <span>· {totalModules} módulo{totalModules!==1?'s':''}</span>}
+            {laserList.some(({head}) => head?.modules?.length > 0) && <span>· módulos equipados</span>}
           </div>
         </div>
         <div style={{ display:'flex', gap:5, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
@@ -467,52 +374,35 @@ function BuildCard({ build, onEdit, onDelete, onToggleActive }) {
       {expanded && (
         <div style={{ padding:'0 14px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
           <div style={{ display:'flex', flexDirection:'column', gap:8, margin:'12px 0' }}>
-            {laserList.map(({slot,laser,head}) => {
-              const eff = effectiveLaserStats(laser, head?.craft);
-              return (
+            {laserList.map(({slot,laser,head}) => (
                 <div key={slot.id} style={{ padding:'10px 12px', background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.12)', borderRadius:7 }}>
                   <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:5 }}>{slot.label}</div>
                   {laser ? (
                     <>
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
                         <span style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{laser.name}</span>
-                        {head?.craft?.isCrafted && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:3, background:'rgba(251,191,36,0.12)', color:'var(--accent-gold)', border:'1px solid rgba(251,191,36,0.3)' }}>⚒️ CRAFTADO</span>}
+                        {head?.craft?.isCrafted && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:3, background:'rgba(251,191,36,0.12)', color:'var(--accent-gold)', border:'1px solid rgba(251,191,36,0.3)' }}>· CRAFTADO</span>}
                       </div>
-                      <div style={{ display:'flex', gap:8, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap', marginBottom:3 }}>
-                        <span>⚡ {eff.power} MW{eff.crafted && eff.power!==laser.power ? ` (base ${laser.power})` : ''}</span>
-                        <span>📏 {laser.range}m</span>
-                        <span>Extr: {laser.extr}x</span>
-                        <span style={{ color:eff.instab>0.3?'var(--accent-red)':'var(--accent-green)' }}>Instab: {Math.round(eff.instab*100)}%{eff.crafted && eff.instab!==laser.instab ? ` (base ${Math.round(laser.instab*100)}%)` : ''}</span>
-                      </div>
-                      {head?.craft?.isCrafted && head.craft.ores.some(o=>o.name) && (
-                        <div style={{ fontSize:9, color:'var(--text-muted)', marginBottom:4 }}>
-                          Minérios: {head.craft.ores.filter(o=>o.name).map(o=>`${o.name}${o.quality?` (Q${o.quality})`:''}`).join(', ')}
-                        </div>
-                      )}
-                      {(head?.modules?.length > 0) && (
+                      {head?.modules?.length > 0 && (
                         <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:5 }}>
                           {head.modules.map((m,i) => (
                             <span key={i} style={{ fontSize:10, padding:'2px 8px', borderRadius:20, background:`${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}14`, border:`1px solid ${MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)'}33`, color:MODULE_TYPE_COLORS[m.type]||'var(--accent-primary)', fontWeight:700 }}>{m.name}</span>
                           ))}
                         </div>
                       )}
-                      <div style={{ fontSize:10, color:'var(--text-secondary)', fontStyle:'italic', marginTop:4 }}>{laser.notes}</div>
                     </>
                   ) : (
                     <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic' }}>Sem laser</div>
                   )}
                 </div>
-              );
-            })}
+              )
+            )}
           </div>
           {build.notes && (
             <div style={{ padding:'7px 10px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:5, fontSize:11, color:'var(--text-secondary)', fontStyle:'italic' }}>
               📝 {build.notes}
             </div>
           )}
-          <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:8 }}>
-            Criada: {ptDate(build.created_at)}{build.updated_at && build.updated_at!==build.created_at ? ` · Atualizada: ${ptDate(build.updated_at)}` : ''}
-          </div>
         </div>
       )}
     </div>
@@ -579,7 +469,6 @@ function BuildsTab() {
           <option value="all">Todas as naves</option>
           {Object.keys(SHIP_CONFIGS).map(s=><option key={s}>{s}</option>)}
         </select>
-        <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} build{filtered.length!==1?'s':''}</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -606,80 +495,16 @@ function BuildsTab() {
 }
 
 export default function MiningPage() {
-  const { data: MINING_SHIPS } = useDataset(DATASETS.MINING_SHIPS.key, DEFAULT_MINING_SHIPS);
-  const { data: MODULES } = useDataset(DATASETS.MINING_MODULES.key, DEFAULT_MINING_MODULES);
-  const [activeTab, setActiveTab] = useState('builds');
-  const [selectedShip, setSelectedShip] = useState(null);
-
-  const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
-
-  const TABS = [
-    { id:'ships',     label:'Naves & Módulos' },
-    { id:'builds',    label:'Builds de Nave' },
-  ];
-
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
       <div className="page-header">
         <div>
           <div className="page-title">GUIA DE MINERAÇÃO</div>
-          <div className="page-subtitle">Naves, módulos e builds de mineração personalizadas</div>
+          <div className="page-subtitle">Builds de nave para registrar as peças equipadas</div>
         </div>
       </div>
-
-      {/* Tabs */}
-      <div style={{ padding:'0 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',gap:0,flexShrink:0 }}>
-        {TABS.map(t=>(
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{
-            padding:'12px 18px',background:activeTab===t.id?'rgba(56,189,248,0.1)':'transparent',
-            border:'none',borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`,
-            color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)',
-            fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,letterSpacing:'0.06em',
-            textTransform:'uppercase',cursor:'pointer',transition:'all 0.2s',
-          }}>{t.label}</button>
-        ))}
-      </div>
-
       <div className="page-body">
-
-        {/* SHIPS & MODULES TAB */}
-        {activeTab==='builds' && <BuildsTab/>}
-      {activeTab==='ships' && (
-          <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:20 }}>
-            <div>
-              <div className="modal-section-title">Naves de Mining</div>
-              {MINING_SHIPS.map(ship=>(
-                <div key={ship.name} style={{ background:'var(--bg-card)',border:`1px solid ${selectedShip===ship.name?'var(--border-bright)':'var(--border-subtle)'}`,borderRadius:8,padding:'14px',marginBottom:10,cursor:'pointer',transition:'all 0.2s' }}
-                  onClick={()=>setSelectedShip(selectedShip===ship.name?null:ship.name)}>
-                  <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:selectedShip===ship.name?8:0 }}>
-                    <span style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{ship.name}</span>
-                    <div style={{ display:'flex',gap:8 }}>
-                      <span style={{ fontSize:11,color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace' }}>{ship.cargo} SCU</span>
-                      <span style={{ fontSize:11,color:'var(--accent-primary)',fontFamily:'Share Tech Mono,monospace' }}>{ship.lasers} laser{ship.lasers>1?'s':''}</span>
-                      <span style={{ fontSize:11,color:'var(--text-muted)' }}>{ship.crew} crew</span>
-                    </div>
-                  </div>
-                  {selectedShip===ship.name && (
-                    <div style={{ fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,borderTop:'1px solid var(--border-subtle)',paddingTop:8 }}>{ship.notes}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div>
-              <div className="modal-section-title">Módulos de Mining</div>
-              {MODULES.map(mod=>(
-                <div key={mod.name} style={{ background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'12px',marginBottom:8 }}>
-                  <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4 }}>
-                    <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)' }}>{mod.name}</span>
-                    <span style={{ fontSize:10,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>{mod.type}</span>
-                  </div>
-                  <div style={{ fontSize:12,color:'var(--accent-green)',marginBottom:4 }}>{mod.effect}</div>
-                  <div style={{ fontSize:11,color:'var(--text-muted)' }}>Ideal para: {mod.best_for}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <BuildsTab />
       </div>
     </div>
   );

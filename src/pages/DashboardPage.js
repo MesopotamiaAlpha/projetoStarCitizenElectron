@@ -292,10 +292,6 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
             {stats?.totalSets||0} sets · {stats?.totalPieces||0} peças catalogadas
           </div>
         </div>
-        <div style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)',textAlign:'right' }}>
-          <div style={{ color:'var(--accent-primary)',fontSize:13 }}>STANTON · PYRO</div>
-          <div>RASTREADOR ATIVO</div>
-        </div>
       </div>
 
       <div className="page-body">
@@ -349,7 +345,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
             <DashboardMiniMetric icon={Pickaxe} label="Baú de minério" value={`${Number(overview.oreScu || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} SCU`} sub={`${overview.oreTypes} entradas · ${overview.qualityOre} com qualidade`} color="var(--accent-gold)" onClick={() => onNavigate('orevault')} />
             <DashboardMiniMetric icon={Database} label="Fila de craft" value={overview.queueBlueprints} sub={`${overview.pendingMaterials} materiais pendentes`} color="#a29bfe" onClick={() => onNavigate('materials')} />
             <DashboardMiniMetric icon={TrendingUp} label="Receita UEX" value={`${Math.round(overview.saleRevenue).toLocaleString('pt-BR')} aUEC`} sub={`${Math.round(overview.todayRevenue).toLocaleString('pt-BR')} hoje · ${overview.saleCount} venda${overview.saleCount !== 1 ? 's' : ''}`} color="var(--accent-green)" onClick={() => onNavigate('uexsales')} />
-            <DashboardMiniMetric icon={Bell} label="Alertas de compra" value={overview.marketAlerts} sub={!overview.alertSettings.automaticEnabled ? 'análise automática desligada' : overview.activeAlertMatches ? `${overview.activeAlertMatches} oferta${overview.activeAlertMatches !== 1 ? 's' : ''} encontrada${overview.activeAlertMatches !== 1 ? 's' : ''}` : `próxima em ${dashboardCountdown(overview.alertSettings.nextCheckAt)}`} color="var(--accent-gold)" onClick={() => onNavigate('uexinsights')} />
+            <DashboardMiniMetric icon={Bell} label="Alertas de compra" value={overview.marketAlerts} sub={!overview.alertSettings.automaticEnabled ? 'análise automática desligada' : overview.activeAlertMatches ? `${overview.activeAlertMatches} oferta${overview.activeAlertMatches !== 1 ? 's' : ''} encontrada${overview.activeAlertMatches !== 1 ? 's' : ''}` : `próxima em ${dashboardCountdown(overview.alertSettings.nextCheckAt)}`} color="var(--accent-gold)" onClick={() => onNavigate('uexalerts')} />
           </div>
           <div className="dashboard-overview-columns">
             <div className="dashboard-overview-card">

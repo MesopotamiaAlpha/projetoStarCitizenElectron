@@ -15,6 +15,7 @@ import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
 import UexInsightsPage    from './pages/UexInsightsPage';
+import MarketAlertsPage   from './pages/MarketAlertsPage';
 import BackupPage         from './pages/BackupPage';
 import DataDirectoryPage  from './pages/DataDirectoryPage';
 import NotesPage          from './pages/NotesPage';
@@ -26,8 +27,10 @@ import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
-import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
+import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord } from './data/missionAutoMonitor';
+import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -161,6 +164,7 @@ const NAV_GROUPS = [
     { id:'wikelo',          label:'Acompanhamento Wikelo',icon:Star          },
     { id:'uexapi',          label:'UEX API (Live)',       icon:Globe         },
     { id:'uexinsights',     label:'Inteligência UEX',     icon:TrendingUp    },
+    { id:'uexalerts',       label:'Alertas de Compra',     icon:Bell           },
     { id:'shiphangar',      label:'Hangar de Naves',      icon:Rocket         },
   ]},
   { id:'sistema', label:'Sistema', hint:'Dados e configurações', accent:'#94a3b8', groupIcon:FolderCog, pages:[
@@ -187,6 +191,22 @@ export default function App() {
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
   });
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.onMissionMonitorEvent || !api?.onMissionMonitorStatus) return undefined;
+    const cleanEvent = api.onMissionMonitorEvent(event => {
+      const catalog = loadMissionAdmin();
+      const typeNames = getMissionAdminOptions('types', '', catalog).map(option => option.name);
+      upsertAutomaticMissionRecord(event, typeNames);
+      appendMissionAutoMonitorEvent(event);
+    });
+    const cleanStatus = api.onMissionMonitorStatus(status => setMissionAutoMonitorStatus(status));
+    return () => {
+      if (typeof cleanEvent === 'function') cleanEvent();
+      if (typeof cleanStatus === 'function') cleanStatus();
+    };
+  }, []);
 
   function toggleSidebar() {
     setSidebarCollapsed(prev => {
@@ -295,7 +315,6 @@ export default function App() {
         </nav>
         <div className="sidebar-footer">
           <span className="version-badge">v1.0</span>
-          <span className="game-version">SC 4.8.2</span>
         </div>
       </aside>
 
@@ -317,6 +336,7 @@ export default function App() {
         {activePage==='wikelo'     && <WikeloTrackerPage />}
         {activePage==='uexapi'     && <UexApiPage />}
         {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
+        {activePage==='uexalerts' && <MarketAlertsPage onNavigate={goToPage} />}
         {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
         {activePage==='backup'     && <BackupPage />}
         {activePage==='data-directory' && <DataDirectoryPage />}

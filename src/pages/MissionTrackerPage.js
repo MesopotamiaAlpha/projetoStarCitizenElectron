@@ -1,12 +1,20 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { getMissionAdminOptions, loadMissionAdmin, MISSION_ADMIN_UPDATED_EVENT } from '../data/missionAdmin';
 import {
-  Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
+  clearMissionAutoMonitorEvents,
+  getMissionAutoMonitorStats,
+  loadMissionAutoMonitor,
+  MISSION_AUTO_MONITOR_UPDATED_EVENT,
+  saveMissionAutoMonitor,
+  setMissionAutoMonitorStatus,
+} from '../data/missionAutoMonitor';
+import {
+  Plus, Trash2, Check, CheckCircle2, Clock, AlertTriangle,
   Search, MapPin, Users, Package, Crosshair, Edit3, X, Save,
   Play, Square, TrendingUp, TrendingDown, DollarSign,
   BarChart3, Calendar, Bug, ChevronDown, ChevronUp,
   Lightbulb, Minus, RefreshCw, Star, ArrowLeft, ArrowRight,
-  Gift, Divide
+  Gift, Divide, Radio, FolderOpen, FileSearch, Tag
 } from 'lucide-react';
 
 // ── Estoque ───────────────────────────────────────────────────────────────────
@@ -76,6 +84,9 @@ function ptMoney(v) {
 }
 function isWalletOut(mission) { return mission?.status === 'Saiu da carteira'; }
 function walletOutAmount(mission) { return isWalletOut(mission) ? Math.abs(Number(mission.reward) || 0) : 0; }
+function hasPendingAutoReward(mission) {
+  return Boolean(mission?.auto) && mission?.auto_reward_status !== 'filled' && !(Number(mission?.reward) > 0);
+}
 function earnedAmount(mission) { return mission?.status === 'Completed' ? Math.max(0, Number(mission.reward) || 0) : 0; }
 function financialDateStr(mission) { return isWalletOut(mission) ? localDateStr(mission.wallet_out_at || mission.created_at) : localDateStr(mission.created_at); }
 function missionBelongsToDate(mission, date) {
@@ -692,6 +703,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary, missionCatalog }
     const normalizedReward = Math.abs(Number(data.reward) || 0);
     if(data.status==='Saiu da carteira' && normalizedReward <= 0){setError('Informe o valor que saiu da carteira.');return;}
     const saved={...data,reward:normalizedReward,id:data.id||Date.now(),
+      auto_reward_status:data.auto ? (normalizedReward > 0 ? 'filled' : 'pending') : data.auto_reward_status,
       wallet_out_at:data.status==='Saiu da carteira'?(data.wallet_out_at||localISOString()):null,
       completed_at:data.status==='Completed'&&!data.completed_at?localISOString():data.completed_at};
     onSave(saved);
@@ -702,7 +714,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary, missionCatalog }
   const LS={fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4};
 
   return (
-    <div style={{background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'18px',marginBottom:14}}>
+    <div className="mission-form-responsive" style={{background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'18px',marginBottom:14}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
         <div style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.06em'}}>{initial?.id?'EDITAR MISSÃO':'NOVA MISSÃO'}</div>
         <button onClick={onCancelar} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px'}}><X size={13}/></button>
@@ -1123,27 +1135,132 @@ function LootPanel({ loot, mission, onUpdate }) {
   );
 }
 
+function autoEventIso(value) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toISOString() : new Date().toISOString();
+}
+
+function inferAutomaticMissionType(event, missionCatalog) {
+  const types = getMissionAdminOptions('types', '', missionCatalog).map(option => option.name);
+  const text = `${event?.debugName || ''} ${event?.generator || ''}`.toLowerCase();
+  const aliases = [
+    ['bounty', 'Bounty Hunt'], ['delivery', 'Delivery'], ['cargo', 'Carga Run'], ['mining', 'Mining'],
+    ['salvage', 'Salvage'], ['escort', 'Escort'], ['investigation', 'Investigation'], ['pvp', 'PVP'],
+    ['assault', 'Base Assault'], ['drug', 'Drug Run'], ['mercenary', 'Mercenary'], ['blockade', 'Blockade Run'],
+  ];
+  const alias = aliases.find(([needle]) => text.includes(needle));
+  if (alias && types.includes(alias[1])) return alias[1];
+  return types.find(type => type.toLowerCase() === 'outro') || types[0] || 'Outro';
+}
+
+function automaticMissionFromEvent(event, missionCatalog) {
+  const title = String(event?.debugName || event?.missionDebugName || 'Missão detectada no Game.log').trim();
+  const startTs = event?.startTs || event?.ts || Date.now();
+  const isComplete = event?.type === 'mission_complete';
+  const status = isComplete ? 'Completed' : event?.type === 'mission_ended' ? (event.completion === 'Abandon' ? 'Abandoned' : 'Failed') : 'Active';
+  return {
+    id: `auto-${event?.guid || event?.eventId || Date.now()}`,
+    title,
+    type: inferAutomaticMissionType(event, missionCatalog),
+    faction: '',
+    system: '',
+    location: '',
+    difficulty: 'Médio',
+    status,
+    reward: 0,
+    reputation_gain: 0,
+    crew_needed: 1,
+    notes: 'Registrada automaticamente a partir do Game.log do Star Citizen.',
+    bug_description: '',
+    created_at: autoEventIso(startTs),
+    completed_at: status === 'Active' ? null : autoEventIso(event?.endTs || event?.ts),
+    wallet_out_at: null,
+    objectives: [],
+    timer_elapsed: Number(event?.durationSec) > 0 ? Number(event.durationSec) * 1000 : 0,
+    auto: true,
+    source: 'game_log',
+    watcher_guid: event?.guid || null,
+    contract_definition_id: event?.contractDefinitionId || null,
+    external_generator: event?.generator || null,
+    auto_started_at: autoEventIso(startTs),
+    auto_ended_at: status === 'Active' ? null : autoEventIso(event?.endTs || event?.ts),
+    duration_sec: Number(event?.durationSec) || 0,
+    auto_blueprints: [],
+    auto_last_reason: event?.reason || '',
+  };
+}
+
+function upsertAutomaticMission(missions, event, missionCatalog) {
+  if (!event || event.type === 'session_reset') return missions;
+  const guid = event.guid || event.missionGuid;
+  const index = guid ? missions.findIndex(mission => mission.auto === true && String(mission.watcher_guid || '') === String(guid)) : -1;
+  if (event.type === 'blueprint_received') {
+    if (index < 0) return missions;
+    const current = missions[index];
+    const blueprintKey = String(event.eventId || `${event.productName}:${event.ts}`);
+    const blueprints = Array.isArray(current.auto_blueprints) ? current.auto_blueprints : [];
+    if (blueprints.some(item => String(item.eventId || '') === blueprintKey)) return missions;
+    const next = { ...current, auto_blueprints: [...blueprints, { ...event, auto: true, eventId: blueprintKey }] };
+    return missions.map((mission, position) => position === index ? next : mission);
+  }
+
+  const base = index >= 0 ? missions[index] : automaticMissionFromEvent(event, missionCatalog);
+  const next = { ...base, auto: true, source: 'game_log', watcher_guid: guid || base.watcher_guid };
+  if (event.debugName) next.title = event.debugName;
+  if (event.generator) next.external_generator = event.generator;
+  if (event.contractDefinitionId) next.contract_definition_id = event.contractDefinitionId;
+  if (event.startTs) {
+    next.auto_started_at = autoEventIso(event.startTs);
+    if (index < 0 || !base.created_at) next.created_at = autoEventIso(event.startTs);
+  }
+  if (event.type === 'mission_start') {
+    if (next.status !== 'Completed' && next.status !== 'Failed' && next.status !== 'Abandoned') next.status = 'Active';
+  }
+  if (event.type === 'mission_complete' || event.type === 'mission_ended') {
+    next.status = event.type === 'mission_complete' ? 'Completed' : event.completion === 'Abandon' ? 'Abandoned' : 'Failed';
+    next.completed_at = autoEventIso(event.endTs || event.ts);
+    next.auto_ended_at = autoEventIso(event.endTs || event.ts);
+    next.duration_sec = Number(event.durationSec) || next.duration_sec || 0;
+    next.timer_elapsed = next.duration_sec * 1000;
+    next.auto_last_reason = event.reason || event.completionLabel || '';
+  }
+  if (index < 0) return [next, ...missions];
+  return missions.map((mission, position) => position === index ? next : mission);
+}
+
 // ── Mission Card ──────────────────────────────────────────────────────────────
-function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate }) {
+function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onRewardQuickSave }) {
   const [expanded,setExpandired]=useState(false);
+  const [quickRewardOpen,setQuickRewardOpen]=useState(false);
+  const [quickReward,setQuickReward]=useState('');
   const [delConf,setDelConf]=useState(false);
   const [localElapsed,setLocalElapsed]=useState(mission.timer_elapsed||0);
   const [running,setRunning]=useState(false);
   const startRef=useRef(null);
   const tickRef=useRef(null);
   const TipoIcon=TYPE_ICONS[mission.type]||Crosshair;
+  const rewardPending = hasPendingAutoReward(mission);
 
   function startClock() { startRef.current=Date.now()-localElapsed; setRunning(true); tickRef.current=setInterval(()=>setLocalElapsed(Date.now()-startRef.current),1000); }
   function stopClock()  { clearInterval(tickRef.current); setRunning(false); onClockUpdate(mission.id,localElapsed); }
+  function saveQuickReward(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const reward = Math.abs(Number(String(quickReward).replace(',', '.')) || 0);
+    if (reward <= 0 || !onRewardQuickSave) return;
+    onRewardQuickSave(mission.id, reward);
+    setQuickRewardOpen(false);
+    setQuickReward('');
+  }
   useEffect(()=>()=>clearInterval(tickRef.current),[]);
 
   const objsDone=(mission.objectives||[]).filter(o=>o.done).length;
   const objsTotal=(mission.objectives||[]).length;
 
   return (
-    <div style={{
-      background:mission.status==='Completed'?'rgba(52,211,153,0.04)':mission.status==='Failed'?'rgba(251,113,133,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':isWalletOut(mission)?'rgba(251,113,133,0.04)':'var(--bg-card)',
-      border:`1px solid ${mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':isWalletOut(mission)?'rgba(251,113,133,0.25)':'var(--border-subtle)'}`,
+    <div className="mission-card-responsive" style={{
+      background:rewardPending?'rgba(251,191,36,0.055)':mission.status==='Completed'?'rgba(52,211,153,0.04)':mission.status==='Failed'?'rgba(251,113,133,0.03)':mission.status==='Bugged'?'rgba(225,112,85,0.04)':isWalletOut(mission)?'rgba(251,113,133,0.04)':'var(--bg-card)',
+      border:`1px solid ${rewardPending?'rgba(251,191,36,0.35)':mission.status==='Completed'?'rgba(52,211,153,0.2)':mission.status==='Bugged'?'rgba(225,112,85,0.25)':isWalletOut(mission)?'rgba(251,113,133,0.25)':'var(--border-subtle)'}`,
       borderRadius:8,overflow:'hidden',marginBottom:6,
     }}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 13px',cursor:'pointer'}} onClick={()=>setExpandired(!expanded)}>
@@ -1156,6 +1273,8 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
             </span>
             <span style={{fontSize:10,color:DIFF_COLORS[mission.difficulty],fontWeight:600}}>{mission.difficulty}</span>
             {mission.loot&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)'}}>🎁 Loot</span>}
+            {mission.auto&&<span className="mission-auto-badge"><Tag size={9}/> AUTO</span>}
+            {rewardPending&&<span className="mission-reward-pending-badge"><DollarSign size={9}/> AUEC PENDENTE</span>}
           </div>
           <div style={{display:'flex',gap:10,fontSize:10,color:'var(--text-muted)',flexWrap:'wrap'}}>
             <span>{mission.type}</span>
@@ -1166,6 +1285,15 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
           </div>
         </div>
         <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3,flexShrink:0}}>
+          {rewardPending&&<>
+            <button className="mission-reward-pending-action" onClick={e=>{e.stopPropagation();setQuickRewardOpen(value=>!value);}} title="Preencher recompensa aUEC"> <DollarSign size={11}/> Preencher aUEC</button>
+            {quickRewardOpen&&<form className="mission-reward-quick-form" onSubmit={saveQuickReward} onClick={e=>e.stopPropagation()}>
+              <input autoFocus type="number" min="0" step="1" value={quickReward} onChange={e=>setQuickReward(e.target.value)} placeholder="Valor" aria-label="Recompensa em aUEC"/>
+              <span>aUEC</span>
+              <button type="submit" title="Salvar recompensa"><Check size={11}/></button>
+              <button type="button" title="Cancelar" onClick={()=>{setQuickRewardOpen(false);setQuickReward('');}}><X size={11}/></button>
+            </form>}
+          </>}
           {Math.abs(Number(mission.reward)||0)>0&&(
             <div style={{textAlign:'right'}}>
               <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:isWalletOut(mission)?'var(--accent-red)':'var(--accent-gold)'}}>{isWalletOut(mission)?'-':''}{ptMoney(Math.abs(Number(mission.reward)||0))} aUEC</div>
@@ -1173,7 +1301,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
             </div>
           )}
           <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-            {mission.status==='Active'&&(
+            {mission.status==='Active'&&!mission.auto&&(
               <button onClick={running?stopClock:startClock} style={{display:'flex',alignItems:'center',gap:3,padding:'3px 7px',borderRadius:4,border:`1px solid ${running?'rgba(251,113,133,0.4)':'rgba(52,211,153,0.3)'}`,background:running?'rgba(251,113,133,0.08)':'rgba(52,211,153,0.08)',color:running?'var(--accent-red)':'var(--accent-green)',cursor:'pointer',fontSize:10,fontWeight:700}}>
                 {running?<><Square size={9}/>STOP</>:<><Play size={9}/>START</>}
               </button>
@@ -1197,6 +1325,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
       </div>
       {expanded&&(
         <div style={{padding:'8px 38px 12px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.1)'}}>
+          {mission.auto&&<div style={{marginBottom:8,padding:'7px 10px',background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.18)',borderRadius:5,fontSize:10,color:'var(--text-secondary)'}}><div style={{display:'flex',gap:10,flexWrap:'wrap'}}><span><strong style={{color:'var(--accent-gold)'}}>AUTO</strong> · origem Game.log</span>{mission.external_generator&&<span>gerador: {mission.external_generator}</span>}{mission.watcher_guid&&<span>GUID: {mission.watcher_guid}</span>}{mission.duration_sec>0&&<span>duração: {fmtDuration(mission.duration_sec*1000)}</span>}{mission.reputation_label&&<span style={{color:'var(--accent-primary)'}}>{mission.reputation_label}</span>}{Number(mission.reward)>0&&<span style={{color:'var(--accent-gold)'}}>{ptMoney(mission.reward)} aUEC</span>}</div>{Number(mission.reward)<=0&&<div style={{marginTop:4,color:'var(--text-muted)'}}>Valor aUEC não informado no Game.log; a recompensa monetária pode ser preenchida manualmente.</div>}{mission.auto_last_reason&&<div style={{marginTop:4,color:'var(--text-muted)'}}>Motivo: {mission.auto_last_reason}</div>}{mission.auto_blueprints?.length>0&&<div style={{marginTop:4,color:'var(--accent-gold)'}}>Blueprints detectados: {mission.auto_blueprints.map(item=>item.productName).filter(Boolean).join(', ')}</div>}</div>}
           {mission.bug_description&&<div style={{marginBottom:8,padding:'6px 10px',background:'rgba(225,112,85,0.08)',border:'1px solid rgba(225,112,85,0.2)',borderRadius:5,fontSize:11,color:'#e17055'}}>🐛 {mission.bug_description}</div>}
           {mission.objectives?.length>0&&(
             <div style={{marginBottom:8}}>
@@ -1683,11 +1812,12 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const [showForm,setShowForm]     = useState(false);
   const [editM,setEditM]           = useState(null);
   const [filterStatus,setFilter]   = useState('all');
+  const [pendingOnly,setPendingOnly] = useState(false);
   const [selected,setSelected]     = useState(new Set());
   const [showReuse,setShowReuse]   = useState(false);
   const today = todayStr();
   const todayMissions = missions.filter(m=>missionBelongsToDate(m,today));
-  const filtered = filterStatus==='all' ? todayMissions : todayMissions.filter(m=>m.status===filterStatus);
+  const filtered = todayMissions.filter(m => (filterStatus==='all' || m.status===filterStatus) && (!pendingOnly || hasPendingAutoReward(m)));
 
   function handleSave(m) { onSave(m); setShowForm(false); setEditM(null); }
 
@@ -1757,7 +1887,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
       )}
 
       {/* Barra de controles */}
-      <div style={{display:'flex',gap:7,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
+      <div className="mission-toolbar-responsive" style={{display:'flex',gap:7,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
         {!showForm&&!editM&&(
           <>
             <button onClick={()=>{setShowForm(true);setEditM(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:7,color:'var(--accent-green)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>
@@ -1774,6 +1904,9 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
           <option value="all">Todos os Status</option>
           {STATUSES.map(s=><option key={s}>{s}</option>)}
         </select>
+        <button className={`mission-pending-filter ${pendingOnly?'active':''}`} onClick={()=>setPendingOnly(value=>!value)} title="Mostrar somente missões AUTO sem recompensa aUEC">
+          <AlertTriangle size={12}/> AUTO sem aUEC{todayMissions.filter(hasPendingAutoReward).length>0&&<span>{todayMissions.filter(hasPendingAutoReward).length}</span>}
+        </button>
         {/* Checkbox selecionar tudo */}
         {filtered.length > 0 && (
           <button onClick={toggleSelectAll} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:someSelected?'rgba(56,189,248,0.08)':'transparent',border:`1px solid ${someSelected?'rgba(56,189,248,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:someSelected?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
@@ -1792,8 +1925,9 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
           <div className="empty-state-title">{todayMissions.length===0?'NENHUMA MISSÃO HOJE':'NENHUM RESULTADO'}</div>
           <div className="empty-state-text">Clique em "Nova Missão" para registrar.</div>
         </div>
-      ):(
-        filtered.map(m=>(
+      ): (
+        <div className="mission-list-responsive">
+        {filtered.map(m=>(
           <div key={m.id} style={{display:'flex',alignItems:'flex-start',gap:8}}>
             {/* Checkbox */}
             <button
@@ -1811,10 +1945,12 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
               <MissionCard mission={m}
                 onEdit={m=>{setEditM(m);setShowForm(false);}}
                 onDelete={onDelete} onStatusChange={handleStatusChange} onClockUpdate={onClockUpdate}
-                onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}/>
+                onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
+                onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}/>
             </div>
           </div>
-        ))
+        ))}
+        </div>
       )}
     </div>
   );
@@ -1823,9 +1959,11 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 // ── TAB 2: History ────────────────────────────────────────────────────────────
 function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary, missionCatalog }) {
   const [editM, setEditM] = useState(null);
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const visibleMissions = useMemo(() => pendingOnly ? missions.filter(hasPendingAutoReward) : missions, [missions, pendingOnly]);
   function handleSaveEdit(m) { onSave(m); setEditM(null); }
 
-  const dates=useMemo(()=>[...new Set(missions.map(financialDateStr).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[missions]);
+  const dates=useMemo(()=>[...new Set(visibleMissions.map(financialDateStr).filter(Boolean))].sort((a,b)=>b.localeCompare(a)),[visibleMissions]);
   const years=useMemo(()=>[...new Set(dates.map(d=>Number(d.slice(0,4))))].sort((a,b)=>b-a),[dates]);
   const [selYear,setSelYear]=useState(()=>years[0]||new Date().getFullYear());
   const [selMonth,setSelMonth]=useState(()=>new Date().getMonth());
@@ -1833,19 +1971,19 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
 
   const monthsWithData=useMemo(()=>[...new Set(dates.filter(d=>Number(d.slice(0,4))===selYear).map(d=>Number(d.slice(5,7))-1))],[dates,selYear]);
   const monthDatas=useMemo(()=>dates.filter(d=>Number(d.slice(0,4))===selYear&&Number(d.slice(5,7))-1===selMonth),[dates,selYear,selMonth]);
-  const selectedDayMissions=useMemo(()=>selDay?missions.filter(m=>missionBelongsToDate(m,selDay)):[],[selDay,missions]);
+  const selectedDayMissions=useMemo(()=>selDay?visibleMissions.filter(m=>missionBelongsToDate(m,selDay)):[],[selDay,visibleMissions]);
   const selectedDayLosses=useMemo(()=>selDay?losses.filter(l=>l.date===selDay):[],[selDay,losses]);
 
   const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
 
   return (
-    <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16,height:'100%'}}>
+    <div className="mission-history-responsive" style={{display:'grid',gridTemplateColumns:'280px minmax(0,1fr)',gap:16,height:'100%'}}>
       {editM && (
         <MissionForm initial={editM} onSave={handleSaveEdit} onCancelar={()=>setEditM(null)} objLibrary={objLibrary} missionCatalog={missionCatalog}/>
       )}
-      <div style={{borderRight:'1px solid var(--border-subtle)',overflowY:'auto',paddingRight:12}}>
-        <div style={{display:'flex',gap:7,marginBottom:12}}>
-          <select style={{...SS,flex:1}} value={selYear} onChange={e=>{setSelYear(Number(e.target.value));setSelDay(null);}}>
+      <div className="mission-history-calendar" style={{borderRight:'1px solid var(--border-subtle)',overflowY:'auto',paddingRight:12}}>
+        <div style={{display:'flex',gap:7,marginBottom:8,flexWrap:'wrap'}}>
+          <select style={{...SS,flex:1,minWidth:0}} value={selYear} onChange={e=>{setSelYear(Number(e.target.value));setSelDay(null);}}>
             {(years.length>0?years:[new Date().getFullYear()]).map(y=><option key={y} value={y}>{y}</option>)}
           </select>
           <select style={{...SS,flex:1}} value={selMonth} onChange={e=>{setSelMonth(Number(e.target.value));setSelDay(null);}}>
@@ -1853,6 +1991,9 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
               <option key={i} value={i} disabled={!monthsWithData.includes(i)} style={{color:monthsWithData.includes(i)?'var(--text-primary)':'var(--text-muted)'}}>{m}</option>
             ))}
           </select>
+          <button className={`mission-pending-filter ${pendingOnly?'active':''}`} onClick={()=>{setPendingOnly(value=>!value);setSelDay(null);}} title="Mostrar somente dias com missões AUTO sem recompensa aUEC">
+            <AlertTriangle size={12}/> AUTO sem aUEC
+          </button>
         </div>
         {monthDatas.length===0?(
           <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',padding:'20px 0'}}>{MONTHS_PT[selMonth]} {selYear} não tem missões.</div>
@@ -1860,7 +2001,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
           <div>
             <div style={{fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{monthDatas.length} dia{monthDatas.length!==1?'s':''} com missões</div>
             {monthDatas.map(date=>{
-              const dayM=missions.filter(m=>missionBelongsToDate(m,date));
+              const dayM=visibleMissions.filter(m=>missionBelongsToDate(m,date));
               const earned=dayM.reduce((a,m)=>a+earnedAmount(m),0);
               const walletOut=dayM.reduce((a,m)=>a+walletOutAmount(m),0);
               const lost=losses.filter(l=>l.date===date).reduce((a,l)=>a+(Number(l.amount)||0),0);
@@ -1891,7 +2032,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
           </div>
         )}
       </div>
-      <div style={{overflowY:'auto'}}>
+      <div className="mission-history-details" style={{overflowY:'auto',minWidth:0}}>
         {!selDay?(
           <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}>
             <Calendar size={40} style={{opacity:0.2,marginBottom:10}}/>
@@ -1940,7 +2081,8 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
                     onDelete={onDelete}
                     onStatusChange={onStatusChange}
                     onClockUpdate={onClockUpdate}
-                    onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}/>
+                    onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
+                    onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'filled'})}/>
                 ))
               )}
             </div>
@@ -2075,6 +2217,105 @@ function StatsTab({ missions, losses }) {
   );
 }
 
+function autoMonitorDate(value) {
+  if (!value) return '—';
+  try { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value)); } catch { return '—'; }
+}
+
+function autoMonitorEventTitle(event) {
+  return event.type === 'blueprint_received' ? (event.productName || 'Blueprint recebido') : (event.debugName || 'Missão detectada no Game.log');
+}
+
+function MissionAutoInlinePanel() {
+  const [monitor, setMonitor] = useState(() => loadMissionAutoMonitor());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [expanded, setExpanded] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const refreshLocal = useCallback(() => setMonitor(loadMissionAutoMonitor()), []);
+  const refreshStatus = useCallback(async () => {
+    const api = window.electronAPI;
+    if (!api?.missionMonitorStatus) return;
+    try {
+      const status = await api.missionMonitorStatus();
+      setMonitor(setMissionAutoMonitorStatus(status));
+    } catch (err) {
+      setError(err.message || 'Não foi possível consultar o monitor automático.');
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+    window.addEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshLocal);
+    return () => window.removeEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshLocal);
+  }, [refreshLocal, refreshStatus]);
+
+  const running = Boolean(monitor.running);
+  const stats = getMissionAutoMonitorStats(monitor);
+  const apiAvailable = Boolean(window.electronAPI?.missionMonitorStart && window.electronAPI?.missionMonitorStop);
+
+  async function chooseLog() {
+    setError('');
+    const api = window.electronAPI;
+    if (!api?.missionMonitorChooseLog) {
+      setError('A seleção do Game.log está disponível na versão Electron do aplicativo.');
+      return;
+    }
+    try {
+      const selected = await api.missionMonitorChooseLog();
+      if (selected) {
+        setMonitor(saveMissionAutoMonitor({ logPath: selected, lastError: '' }));
+        setMessage('Game.log selecionado. O monitor está pronto para ser ligado.');
+      }
+    } catch (err) {
+      setError(err.message || 'Não foi possível selecionar o Game.log.');
+    }
+  }
+
+  async function toggleMonitor() {
+    const api = window.electronAPI;
+    setError('');
+    setMessage('');
+    if (!apiAvailable) {
+      setError('O monitor automático precisa ser executado na versão Electron do aplicativo.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (running) {
+        const status = await api.missionMonitorStop();
+        setMonitor(saveMissionAutoMonitor({ ...status, enabled: false }));
+        setMessage('Monitor automático desligado. As missões já registradas permanecem no Rastreador.');
+      } else {
+        let logPath = monitor.logPath || '';
+        if (!logPath) logPath = await api.missionMonitorChooseLog();
+        if (!logPath) throw new Error('Escolha o arquivo Game.log antes de ligar o monitor.');
+        const status = await api.missionMonitorStart(logPath);
+        setMonitor(saveMissionAutoMonitor({ ...status, enabled: true, logPath }));
+        setMessage('Monitor ligado. Novas missões serão preenchidas automaticamente nesta tela.');
+      }
+    } catch (err) {
+      setMonitor(saveMissionAutoMonitor({ lastError: err.message || 'Não foi possível alterar o monitor.' }));
+      setError(err.message || 'Não foi possível alterar o monitor.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function clearAutoHistory() {
+    if (!window.confirm('Deseja apagar somente o histórico de eventos automáticos? As missões AUTO já registradas no Rastreador serão preservadas.')) return;
+    setMonitor(clearMissionAutoMonitorEvents());
+    setMessage('Histórico de eventos limpo. As missões AUTO continuam preservadas.');
+  }
+
+  return <section className={`mission-auto-inline ${expanded ? 'expanded' : 'collapsed'}`}>
+    <div className="mission-auto-inline-header"><button type="button" className="mission-auto-inline-heading" onClick={() => setExpanded(value => !value)}><span className="mission-auto-inline-icon"><Radio size={16} /></span><span><strong>Monitor automático integrado</strong><small>Preenche o Rastreador com as missões detectadas no Game.log</small></span></button><div className="mission-auto-inline-actions"><span className={`mission-auto-connection ${running ? 'connected' : 'disconnected'}`}><span />{running ? `Ligado · ${monitor.channel || 'UNKNOWN'}` : 'Desligado'}</span><button type="button" className={`mission-auto-power ${running ? 'on' : 'off'}`} onClick={toggleMonitor} disabled={busy}>{busy ? 'Alterando...' : running ? <><Square size={12} /> Desligar</> : <><Play size={12} /> Ligar monitor</>}</button></div></div>
+    {expanded && <div className="mission-auto-inline-body"><div className="mission-auto-inline-boundary"><Tag size={14} /><span>As missões criadas automaticamente recebem a etiqueta <strong>AUTO</strong> e continuam dentro desta lista normal do Rastreador. Missões manuais não são alteradas.</span></div><div className="mission-auto-inline-source"><div className="mission-auto-path"><FileSearch size={14} /><span title={monitor.logPath || ''}>{monitor.logPath || 'Nenhum Game.log selecionado'}</span></div><button type="button" className="mission-auto-secondary-button" onClick={chooseLog} disabled={running}><FolderOpen size={13} /> Escolher Game.log</button><button type="button" className="mission-auto-secondary-button" onClick={refreshStatus}><RefreshCw size={13} /> Atualizar</button></div>{error && <div className="mission-auto-error"><AlertTriangle size={13} />{error}</div>}{message && <div className="mission-auto-success"><CheckCircle2 size={13} />{message}</div>}<div className="mission-auto-inline-stats"><span><strong>{stats.active}</strong> ativas</span><span><strong>{stats.completed}</strong> concluídas</span><span><strong>{stats.ended}</strong> encerradas</span><span><strong>{stats.blueprints}</strong> blueprints</span><span><strong>{stats.totalEvents}</strong> eventos</span></div><div className="mission-auto-inline-footer"><span>{stats.active > 0 ? `${stats.active} missão(ões) acompanhada(s) agora` : 'Nenhuma missão automática em andamento'}</span><div><button type="button" className="mission-auto-text-button" onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Ocultar eventos' : 'Ver eventos'}</button><button type="button" className="mission-auto-text-button danger" onClick={clearAutoHistory} disabled={!stats.totalEvents}>Limpar histórico</button></div></div>{showHistory && <div className="mission-auto-inline-history">{(monitor.events || []).slice(0, 8).map(event => <div key={event.eventId} className="mission-auto-inline-event"><span className="mission-auto-badge"><Tag size={9} /> AUTO</span><div><strong>{autoMonitorEventTitle(event)}</strong><small>{event.type === 'mission_complete' ? 'Missão concluída' : event.type === 'mission_ended' ? (event.completionLabel || 'Missão encerrada') : event.type === 'mission_start' ? 'Missão iniciada' : event.type === 'blueprint_received' ? 'Blueprint recebido' : event.type}</small></div><time>{autoMonitorDate(event.ts)}</time></div>)}{!monitor.events?.length && <div className="mission-auto-inline-no-events">Nenhum evento automático registrado.</div>}</div>}<div className="mission-auto-inline-note">O monitor lê somente o arquivo local do jogo e não altera os arquivos do Star Citizen. Desligar interrompe apenas novas capturas.</div></div>}
+  </section>;
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MissionTrackerPage() {
   const [missions,setMissions]=useState(()=>load(MISSIONS_KEY,[]));
@@ -2089,18 +2330,22 @@ export default function MissionTrackerPage() {
   }, []);
   useEffect(() => {
     const refreshMissionCatalog = () => syncMissionCatalog();
+    const refreshAutomaticMissions = () => setMissions(load(MISSIONS_KEY, []));
     const refreshFromStorage = event => {
       if (!event.key || event.key === 'sc_mission_admin_v1' || event.key === 'sc_mission_catalog_v1') refreshMissionCatalog();
+      if (event.key === MISSIONS_KEY) refreshAutomaticMissions();
     };
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') refreshMissionCatalog();
     };
     window.addEventListener(MISSION_ADMIN_UPDATED_EVENT, refreshMissionCatalog);
+    window.addEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshAutomaticMissions);
     window.addEventListener('storage', refreshFromStorage);
     window.addEventListener('focus', refreshMissionCatalog);
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       window.removeEventListener(MISSION_ADMIN_UPDATED_EVENT, refreshMissionCatalog);
+      window.removeEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshAutomaticMissions);
       window.removeEventListener('storage', refreshFromStorage);
       window.removeEventListener('focus', refreshMissionCatalog);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
@@ -2160,6 +2405,7 @@ export default function MissionTrackerPage() {
   const totalRewards=missions.filter(m=>m.status==='Completed').reduce((a,m)=>a+(m.reward||0),0);
   const activeCount=missions.filter(m=>m.status==='Active').length;
   const buggedCount=missions.filter(m=>m.status==='Bugged').length;
+  const pendingAutoCount=missions.filter(hasPendingAutoReward).length;
 
   const TABS=[
     {id:'today',   label:'Hoje',          icon:Calendar,  badge:todayM.length>0?String(todayM.length):null},
@@ -2186,9 +2432,12 @@ export default function MissionTrackerPage() {
             {missions.length} missões · {activeCount} ativas
             {buggedCount>0&&<span style={{marginLeft:8,color:'#e17055'}}>· 🐛 {buggedCount} bugadas</span>}
             {totalRewards>0&&<span style={{marginLeft:8,color:'var(--accent-gold)'}}>· {ptMoney(totalRewards)} aUEC ganhos</span>}
+            {pendingAutoCount>0&&<span className="mission-pending-header-count"><AlertTriangle size={11}/> {pendingAutoCount} AUTO sem aUEC</span>}
           </div>
         </div>
       </div>
+
+      <MissionAutoInlinePanel />
 
       {/* Tabs */}
       <div style={{padding:'0 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',flexShrink:0}}>

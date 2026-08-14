@@ -255,7 +255,7 @@ export default function UexNotificationBell({ onNavigate }) {
                 <MessageSquare size={14} style={{ color: item.kind === 'market-alert' ? '#fbbf24' : 'var(--accent-primary)', marginTop: 2, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {item.kind === 'market-alert' ? (
-                    <button type="button" onClick={() => { focusMarketAlert(item.key); setOpen(false); onNavigate && onNavigate('uexinsights'); }} style={{ display: 'block', width: '100%', padding: 0, color: 'inherit', background: 'none', border: 0, textAlign: 'left', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => { focusMarketAlert(item.key); setOpen(false); onNavigate && onNavigate('uexalerts'); }} style={{ display: 'block', width: '100%', padding: 0, color: 'inherit', background: 'none', border: 0, textAlign: 'left', cursor: 'pointer' }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>Alerta de compra · {item.itemName}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2 }}>{Number(item.price || 0).toLocaleString('pt-BR')} {item.currency || 'UEC'}{item.quality !== null && item.quality !== undefined ? ` · qualidade ${item.quality}/1000` : ''}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>{item.location || 'Local não informado'}{item.seller ? ` · ${item.seller}` : ''}{item.source ? ` · ${item.source}` : ''}</div>
