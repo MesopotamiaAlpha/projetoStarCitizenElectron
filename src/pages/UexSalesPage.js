@@ -5,20 +5,21 @@ import {
   CheckCircle2, AlertTriangle, Archive, Star, Eye, ChevronDown,
   ChevronUp, Globe, Clock, Minus, Info, ExternalLink
 } from 'lucide-react';
+import {
+  loadUexSales, saveUexSales, loadUexCatalog, saveUexCatalog,
+} from '../data/uexSales';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
-const SALES_KEY    = 'sc_uex_sales_v1';
-const CATALOG_KEY  = 'sc_uex_catalog_v1';
 const TOKEN_KEY    = 'sc_uex_token_v1';
 const USERNAME_KEY = 'sc_uex_username_v1';
 
 function loadToken()    { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function loadUsername() { try { return localStorage.getItem(USERNAME_KEY) || ''; } catch { return ''; } }
 function saveUsername(u){ localStorage.setItem(USERNAME_KEY, u); }
-function loadSales()    { try { return JSON.parse(localStorage.getItem(SALES_KEY)) || []; } catch { return []; } }
-function saveSales(d)   { localStorage.setItem(SALES_KEY, JSON.stringify(d)); }
-function loadCatalog()  { try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || []; } catch { return []; } }
-function saveCatalog(d) { localStorage.setItem(CATALOG_KEY, JSON.stringify(d)); }
+const loadSales = loadUexSales;
+const saveSales = saveUexSales;
+const loadCatalog = loadUexCatalog;
+const saveCatalog = saveUexCatalog;
 
 // ── UEX API ───────────────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
@@ -43,20 +44,68 @@ async function uexFetch(endpoint, token = '') {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function ptMoney(v)  { return Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:0, maximumFractionDigits:0 }); }
 function ptDecimal(v){ return Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
+function toTimestampMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return numeric < 100000000000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function ptDate(ts)  {
-  if (!ts) return '—';
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const ms = toTimestampMs(ts);
+  if (!ms) return '—';
+  return new Date(ms).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
 function ptDateTime(ts) {
-  if (!ts) return '—';
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  const ms = toTimestampMs(ts);
+  if (!ms) return '—';
+  return new Date(ms).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 function daysSince(ts) {
-  if (!ts) return 0;
-  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
+  const ms = toTimestampMs(ts);
+  if (!ms) return 0;
+  return Math.floor((Date.now() - ms) / 86400000);
+}
+
+function listingExpiryState(listing, now = Date.now()) {
+  const expirationMs = toTimestampMs(listing?.date_expiration);
+  if (!expirationMs) return { status:'unknown', days:null, expirationMs:null };
+  const difference = expirationMs - now;
+  if (difference <= 0) return { status:'expired', days:0, expirationMs };
+  const days = Math.ceil(difference / 86400000);
+  return { status: days <= 10 ? 'expiring' : 'active', days, expirationMs };
+}
+
+function normalizedListingValue(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function listingIdentityMatches(previous, fresh) {
+  const previousTitle = normalizedListingValue(previous?.title || previous?.name);
+  const freshTitle = normalizedListingValue(fresh?.title || fresh?.name);
+  if (!previousTitle || !freshTitle || previousTitle !== freshTitle) return false;
+  const previousLocation = normalizedListingValue(previous?.location);
+  const freshLocation = normalizedListingValue(fresh?.location);
+  if (previousLocation && freshLocation && previousLocation !== freshLocation) return false;
+  const previousQuality = normalizedListingValue(previous?.quality);
+  const freshQuality = normalizedListingValue(fresh?.quality);
+  if (previousQuality && freshQuality && previousQuality !== freshQuality) return false;
+  return true;
+}
+
+function sameRenewedListing(previous, fresh) {
+  if (!listingIdentityMatches(previous, fresh)) return false;
+  const previousState = listingExpiryState(previous);
+  const freshState = listingExpiryState(fresh);
+  return previousState.status === 'expired' && freshState.status !== 'expired';
 }
 
 // Detectar qualidade no título: "Caranite 716 Q" → 716
@@ -127,7 +176,7 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
   const [source,   setSource]   = useState(listing.source || 'looted');
   const [notes,    setNotes]    = useState('');
 
-  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' };
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
@@ -142,10 +191,10 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:16 }}>
-      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:560, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:560, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
           <CheckCircle2 size={16} style={{ color:'var(--accent-primary)' }}/>
-          <span style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.06em' }}>CONFIRMAR LISTAGEM</span>
+          <span style={{ fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, color:'var(--accent-primary)', letterSpacing:'0.06em' }}>CONFIRMAR LISTAGEM</span>
         </div>
         <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16, paddingLeft:26 }}>
           Revise e edite os dados antes de adicionar ao seu histórico.
@@ -194,10 +243,10 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
         </div>
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             Pular
           </button>
-          <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <CheckCircle2 size={12}/> Confirmar e Adicionar
           </button>
         </div>
@@ -218,7 +267,7 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const [notes,      setNotes]     = useState('');
   const [error,      setError]     = useState('');
 
-  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:13, outline:'none' };
+  const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
@@ -240,9 +289,9 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:16 }}>
-      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:12, padding:22, width:'100%', maxWidth:500, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:12, fontWeight:700, color:'var(--accent-green)', letterSpacing:'0.06em', display:'flex', alignItems:'center', gap:7 }}>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, color:'var(--accent-green)', letterSpacing:'0.06em', display:'flex', alignItems:'center', gap:7 }}>
             <Plus size={14}/> REGISTRAR VENDA / OCORRÊNCIA MANUAL
           </div>
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)' }}><X size={14}/></button>
@@ -292,17 +341,17 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
         </div>
 
         {total > 0 && type === 'sold' && (
-          <div style={{ marginBottom:12, padding:'8px 12px', background:'rgba(0,229,160,0.06)', border:'1px solid rgba(0,229,160,0.2)', borderRadius:6, display:'flex', gap:16, alignItems:'center' }}>
+          <div style={{ marginBottom:12, padding:'8px 12px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6, display:'flex', gap:16, alignItems:'center' }}>
             <span style={{ fontSize:11, color:'var(--text-muted)' }}>Total:</span>
-            <span style={{ fontFamily:'Orbitron,monospace', fontSize:16, fontWeight:800, color:'var(--accent-green)' }}>{ptMoney(total)} aUEC</span>
+            <span style={{ fontFamily:'Michroma,sans-serif', fontSize:16, fontWeight:800, color:'var(--accent-green)' }}>{ptMoney(total)} aUEC</span>
           </div>
         )}
 
         {error && <div style={{ color:'var(--accent-red)', fontSize:12, marginBottom:9 }}><AlertTriangle size={12} style={{ display:'inline', marginRight:4 }}/>{error}</div>}
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onClose} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
-          <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onClose} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
+          <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:6, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <Save size={12}/> Registrar
           </button>
         </div>
@@ -314,8 +363,9 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 // ── Card de item do catálogo com dados de mercado ─────────────────────────────
 function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
   const [expanded, setExpanded]   = useState(false);
-  const [editStock, setEditStock] = useState(false);
-  const [stockVal, setStockVal]   = useState(String(item.internal_stock || 0));
+  const [editStock, setEditStock]     = useState(false);
+  const [stockVal, setStockVal]       = useState(String(item.in_stock || 0));
+  const [internalVal, setInternalVal] = useState(String(item.internal_stock || 0));
   const [delConf, setDelConf]     = useState(false);
 
   const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
@@ -334,13 +384,17 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
     priceVariation = ((trend.price_avg_sell - trend.price_avg_month_sell) / trend.price_avg_month_sell) * 100;
   }
 
-  const expiresIn = item.date_expiration ? Math.max(0, Math.floor((item.date_expiration * 1000 - Date.now()) / 86400000)) : null;
-  const isExpiringSoon = expiresIn !== null && expiresIn <= 2;
+  const expiry = listingExpiryState(item);
+  const expiresIn = expiry.days;
+  const isExpired = expiry.status === 'expired';
+  const isExpiringSoon = expiry.status === 'expiring';
+  const expiryBorder = isExpired ? 'rgba(251,113,133,0.5)' : isExpiringSoon ? 'rgba(251,191,36,0.55)' : 'var(--border-subtle)';
+  const expiryBackground = isExpired ? 'rgba(251,113,133,0.045)' : isExpiringSoon ? 'rgba(251,191,36,0.045)' : 'var(--bg-card)';
 
   return (
     <div style={{
-      background:'var(--bg-card)',
-      border:`1px solid ${isExpiringSoon ? 'rgba(255,68,102,0.4)' : 'var(--border-subtle)'}`,
+      background:expiryBackground,
+      border:`1px solid ${expiryBorder}`,
       borderRadius:8, overflow:'hidden', marginBottom:6,
     }}>
       {/* Header row */}
@@ -348,12 +402,13 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
         <Package size={14} style={{ color:'var(--accent-primary)', flexShrink:0 }}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:2 }}>
-            <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
+            <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
             {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
             {suggestedQ && !item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.06)', color:'rgba(255,200,0,0.7)', border:'1px solid rgba(255,200,0,0.2)', fontStyle:'italic' }}>Q sugerida: {suggestedQ}</span>}
-            {item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,68,102,0.1)', color:'var(--accent-red)', border:'1px solid rgba(255,68,102,0.3)', fontWeight:700 }}>ESGOTADO</span>
-              : <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(0,229,160,0.1)', color:'var(--accent-green)', border:'1px solid rgba(0,229,160,0.3)', fontWeight:700 }}>ATIVO</span>}
-            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,68,102,0.15)', color:'var(--accent-red)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
+            {isExpired ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.35)', fontWeight:700 }}>⚠ ANÚNCIO EXPIRADO</span>
+              : item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
+              : <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', border:'1px solid rgba(52,211,153,0.3)', fontWeight:700 }}>ATIVO</span>}
+            {isExpiringSoon && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,191,36,0.16)', color:'var(--accent-gold)', border:'1px solid rgba(251,191,36,0.4)', fontWeight:700 }}>⚠ Expira em {expiresIn}d</span>}
           </div>
           <div style={{ display:'flex', gap:10, fontSize:10, color:'var(--text-muted)', flexWrap:'wrap' }}>
             {item.location && <span>📍 {item.location}</span>}
@@ -365,7 +420,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
 
         {/* Preço + estoque */}
         <div style={{ textAlign:'right', flexShrink:0, marginRight:6 }}>
-          <div style={{ fontFamily:'Orbitron,monospace', fontSize:15, fontWeight:800, color:'var(--accent-gold)' }}>{ptMoney(item.price)} <span style={{ fontSize:10, color:'var(--text-muted)' }}>aUEC</span></div>
+          <div style={{ fontFamily:'Michroma,sans-serif', fontSize:15, fontWeight:800, color:'var(--accent-gold)' }}>{ptMoney(item.price)} <span style={{ fontSize:10, color:'var(--text-muted)' }}>aUEC</span></div>
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end', fontSize:10, color:'var(--text-muted)', marginTop:2 }}>
             <span>Listado: {qtyListed}</span>
             <span style={{ color:'var(--accent-primary)' }}>Estoque: {item.internal_stock || 0}</span>
@@ -376,11 +431,11 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
         <div style={{ display:'flex', gap:4, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
           {delConf ? (
             <>
-              <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+              <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
               <button onClick={() => setDelConf(false)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
             </>
           ) : (
-            <button onClick={() => setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <button onClick={() => setDelConf(true)} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Trash2 size={10}/>
             </button>
           )}
@@ -403,7 +458,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
                   ['Preço anterior', item.price_old ? `${ptMoney(item.price_old)} aUEC` : '—'],
                   ['Qualidade', item.quality || (suggestedQ ? `${suggestedQ} (sugerida do título)` : '—')],
                   ['Durabilidade', item.durability ? `${item.durability}%` : '—'],
-                  ['Expira em', expiresIn !== null ? `${expiresIn} dia${expiresIn!==1?'s':''}` : '—'],
+                  ['Expiração', isExpired ? 'Expirado' : expiresIn !== null ? `${expiresIn} dia${expiresIn!==1?'s':''}` : '—'],
                   ['Adicionado', ptDate(item.date_added)],
                 ].map(([k,v]) => (
                   <div key={k} style={{ display:'flex', justifyContent:'space-between', fontSize:11, padding:'2px 0', borderBottom:'1px solid var(--border-subtle)' }}>
@@ -414,24 +469,24 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
               </div>
 
               {/* Controle de estoque interno */}
-              <div style={{ marginTop:10, padding:'10px 12px', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:7 }}>
+              <div style={{ marginTop:10, padding:'10px 12px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:7 }}>
                 <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:7 }}>📦 Estoque Interno</div>
                 {editStock ? (
                   <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                     <input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)}
-                      style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/>
+                      style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/>
                     <button onClick={()=>{onEditStock(item.id, parseInt(stockVal)||0); setEditStock(false);}}
-                      style={{ padding:'5px 10px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif' }}>
+                      style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>
                       <Save size={10}/> Salvar
                     </button>
                     <button onClick={()=>setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button>
                   </div>
                 ) : (
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontFamily:'Orbitron,monospace', fontSize:20, fontWeight:800, color:'var(--accent-primary)' }}>{item.internal_stock || 0}</span>
+                    <span style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-primary)' }}>{item.internal_stock || 0}</span>
                     <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidades no inventário</span>
                     <button onClick={()=>{setStockVal(String(item.internal_stock||0)); setEditStock(true);}}
-                      style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, padding:'4px 9px', background:'rgba(0,212,255,0.08)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase' }}>
+                      style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4, padding:'4px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>
                       <Edit3 size={9}/> Editar
                     </button>
                   </div>
@@ -464,7 +519,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
 
                   {/* Variação de preço */}
                   {priceVariation !== null && (
-                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background: priceVariation >= 0 ? 'rgba(0,229,160,0.06)' : 'rgba(255,68,102,0.06)', border:`1px solid ${priceVariation>=0?'rgba(0,229,160,0.2)':'rgba(255,68,102,0.2)'}`, borderRadius:6, marginBottom:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background: priceVariation >= 0 ? 'rgba(52,211,153,0.06)' : 'rgba(251,113,133,0.06)', border:`1px solid ${priceVariation>=0?'rgba(52,211,153,0.2)':'rgba(251,113,133,0.2)'}`, borderRadius:6, marginBottom:8 }}>
                       {priceVariation >= 0 ? <TrendingUp size={12} style={{ color:'var(--accent-green)' }}/> : <TrendingDown size={12} style={{ color:'var(--accent-red)' }}/>}
                       <span style={{ fontSize:11, color: priceVariation >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight:700 }}>
                         {priceVariation >= 0 ? '+' : ''}{ptDecimal(priceVariation)}% vs média 30 dias
@@ -476,7 +531,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData }) {
                   {trend.price_avg_sell > 0 && (
                     <div style={{ padding:'8px 10px', background:'rgba(255,200,0,0.06)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6 }}>
                       <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-gold)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:3 }}>💡 Preço Recomendado</div>
-                      <div style={{ fontFamily:'Orbitron,monospace', fontSize:14, fontWeight:800, color:'var(--accent-gold)' }}>
+                      <div style={{ fontFamily:'Michroma,sans-serif', fontSize:14, fontWeight:800, color:'var(--accent-gold)' }}>
                         {ptMoney(Math.round(trend.price_avg_sell * 0.95))} aUEC
                       </div>
                       <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:2 }}>
@@ -533,12 +588,10 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       const q = search.toLowerCase();
       list = list.filter(i => i.title?.toLowerCase().includes(q) || i.location?.toLowerCase().includes(q));
     }
-    if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out);
-    if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out);
-    if (filterStatus === 'expiring') list = list.filter(i => {
-      if (!i.date_expiration) return false;
-      return Math.floor((i.date_expiration * 1000 - Date.now()) / 86400000) <= 2;
-    });
+    if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out && (i.in_stock === undefined || i.in_stock > 0));
+    if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out || (i.in_stock !== undefined && i.in_stock <= 0));
+    if (filterStatus === 'expired')  list = list.filter(i => listingExpiryState(i).status === 'expired');
+    if (filterStatus === 'expiring') list = list.filter(i => listingExpiryState(i).status === 'expiring');
     if (sortBy === 'price_asc')  list = [...list].sort((a,b) => (a.price||0) - (b.price||0));
     if (sortBy === 'price_desc') list = [...list].sort((a,b) => (b.price||0) - (a.price||0));
     if (sortBy === 'date')       list = [...list].sort((a,b) => (b.date_added||0) - (a.date_added||0));
@@ -547,7 +600,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
     return list;
   }, [catalog, search, filterStatus, sortBy]);
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   return (
     <div>
@@ -555,12 +608,12 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
         {[
           { label:'Total de Itens', value:catalog.length, color:'var(--accent-primary)', sub:'no catálogo' },
-          { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out).length, color:'var(--accent-green)', sub:'listados ativamente' },
-          { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out).length, color:'var(--accent-red)', sub:'sem estoque' },
+          { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out && (i.in_stock===undefined||i.in_stock>0)).length, color:'var(--accent-green)', sub:'listados ativamente' },
+          { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out||(i.in_stock!==undefined&&i.in_stock<=0)).length, color:'var(--accent-red)', sub:'sem estoque' },
           { label:'Estoque Total', value:catalog.reduce((a,i)=>a+(i.internal_stock||0),0), color:'var(--accent-gold)', sub:'no inventário' },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:18, fontWeight:800, color }}>{value}</div>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:18, fontWeight:800, color }}>{value}</div>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
             <div style={{ fontSize:10, color:'var(--text-muted)', fontStyle:'italic' }}>{sub}</div>
           </div>
@@ -571,14 +624,15 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ position:'relative', flex:1, minWidth:160 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Buscar item ou local..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select style={SS} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
           <option value="all">Todos</option>
           <option value="active">Ativos</option>
           <option value="soldout">Esgotados</option>
-          <option value="expiring">Expirando em breve</option>
+          <option value="expired">Anúncios expirados</option>
+          <option value="expiring">Expira em até 10 dias</option>
         </select>
         <select style={SS} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
           <option value="date">Mais recente</option>
@@ -587,7 +641,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
           <option value="price_asc">Menor preço</option>
           <option value="stock">Maior estoque</option>
         </select>
-        <button onClick={onAddEsgotado} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+        <button onClick={onAddEsgotado} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.25)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', whiteSpace:'nowrap' }}>
           <Plus size={11}/> Esgotado Manual
         </button>
         <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} item{filtered.length!==1?'s':''}</span>
@@ -596,7 +650,7 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
       {filtered.length === 0 ? (
         <div style={{ textAlign:'center', padding:'50px 0', color:'var(--text-muted)' }}>
           <ShoppingBag size={40} style={{ display:'block', margin:'0 auto 12px', opacity:0.15 }}/>
-          <div style={{ fontSize:13, fontFamily:'Orbitron,monospace', fontWeight:700 }}>
+          <div style={{ fontSize:13, fontFamily:'Michroma,sans-serif', fontWeight:700 }}>
             {catalog.length === 0 ? 'NENHUM ITEM' : 'NENHUM RESULTADO'}
           </div>
           <div style={{ fontSize:12, marginTop:6 }}>
@@ -619,11 +673,173 @@ function MyItemsTab({ catalog, sales, trendData, onEditStock, onDeleteItem, onAd
   );
 }
 
+// ── Modal de detalhes e edição de venda ────────────────────────────────────────
+function SaleDetailsModal({ sale, onClose, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(sale.title || '');
+  const [type, setType] = useState(sale.type || 'sold');
+  const [date, setDate] = useState(() => {
+    const ms = toTimestampMs(sale.date);
+    if (!ms) return '';
+    const value = new Date(ms);
+    const pad = number => String(number).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  });
+  const [price, setPrice] = useState(String(sale.price ?? ''));
+  const [qty, setQty] = useState(String(sale.qty ?? 1));
+  const [quality, setQuality] = useState(sale.quality || '');
+  const [buyer, setBuyer] = useState(sale.buyer || '');
+  const [location, setLocation] = useState(sale.location || '');
+  const [currency, setCurrency] = useState(sale.currency || 'aUEC');
+  const [notes, setNotes] = useState(sale.notes || '');
+  const [error, setError] = useState('');
+
+  const IS = { width:'100%', boxSizing:'border-box', padding:'8px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:13, outline:'none' };
+  const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 8px center', paddingRight:28 };
+  const LS = { display:'block', marginBottom:4, fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.07em' };
+  const typeLabel = type === 'sold' ? 'Venda concretizada' : type === 'failed' ? 'Venda não concretizada' : 'Listagem expirada';
+  const typeColor = type === 'sold' ? 'var(--accent-green)' : type === 'failed' ? 'var(--accent-red)' : 'var(--text-muted)';
+  const typeIcon = type === 'sold' ? '✅' : type === 'failed' ? '❌' : '⏰';
+  const numericPrice = Number(String(price).replace(',', '.')) || 0;
+  const numericQty = Math.max(1, parseInt(qty, 10) || 1);
+  const calculatedTotal = type === 'sold' ? Math.round(numericPrice * numericQty) : 0;
+
+  function cancelEditing() {
+    setTitle(sale.title || '');
+    setType(sale.type || 'sold');
+    setPrice(String(sale.price ?? ''));
+    setQty(String(sale.qty ?? 1));
+    setQuality(sale.quality || '');
+    setBuyer(sale.buyer || '');
+    setLocation(sale.location || '');
+    setCurrency(sale.currency || 'aUEC');
+    setNotes(sale.notes || '');
+    setError('');
+    setEditing(false);
+  }
+
+  function handleSave() {
+    if (!title.trim()) { setError('Informe o nome do item.'); return; }
+    if (numericPrice <= 0) { setError('O preço unitário deve ser maior que zero.'); return; }
+    const timestamp = date ? new Date(`${date}T12:00:00`).getTime() / 1000 : sale.date;
+    const updated = {
+      ...sale,
+      title: title.trim(),
+      type,
+      date: Number.isFinite(timestamp) ? timestamp : sale.date,
+      price: Math.round(numericPrice),
+      qty: numericQty,
+      total_revenue: calculatedTotal,
+      quality: quality.trim(),
+      buyer: buyer.trim(),
+      location: location.trim(),
+      currency: currency.trim() || 'aUEC',
+      notes: notes.trim(),
+      edited_at: new Date().toISOString(),
+    };
+    onSave(updated);
+    setEditing(false);
+    setError('');
+  }
+
+  const detailRows = [
+    ['Item', sale.title || '—'],
+    ['Status', `${typeIcon} ${typeLabel}`],
+    ['Data do registro', ptDateTime(sale.date)],
+    ['Preço unitário', `${ptMoney(sale.price)} ${sale.currency || 'aUEC'}`],
+    ['Quantidade', `${sale.qty || 1}`],
+    ['Receita total', `${ptMoney(sale.total_revenue || 0)} ${sale.currency || 'aUEC'}`],
+    ['Qualidade', sale.quality || 'Não informada'],
+    ['Comprador / IGN', sale.buyer || 'Não informado'],
+    ['Localização', sale.location || 'Não informada'],
+    ['Origem', sale.is_manual ? 'Registro manual' : sale.source === 'uex_negotiation' ? 'Negociação UEX' : sale.source || 'Não informada'],
+  ];
+  const technicalRows = [
+    ['ID do histórico', sale.id],
+    ['Hash da negociação', sale.source_negotiation_hash],
+    ['ID do anúncio', sale.source_listing_id],
+    ['Slug do anúncio', sale.source_listing_slug],
+    ['Título original do anúncio', sale.listing_title],
+    ['Papel na negociação', sale.negotiation_role],
+    ['Data de encerramento UEX', sale.date_closed ? ptDateTime(sale.date_closed) : null],
+    ['Criado em', sale.created_at ? ptDateTime(sale.created_at) : null],
+    ['Editado em', sale.edited_at ? ptDateTime(sale.edited_at) : null],
+  ].filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1200, padding:16, background:'rgba(0,0,0,0.78)', display:'flex', alignItems:'center', justifyContent:'center' }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div style={{ width:'min(760px, 100%)', maxHeight:'92vh', overflowY:'auto', background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:12, boxShadow:'0 24px 80px rgba(0,0,0,0.72)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'14px 18px', borderBottom:'1px solid var(--border-subtle)', background:'rgba(56,189,248,0.07)' }}>
+          <div style={{ minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.05em' }}><Eye size={15}/> DETALHES DA VENDA</div>
+            <div style={{ marginTop:5, color:'var(--text-muted)', fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sale.title || 'Registro sem título'}</div>
+          </div>
+          <button onClick={onClose} title="Fechar detalhes" aria-label="Fechar detalhes" style={{ width:28, height:28, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-muted)', cursor:'pointer' }}><X size={14}/></button>
+        </div>
+
+        <div style={{ padding:18 }}>
+          {!editing ? (
+            <>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14, padding:'9px 11px', background:type === 'sold' ? 'rgba(52,211,153,0.07)' : 'rgba(251,113,133,0.06)', border:`1px solid ${type === 'sold' ? 'rgba(52,211,153,0.24)' : 'rgba(251,113,133,0.2)'}`, borderRadius:7 }}>
+                <span style={{ fontSize:17 }}>{typeIcon}</span>
+                <div><div style={{ color:typeColor, fontSize:12, fontWeight:700 }}>{typeLabel}</div><div style={{ color:'var(--text-muted)', fontSize:10, marginTop:2 }}>Clique em editar para corrigir ou complementar os dados deste histórico.</div></div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:7 }}>
+                {detailRows.map(([label, value]) => (
+                  <div key={label} style={{ padding:'8px 10px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:6 }}>
+                    <div style={{ color:'var(--text-muted)', fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
+                    <div style={{ marginTop:4, color:label === 'Receita total' ? 'var(--accent-green)' : 'var(--text-primary)', fontFamily:label === 'Preço unitário' || label === 'Receita total' ? 'Share Tech Mono,monospace' : '"Exo 2",sans-serif', fontSize:12, fontWeight:label === 'Receita total' ? 800 : 600, wordBreak:'break-word' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {sale.notes && <div style={{ marginTop:12, padding:'10px 12px', background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontSize:12, lineHeight:1.5, whiteSpace:'pre-wrap' }}><strong style={{ color:'var(--text-muted)', fontSize:10, textTransform:'uppercase', letterSpacing:'0.06em' }}>Notas</strong><div style={{ marginTop:5 }}>{sale.notes}</div></div>}
+              {technicalRows.length > 0 && (
+                <details style={{ marginTop:12 }}>
+                  <summary style={{ cursor:'pointer', color:'var(--accent-primary)', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em' }}>Metadados técnicos da origem UEX</summary>
+                  <div style={{ marginTop:7, display:'flex', flexDirection:'column', gap:4 }}>
+                    {technicalRows.map(([label, value]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:14, padding:'5px 0', borderBottom:'1px solid var(--border-subtle)', fontSize:10 }}><span style={{ color:'var(--text-muted)' }}>{label}</span><span style={{ color:'var(--text-secondary)', fontFamily:'Share Tech Mono,monospace', textAlign:'right', wordBreak:'break-all' }}>{value}</span></div>)}
+                  </div>
+                </details>
+              )}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+                <button onClick={onClose} style={{ padding:'8px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}>Fechar</button>
+                <button onClick={()=>setEditing(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 14px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}><Edit3 size={12}/> Editar histórico</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))', gap:10 }}>
+                <div style={{ gridColumn:'1 / -1' }}><label style={LS}>Nome do item</label><input style={IS} value={title} onChange={event=>setTitle(event.target.value)} /></div>
+                <div><label style={LS}>Tipo do registro</label><select style={SS} value={type} onChange={event=>setType(event.target.value)}><option value="sold">✅ Venda concretizada</option><option value="failed">❌ Venda não concretizada</option><option value="expired">⏰ Listagem expirada</option></select></div>
+                <div><label style={LS}>Data</label><input style={IS} type="date" value={date} onChange={event=>setDate(event.target.value)} /></div>
+                <div><label style={LS}>Preço unitário</label><input style={{ ...IS, fontFamily:'Share Tech Mono,monospace' }} type="number" min="0" value={price} onChange={event=>setPrice(event.target.value)} /></div>
+                <div><label style={LS}>Quantidade</label><input style={IS} type="number" min="1" step="1" value={qty} onChange={event=>setQty(event.target.value)} /></div>
+                <div><label style={LS}>Moeda</label><input style={IS} value={currency} onChange={event=>setCurrency(event.target.value)} /></div>
+                <div><label style={LS}>Qualidade</label><input style={IS} placeholder="ex.: 716, Grade A..." value={quality} onChange={event=>setQuality(event.target.value)} /></div>
+                <div><label style={LS}>Comprador / IGN</label><input style={IS} value={buyer} onChange={event=>setBuyer(event.target.value)} /></div>
+                <div><label style={LS}>Localização</label><input style={IS} value={location} onChange={event=>setLocation(event.target.value)} /></div>
+                <div style={{ gridColumn:'1 / -1' }}><label style={LS}>Notas</label><textarea style={{ ...IS, minHeight:74, resize:'vertical' }} value={notes} onChange={event=>setNotes(event.target.value)} /></div>
+              </div>
+              <div style={{ marginTop:12, padding:'9px 11px', background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}><span style={{ color:'var(--text-muted)', fontSize:11 }}>Receita recalculada</span><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:14 }}>{ptMoney(calculatedTotal)} {currency || 'aUEC'}</strong></div>
+              {error && <div style={{ marginTop:10, color:'var(--accent-red)', fontSize:11 }}><AlertTriangle size={12} style={{ verticalAlign:'-2px', marginRight:4 }}/>{error}</div>}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+                <button onClick={cancelEditing} style={{ padding:'8px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}>Cancelar</button>
+                <button onClick={handleSave} style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 14px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:6, color:'var(--accent-green)', cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700 }}><Save size={12}/> Salvar alterações</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Tab: Vendas / Ocorrências ─────────────────────────────────────────────────
-function SalesTab({ sales, onDelete }) {
+function SalesTab({ sales, onDelete, onUpdate }) {
   const [filterType, setFilterType] = useState('all');
   const [search, setSearch] = useState('');
   const [delConf, setDelConf] = useState(null);
+  const [selectedSale, setSelectedSale] = useState(null);
 
   const filtered = useMemo(() => {
     let list = [...sales].sort((a,b) => (b.date||0) - (a.date||0));
@@ -640,7 +856,7 @@ function SalesTab({ sales, onDelete }) {
   const totalFailed  = sales.filter(s=>s.type==='failed').length;
   const totalExpired = sales.filter(s=>s.type==='expired').length;
 
-  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
+  const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   // Dados para gráfico: receita por dia (últimos 14 dias)
   const chartData = useMemo(() => {
@@ -667,7 +883,7 @@ function SalesTab({ sales, onDelete }) {
           { label:'Expiradas', value:totalExpired, color:'var(--text-muted)' },
         ].map(({label,value,color}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
-            <div style={{ fontFamily:'Orbitron,monospace', fontSize:16, fontWeight:800, color }}>{value}</div>
+            <div style={{ fontFamily:'Michroma,sans-serif', fontSize:16, fontWeight:800, color }}>{value}</div>
             <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</div>
           </div>
         ))}
@@ -687,7 +903,7 @@ function SalesTab({ sales, onDelete }) {
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ position:'relative', flex:1, minWidth:140 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select style={SS} value={filterType} onChange={e=>setFilterType(e.target.value)}>
@@ -707,7 +923,7 @@ function SalesTab({ sales, onDelete }) {
             const typeIcon   = s.type==='sold'?'✅':s.type==='failed'?'❌':'⏰';
             const typeColor  = s.type==='sold'?'var(--accent-green)':s.type==='failed'?'var(--accent-red)':'var(--text-muted)';
             return (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
+              <div key={s.id} role="button" tabIndex={0} onClick={()=>setSelectedSale(s)} onKeyDown={event=>{ if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedSale(s); } }} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:7, cursor:'pointer', transition:'border-color 0.16s, background 0.16s' }} onMouseEnter={event=>{event.currentTarget.style.borderColor='rgba(56,189,248,0.38)'; event.currentTarget.style.background='rgba(56,189,248,0.045)';}} onMouseLeave={event=>{event.currentTarget.style.borderColor='var(--border-subtle)'; event.currentTarget.style.background='var(--bg-card)';}}>
                 <span style={{ fontSize:14 }}>{typeIcon}</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</div>
@@ -724,13 +940,14 @@ function SalesTab({ sales, onDelete }) {
                     {s.qty > 1 && <div style={{ fontSize:10, color:'var(--text-muted)' }}>{s.qty}× {ptMoney(s.price)}</div>}
                   </div>
                 )}
+                <button onClick={event=>{event.stopPropagation(); setSelectedSale(s);}} title="Ver detalhes da venda" aria-label={`Ver detalhes de ${s.title || 'venda'}`} style={{ width:28, height:28, borderRadius:5, border:'1px solid rgba(56,189,248,0.24)', background:'rgba(56,189,248,0.07)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Eye size={12}/></button>
                 {delConf===s.id ? (
                   <div style={{ display:'flex', gap:4 }}>
-                    <button onClick={()=>{onDelete(s.id);setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(255,68,102,0.15)', border:'1px solid rgba(255,68,102,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
-                    <button onClick={()=>setDelConf(null)} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
+                    <button onClick={event=>{event.stopPropagation(); onDelete(s.id); setDelConf(null);}} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
+                    <button onClick={event=>{event.stopPropagation(); setDelConf(null);}} style={{ padding:'3px 7px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:3, color:'var(--text-secondary)', cursor:'pointer', fontSize:10 }}>Não</button>
                   </div>
                 ) : (
-                  <button onClick={()=>setDelConf(s.id)} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(255,68,102,0.2)', background:'rgba(255,68,102,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <button onClick={event=>{event.stopPropagation(); setDelConf(s.id);}} title="Excluir registro" aria-label={`Excluir ${s.title || 'venda'}`} style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.2)', background:'rgba(251,113,133,0.08)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <Trash2 size={10}/>
                   </button>
                 )}
@@ -739,6 +956,8 @@ function SalesTab({ sales, onDelete }) {
           })}
         </div>
       )}
+
+      {selectedSale && <SaleDetailsModal sale={selectedSale} onClose={()=>setSelectedSale(null)} onSave={updated=>{ onUpdate(updated); setSelectedSale(updated); }} />}
     </div>
   );
 }
@@ -765,10 +984,10 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
       <div style={{ display:'flex', gap:8, marginBottom:12, alignItems:'center' }}>
         <div style={{ position:'relative', flex:1 }}>
           <Search size={11} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
+          <input style={{ width:'100%', padding:'6px 10px 6px 26px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', boxSizing:'border-box' }}
             placeholder="Filtrar por item..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
-        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', background:'rgba(0,212,255,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'Rajdhani,sans-serif', textTransform:'uppercase', opacity:loading?0.5:1 }}>
+        <button onClick={onRefresh} disabled={loading} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', background:'rgba(56,189,248,0.06)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', opacity:loading?0.5:1 }}>
           <RefreshCw size={11} style={{ animation:loading?'spin 1s linear infinite':'none' }}/> Atualizar
         </button>
         <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} com dados</span>
@@ -795,7 +1014,7 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
                 <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4, flexWrap:'wrap' }}>
-                      <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
+                      <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
                       {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
                       {variation !== null && (
                         <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color: variation>=0?'var(--accent-green)':'var(--accent-red)', fontWeight:700 }}>
@@ -821,7 +1040,7 @@ function TrendsTab({ catalog, trendData, loading, onRefresh }) {
                   </div>
                   <div style={{ textAlign:'right', flexShrink:0 }}>
                     <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:3 }}>Seu preço:</div>
-                    <div style={{ fontFamily:'Orbitron,monospace', fontSize:14, fontWeight:800, color:'var(--accent-primary)' }}>{ptMoney(item.price)}</div>
+                    <div style={{ fontFamily:'Michroma,sans-serif', fontSize:14, fontWeight:800, color:'var(--accent-primary)' }}>{ptMoney(item.price)}</div>
                     {priceDiff !== null && (
                       <div style={{ fontSize:10, marginTop:2, color: priceDiff > 0 ? 'var(--accent-red)' : priceDiff < 0 ? 'var(--accent-green)' : 'var(--text-muted)' }}>
                         {priceDiff > 0 ? `Abaixo do recomendado por ${ptMoney(priceDiff)}` : priceDiff < 0 ? `Acima do recomendado por ${ptMoney(-priceDiff)}` : 'No preço ideal'}
@@ -860,9 +1079,24 @@ export default function UexSalesPage() {
 
   // Sincronizar refs com state
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+  useEffect(() => {
+    const refreshFromNegotiation = () => {
+      const nextCatalog = loadCatalog();
+      const nextSales = loadSales();
+      catalogRef.current = nextCatalog;
+      setCatalog(nextCatalog);
+      setSales(nextSales);
+    };
+    window.addEventListener('sc_uex_sales_updated', refreshFromNegotiation);
+    return () => window.removeEventListener('sc_uex_sales_updated', refreshFromNegotiation);
+  }, []);
 
   function refreshCatalog(d) { catalogRef.current = d; setCatalog(d); saveCatalog(d); }
-  function refreshSales(d)   { setSales(d); saveSales(d); }
+  function refreshSales(d) {
+    setSales(d);
+    saveSales(d);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sc_uex_sales_updated'));
+  }
 
   // ── Sincronizar listagens da UEX ──
   async function syncFromUEX() {
@@ -872,21 +1106,49 @@ export default function UexSalesPage() {
       const data = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
       if (!data || data.length === 0) { setSyncMsg('Nenhum anúncio encontrado para este username.'); setLoading(false); return; }
 
-      // Usar catalogRef.current para leitura mais recente (evita closure stale)
+      // Usar catalogRef.current para leitura mais recente (evita closure stale).
+      // A UEX pode criar um novo ID ao renovar o anúncio; por isso, depois de
+      // tentar o ID, fazemos uma correspondência segura por título, local e qualidade.
       const currentCatalog = catalogRef.current;
-      // Normalizar ids para string para evitar mismatch número/string
-      const existingIds = new Set(currentCatalog.map(i => String(i.id)));
-      const newListings = data.filter(l => !existingIds.has(String(l.id)));
+      const unusedFreshIndexes = new Set(data.map((_, index) => index));
+      const findFreshListing = cat => {
+        let index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && cat.id !== null && cat.id !== undefined && fresh.id !== null && fresh.id !== undefined && String(fresh.id) === String(cat.id));
+        if (index < 0 && !cat.is_manual) {
+          index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && listingIdentityMatches(cat, fresh));
+        }
+        if (index < 0) return null;
+        unusedFreshIndexes.delete(index);
+        return data[index];
+      };
 
-      // Atualizar sempre os existentes (preço, estoque API, etc.) preservando dados internos
+      // Atualiza preço, estoque e principalmente date_expiration da API,
+      // preservando os campos internos do usuário. Se o ID mudou por renovação,
+      // o registro antigo expirado é substituído pelo registro vigente.
+      let renewedCount = 0;
       const updatedExisting = currentCatalog.map(cat => {
-        const fresh = data.find(d => d.id === cat.id);
-        return fresh ? { ...cat, ...fresh, internal_stock: cat.internal_stock, notes: cat.notes } : cat;
+        const fresh = findFreshListing(cat);
+        if (!fresh) return cat;
+        const renewed = sameRenewedListing(cat, fresh);
+        if (renewed) renewedCount += 1;
+        const newInStock = fresh.in_stock !== undefined ? Number(fresh.in_stock) : (cat.in_stock || 0);
+        return {
+          ...cat,
+          ...fresh,
+          id: fresh.id ?? cat.id,
+          in_stock:       newInStock,
+          is_sold_out:    newInStock <= 0 ? 1 : 0,
+          internal_stock: cat.internal_stock,
+          notes:          cat.notes,
+          imported_at:    cat.imported_at,
+          last_synced_at: new Date().toISOString(),
+          renewed_at:     renewed ? new Date().toISOString() : cat.renewed_at,
+        };
       });
+      const newListings = data.filter((_, index) => unusedFreshIndexes.has(index));
       refreshCatalog(updatedExisting);
 
       if (newListings.length === 0) {
-        setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizados.`);
+        setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizado${updatedExisting.length!==1?'s':''}${renewedCount ? ` · ${renewedCount} anúncio${renewedCount!==1?'s':''} renovado${renewedCount!==1?'s':''} reconhecido${renewedCount!==1?'s':''}` : ''}.`);
       } else {
         setSyncMsg(`${newListings.length} novo${newListings.length!==1?'s':''} anúncio${newListings.length!==1?'s':''} encontrado${newListings.length!==1?'s':''}. Confirme cada um...`);
         // Guardar fila na ref E no state
@@ -945,8 +1207,17 @@ export default function UexSalesPage() {
   }, []); // eslint-disable-line
 
   // ── Ações ──
-  function handleEditStock(itemId, newStock) {
-    const updated = catalog.map(i => i.id === itemId ? { ...i, internal_stock: newStock } : i);
+  function handleEditStock(itemId, fields) {
+    // fields pode ser número (só internal_stock) ou objeto { internal_stock, in_stock }
+    const updated = catalog.map(i => {
+      if (i.id !== itemId) return i;
+      const patch = typeof fields === 'number'
+        ? { internal_stock: fields }
+        : fields;
+      // Recalcular is_sold_out baseado no in_stock atualizado
+      const newInStock = patch.in_stock !== undefined ? patch.in_stock : i.in_stock;
+      return { ...i, ...patch, is_sold_out: newInStock <= 0 ? 1 : 0 };
+    });
     refreshCatalog(updated);
   }
   function handleDeleteItem(itemId) {
@@ -957,7 +1228,10 @@ export default function UexSalesPage() {
     setShowManualSale(false);
   }
   function handleDeleteSale(saleId) {
-    refreshSales(sales.filter(s => s.id !== saleId));
+    refreshSales(sales.filter(s => String(s.id) !== String(saleId)));
+  }
+  function handleUpdateSale(updatedSale) {
+    refreshSales(sales.map(s => String(s.id) === String(updatedSale.id) ? updatedSale : s));
   }
   function handleAddEsgotado() { setShowEsgotadoForm(true); }
 
@@ -996,7 +1270,12 @@ export default function UexSalesPage() {
 
       {/* Modais */}
       {importQueue.length > 0 && (
-        <ImportConfirmModal listing={importQueue[0]} onConfirm={handleImportConfirm} onSkip={handleImportSkip}/>
+        <ImportConfirmModal
+          key={importQueue[0]?.id || importQueue[0]?.title || 0}
+          listing={importQueue[0]}
+          onConfirm={handleImportConfirm}
+          onSkip={handleImportSkip}
+        />
       )}
       {showManualSale && (
         <ManualSaleModal catalogItems={catalog} onSave={handleManualSale} onClose={()=>setShowManualSale(false)}/>
@@ -1027,7 +1306,7 @@ export default function UexSalesPage() {
           {/* Username */}
           <div style={{ display:'flex', gap:5, alignItems:'center' }}>
             <input
-              style={{ width:140, padding:'6px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, outline:'none' }}
+              style={{ width:140, padding:'6px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' }}
               placeholder="Seu IGN na UEX..."
               value={usernameInput}
               onChange={e=>setUsernameInput(e.target.value)}
@@ -1035,10 +1314,10 @@ export default function UexSalesPage() {
               onKeyDown={e=>{ if(e.key==='Enter'){ setUsername(usernameInput.trim()); saveUsername(usernameInput.trim()); }}}
             />
           </div>
-          <button onClick={syncFromUEX} disabled={loading || !username.trim()} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.35)', borderRadius:7, color:'var(--accent-primary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer', opacity: loading || !username.trim() ? 0.5 : 1 }}>
+          <button onClick={syncFromUEX} disabled={loading || !username.trim()} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:7, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer', opacity: loading || !username.trim() ? 0.5 : 1 }}>
             <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}/> Sincronizar UEX
           </button>
-          <button onClick={()=>setShowManualSale(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', background:'rgba(0,229,160,0.1)', border:'1px solid rgba(0,229,160,0.3)', borderRadius:7, color:'var(--accent-green)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
+          <button onClick={()=>setShowManualSale(true)} style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.3)', borderRadius:7, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, textTransform:'uppercase', cursor:'pointer' }}>
             <Plus size={13}/> Venda Manual
           </button>
         </div>
@@ -1046,7 +1325,7 @@ export default function UexSalesPage() {
 
       {/* Msg de sync */}
       {syncMsg && (
-        <div style={{ margin:'0 24px 0', padding:'7px 14px', background: syncMsg.startsWith('❌')?'rgba(255,68,102,0.08)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.08)':'rgba(0,229,160,0.06)', border:`1px solid ${syncMsg.startsWith('❌')?'rgba(255,68,102,0.25)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.25)':'rgba(0,229,160,0.2)'}`, borderRadius:7, fontSize:11, color:'var(--text-secondary)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ margin:'0 24px 0', padding:'7px 14px', background: syncMsg.startsWith('❌')?'rgba(251,113,133,0.08)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.08)':'rgba(52,211,153,0.06)', border:`1px solid ${syncMsg.startsWith('❌')?'rgba(251,113,133,0.25)':syncMsg.startsWith('⚠')?'rgba(255,200,0,0.25)':'rgba(52,211,153,0.2)'}`, borderRadius:7, fontSize:11, color:'var(--text-secondary)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <span>{syncMsg}</span>
           <button onClick={()=>setSyncMsg('')} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)' }}><X size={12}/></button>
         </div>
@@ -1055,9 +1334,9 @@ export default function UexSalesPage() {
       {/* Tabs */}
       <div style={{ padding:'0 24px', borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-panel)', display:'flex', flexShrink:0, marginTop:syncMsg?8:0 }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'Rajdhani,sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
+          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
             <t.icon size={12}/>{t.label}
-            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(0,212,255,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
+            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
           </button>
         ))}
       </div>
@@ -1069,7 +1348,7 @@ export default function UexSalesPage() {
             onEditStock={handleEditStock} onDeleteItem={handleDeleteItem} onAddEsgotado={handleAddEsgotado}/>
         )}
         {activeTab==='sales' && (
-          <SalesTab sales={sales} onDelete={handleDeleteSale}/>
+          <SalesTab sales={sales} onDelete={handleDeleteSale} onUpdate={handleUpdateSale}/>
         )}
         {activeTab==='trends' && (
           <TrendsTab catalog={catalog} trendData={trendData} loading={trendsLoading} onRefresh={fetchTrends}/>

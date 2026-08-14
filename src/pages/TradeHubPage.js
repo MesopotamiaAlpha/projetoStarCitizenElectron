@@ -72,7 +72,7 @@ export default function TradeHubPage() {
   const unpinned = routes.filter(r=>!pinnedRoutes.includes(r.name));
   const display = [...pinned, ...unpinned];
 
-  const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
+  const SS = { padding:'7px 28px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 8px center' };
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -126,7 +126,7 @@ export default function TradeHubPage() {
             {display.map(r => (
               <div key={r.name} style={{
                 background:'var(--bg-card)',
-                border:`1px solid ${pinnedRoutes.includes(r.name)?'rgba(255,196,54,0.3)':'var(--border-subtle)'}`,
+                border:`1px solid ${pinnedRoutes.includes(r.name)?'rgba(251,191,36,0.3)':'var(--border-subtle)'}`,
                 borderRadius:8,padding:'12px 16px',
                 transition:'all 0.2s',
               }}>
@@ -137,7 +137,7 @@ export default function TradeHubPage() {
 
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:4 }}>
-                    <span style={{ fontFamily:'Rajdhani,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{r.name}</span>
+                    <span style={{ fontFamily:'"Exo 2",sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)' }}>{r.name}</span>
                     <ProvenanceBadge category="commodity" name={r.name}/>
                   </div>
                     <div style={{ display:'flex',alignItems:'center',gap:8,fontSize:11,color:'var(--text-muted)',flexWrap:'wrap' }}>
