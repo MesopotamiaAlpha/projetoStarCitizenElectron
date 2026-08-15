@@ -27,6 +27,7 @@ import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
+import ContextHelpOverlay from './components/ContextHelpOverlay';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord } from './data/missionAutoMonitor';
@@ -34,7 +35,7 @@ import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
-  const KEY = 'sc_armor_v3';
+  const KEY = 'companheiro_emoto_mock_v1';
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY))||{}; } catch { return {}; } };
   const save = d => localStorage.setItem(KEY, JSON.stringify(d));
 
@@ -133,7 +134,24 @@ function buildMockAPI() {
   };
 }
 
-export const api = window.electronAPI || buildMockAPI();
+function buildUnavailableAPI() {
+  const message = 'A ponte Electron não foi carregada. Feche e reinstale o Companheiro Emoto; dados de demonstração não serão usados no aplicativo instalado.';
+  return new Proxy({}, {
+    get: () => async () => { throw new Error(message); },
+  });
+}
+
+const hasElectronBridge = Boolean(window.electronAPI?.isCompanheiroEmotoElectron);
+const isPackagedElectron = typeof window !== 'undefined' && window.location?.protocol === 'file:';
+if (isPackagedElectron && !hasElectronBridge) {
+  // Diagnóstico deliberado: uma instalação empacotada nunca deve cair no mock.
+  // No navegador de desenvolvimento/prévia o mock continua permitido.
+  console.error('Companheiro Emoto: preload.js não carregado; API mock bloqueada no aplicativo empacotado.');
+}
+
+export const api = hasElectronBridge
+  ? window.electronAPI
+  : (isPackagedElectron ? buildUnavailableAPI() : buildMockAPI());
 
 const NAV_GROUPS = [
   { id:'inicio', label:'Início', hint:'Visão geral', accent:'#38bdf8', groupIcon:BarChart3, pages:[
@@ -323,34 +341,37 @@ export default function App() {
       </aside>
 
       <main className="main-content">
-        {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
-        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
-        {activePage==='inventory'  && <InventoryPage />}
-        {activePage==='blueprints' && <BlueprintPage />}
-        {activePage==='materials'  && <MaterialTrackerPage />}
-        {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
-        {activePage==='mining'     && <MiningPage />}
-        {activePage==='mininggroup' && <MiningGrupoPage />}
-        {activePage==='clanvault' && <ClanVaultPage />}
-        {activePage==='missions'   && <MissionTrackerPage />}
-        {activePage==='orevault'   && <OreVaultPage />}
-        {activePage==='uexsales'   && <UexSalesPage />}
-        {activePage==='uexnegotiations' && <UexNegotiationsPage />}
-        {activePage==='wikelo'     && <WikeloTrackerPage />}
-        {activePage==='uexapi'     && <UexApiPage />}
-        {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
-        {activePage==='uexalerts' && <MarketAlertsPage onNavigate={goToPage} />}
-        {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
-        {activePage==='backup'     && <BackupPage />}
-        {activePage==='data-directory' && <DataDirectoryPage />}
-        {activePage==='notes'      && <NotesPage />}
-        {activePage==='locations'   && <LocationsAdminPage />}
-        {activePage==='mission-admin' && <MissionAdminPage />}
+        <div key={activePage} className="page-transition-shell" data-active-page={activePage}>
+          {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
+          {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
+          {activePage==='inventory'  && <InventoryPage />}
+          {activePage==='blueprints' && <BlueprintPage />}
+          {activePage==='materials'  && <MaterialTrackerPage />}
+          {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
+          {activePage==='mining'     && <MiningPage />}
+          {activePage==='mininggroup' && <MiningGrupoPage />}
+          {activePage==='clanvault' && <ClanVaultPage />}
+          {activePage==='missions'   && <MissionTrackerPage />}
+          {activePage==='orevault'   && <OreVaultPage />}
+          {activePage==='uexsales'   && <UexSalesPage />}
+          {activePage==='uexnegotiations' && <UexNegotiationsPage />}
+          {activePage==='wikelo'     && <WikeloTrackerPage />}
+          {activePage==='uexapi'     && <UexApiPage />}
+          {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
+          {activePage==='uexalerts' && <MarketAlertsPage onNavigate={goToPage} />}
+          {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
+          {activePage==='backup'     && <BackupPage />}
+          {activePage==='data-directory' && <DataDirectoryPage />}
+          {activePage==='notes'      && <NotesPage />}
+          {activePage==='locations'   && <LocationsAdminPage />}
+          {activePage==='mission-admin' && <MissionAdminPage />}
+        </div>
       </main>
 
       <UexNotificationBell onNavigate={goToPage} />
       <CalculatorWidget />
+      <ContextHelpOverlay />
     </div>
   );
 }

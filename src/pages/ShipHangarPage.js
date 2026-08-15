@@ -19,6 +19,8 @@ import {
   removeFromMyHangar,
   updateMyHangarEntry,
   getPurchasedAuecTotal,
+  getVehiclePurchaseAverage,
+  ensureVehicleCatalog,
   UEX_VEHICLES_UPDATED_EVENT,
   VEHICLE_ROLE_LABELS,
 } from '../data/uexVehicles';
@@ -76,8 +78,8 @@ function formatAuec(value) {
 function getEntryCost(entry) {
   if (!entry || entry.source === 'wikelo') return 0;
   const stored = Number(entry.totalCostAuec);
-  if (Number.isFinite(stored)) return Math.max(0, stored);
   const unit = Number(entry.unitPriceAuec ?? entry.purchasePriceAuec ?? entry.priceAuec ?? entry.price_auec);
+  if (Number.isFinite(stored) && stored > 0) return Math.max(0, stored);
   const quantity = Math.max(0, Number(entry.quantity) || 0);
   return Number.isFinite(unit) ? Math.max(0, unit * quantity) : 0;
 }
@@ -176,7 +178,7 @@ function MarketLines({ title, icon: Icon, color, rows, kind, onLoadDetails, load
       </div>
     );
   }
-  const values = rows.map(row => kind === 'rent' ? row.price_rent : row.price_buy).filter(value => value !== null && value !== undefined);
+  const values = rows.map(row => kind === 'rent' ? (row.price_rent_avg ?? row.price_rent) : (row.price_buy_avg ?? row.price_buy)).filter(value => value !== null && value !== undefined);
   const average = values.length ? values.reduce((sum, value) => sum + Number(value), 0) / values.length : null;
   return (
     <div style={{ padding: '9px 10px', border: `1px solid ${color}33`, background: `${color}0b`, borderRadius: 6 }}>
@@ -232,9 +234,9 @@ function VehicleDetails({ details, color = COLORS.blue, vehicleId, loaners = [],
   );
 }
 
-function BuyModal({ vehicle, onClose, onConfirm }) {
+function BuyModal({ vehicle, defaultUnitPriceAuec = null, onClose, onConfirm }) {
   const [quantity, setQuantity] = useState('1');
-  const [unitPriceAuec, setUnitPriceAuec] = useState('');
+  const [unitPriceAuec, setUnitPriceAuec] = useState(defaultUnitPriceAuec === null ? '' : String(Math.round(defaultUnitPriceAuec)));
   const [notes, setNotes] = useState('');
   if (!vehicle) return null;
   return (
@@ -245,8 +247,8 @@ function BuyModal({ vehicle, onClose, onConfirm }) {
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={16} /></button>
         </div>
         <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 11 }}>Quantidade<input type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={inputStyle} /></label>
-        <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Preço pago por nave (aUEC)<input type="number" min="0" step="1" value={unitPriceAuec} onChange={event => setUnitPriceAuec(event.target.value)} placeholder="Opcional — usado no total gasto" style={inputStyle} /></label>
-        <div style={{ marginTop: 6, color: 'var(--text-muted)', fontSize: 10, lineHeight: 1.4 }}>O total será calculado como preço por nave × quantidade. Se deixar vazio, a compra fica registrada, mas sem custo informado.</div>
+        <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Preço pago por nave (aUEC)<input type="number" min="0" step="1" value={unitPriceAuec} onChange={event => setUnitPriceAuec(event.target.value)} placeholder={defaultUnitPriceAuec ? `Média UEX: ${formatNumber(defaultUnitPriceAuec)} aUEC` : 'Informe o preço pago'} style={inputStyle} /></label>
+        <div style={{ marginTop: 6, color: defaultUnitPriceAuec ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: 10, lineHeight: 1.4 }}>{defaultUnitPriceAuec ? `Média de compra UEX preenchida automaticamente: ${formatAuec(defaultUnitPriceAuec)}. Você pode substituir pelo valor realmente pago.` : 'Não há média de compra disponível no catálogo local. Informe o preço pago para incluir esta nave no total.'} O total será preço por nave × quantidade.</div>
         <label style={{ display: 'block', marginTop: 9, color: 'var(--text-muted)', fontSize: 11 }}>Observações<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Variante ou observações da aquisição" rows={3} style={{ ...inputStyle, resize: 'vertical' }} /></label>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <button onClick={onClose} style={secondaryButtonStyle}>Cancelar</button>
@@ -500,17 +502,32 @@ export default function ShipHangarPage({ onNavigate }) {
     wikeloTypes: (hangar || []).filter(entry => entry.source === 'wikelo').length,
   }), [hangar]);
 
-  const sync = useCallback(() => {
+  const sync = useCallback(async () => {
     setLoading(true); setError(''); setMessage('');
-    const localCatalog = loadVehicleCatalog();
-    if (!localCatalog?.vehicles?.length) {
-      setError('Ainda não existe catálogo local. Abra UEX API (Live), entre na aba Veículos e clique em Atualizar.');
-    } else {
-      setCatalog(localCatalog);
-      setMessage(`Catálogo local carregado: ${localCatalog.vehicles.length} veículos, ${localCatalog.purchasePrices?.length || 0} registros de compra e ${localCatalog.rentalPrices?.length || 0} registros de aluguel. Nenhuma nova consulta foi feita pela tela Hangar.`);
+    try {
+      const result = await ensureVehicleCatalog();
+      if (!result?.vehicles?.length) {
+        setError('A UEX não retornou um catálogo de veículos. Verifique a conexão e tente novamente.');
+        return;
+      }
+      setCatalog(result);
+      setMessage(result.synced
+        ? `Catálogo sincronizado: ${result.vehicles.length} veículos, ${result.purchasePrices?.length || 0} registros de compra e ${result.rentalPrices?.length || 0} registros de aluguel.`
+        : `Catálogo local carregado: ${result.vehicles.length} veículos, ${result.purchasePrices?.length || 0} registros de compra e ${result.rentalPrices?.length || 0} registros de aluguel. Nenhuma nova consulta foi feita.`);
+    } catch (err) {
+      setError(err.message || 'Não foi possível sincronizar o catálogo de veículos da UEX.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    // Corrige o primeiro acesso: se o catálogo estiver vazio, o Hangar faz a
+    // sincronização sem depender da montagem da aba Veículos na UEX Live.
+    if (catalog?.vehicles?.length) return undefined;
+    sync();
+    return undefined;
+  }, [catalog?.vehicles?.length, sync]);
 
   async function loadDetails(vehicleId) {
     if (details[vehicleId]) { setExpandedId(expandedId === vehicleId ? null : vehicleId); return; }
@@ -543,8 +560,14 @@ export default function ShipHangarPage({ onNavigate }) {
   }
 
   function confirmBought(vehicle, options) {
-    const next = addToMyHangar(vehicle, { ...options, source: 'compra' });
-    setHangar(next); setBuyVehicle(null); setMessage(`${vehicle.name_full || vehicle.name} foi adicionada ao Meu Hangar.`);
+    const catalogAverage = getVehiclePurchaseAverage(catalog, vehicle.id);
+    const typedPrice = options?.unitPriceAuec;
+    const effectivePrice = typedPrice === '' || typedPrice === null || typedPrice === undefined
+      ? catalogAverage
+      : Number(typedPrice);
+    const next = addToMyHangar(vehicle, { ...options, unitPriceAuec: Number.isFinite(effectivePrice) ? effectivePrice : null, source: 'compra' });
+    setHangar(next); setBuyVehicle(null);
+    setMessage(`${vehicle.name_full || vehicle.name} foi adicionada ao Meu Hangar${Number.isFinite(effectivePrice) ? ` com custo de ${formatAuec(effectivePrice)} por nave.` : ', mas sem preço de compra informado.'}`);
   }
 
   function confirmWikelo(options) {
@@ -584,7 +607,7 @@ export default function ShipHangarPage({ onNavigate }) {
           </div>
         )}
       </div>
-      {buyVehicle && <BuyModal vehicle={buyVehicle} onClose={() => setBuyVehicle(null)} onConfirm={options => confirmBought(buyVehicle, options)} />}
+      {buyVehicle && <BuyModal vehicle={buyVehicle} defaultUnitPriceAuec={getVehiclePurchaseAverage(catalog, buyVehicle.id)} onClose={() => setBuyVehicle(null)} onConfirm={options => confirmBought(buyVehicle, options)} />}
       {showWikelo && <WikeloModal vehicles={catalog?.vehicles || []} onClose={() => setShowWikelo(false)} onConfirm={confirmWikelo} />}
       {editEntry && <EditHangarModal entry={editEntry} onClose={() => setEditEntry(null)} onSave={changes => saveEntry(editEntry, changes)} />}
     </div>

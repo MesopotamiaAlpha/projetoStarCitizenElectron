@@ -1,18 +1,16 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  FlaskConical,   CheckCircle2, Trash2, Plus,
-
-  Minus, RefreshCw, Package, MapPin, ChevronDown,
-  ChevronUp, ShoppingCart, AlertTriangle, Star, X, Archive, Gift
+  FlaskConical, CheckCircle2, Trash2, Plus,
+  Minus, RefreshCw, MapPin, ChevronDown,
+  ChevronUp, ShoppingCart, AlertTriangle, Star, X, Archive
 } from 'lucide-react';
 import {
-  loadQueue, saveQueue, calcShoppingList, loadMaterialOrder, saveMaterialOrder,
-  collectMaterial, uncollectMaterial, resetMaterialCollected, dequeueBlueprint,
-  updateQueuedQty, clearCompleted, addManualMaterial, removeManualMaterial,
+  loadQueue, calcShoppingList, loadMaterialOrder, saveMaterialOrder,
+  dequeueBlueprint, updateQueuedQty, clearCompleted, removeManualMaterial,
   materialKey, normalizeQualityMin, toBase, fromBase,
 } from '../data/materialQueue';
-import { loadVault, deductOreEntries, findVaultMatches } from '../data/oreVault';
-import { CARGO_UNITS, normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber } from '../data/cargoUnits';
+import { loadVault, deductOreEntries, findExactVaultMatches } from '../data/oreVault';
+import { normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber, cargoEquivalentTotal } from '../data/cargoUnits';
 import { getOreColor as getSharedOreColor, getOreColorSoft } from '../data/oreColors';
 
 
@@ -23,9 +21,17 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
     return shoppingList
       .filter(item => item.remaining > 0)
       .map(item => {
-        const vaultEntries = findVaultMatches(item.material_name, item.quality_min).filter(e => !item.unit || e.unit === item.unit);
-        const vaultTotal   = vaultEntries.reduce((a,e) => a+(e.quantity||0), 0);
-        return vaultTotal > 0 ? { ...item, vaultTotal, vaultEntries } : null;
+        const vaultEntries = findExactVaultMatches(item.material_name, item.quality_min).filter(e => {
+          if (!item.unit) return true;
+          const entryUnit = normalizeCargoUnit(e.unit || 'un');
+          const requiredUnit = normalizeCargoUnit(item.unit || 'un');
+          return isCargoUnit(requiredUnit) && isCargoUnit(entryUnit)
+            ? areCargoUnitsCompatible(requiredUnit, entryUnit)
+            : entryUnit === requiredUnit;
+        });
+        const vaultTotalData = cargoEquivalentTotal(vaultEntries, item.unit || 'un');
+        const vaultTotal = vaultTotalData.total;
+        return vaultTotal > 0 ? { ...item, vaultTotal, vaultUnit: vaultTotalData.unit, vaultEntries } : null;
       })
       .filter(Boolean);
   }, [shoppingList]);
@@ -62,7 +68,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
               }}>
                 <strong style={{color:materialColor}}>{m.material_name}</strong>
                 {m.quality_min > 0 && <span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>Q≥{m.quality_min}</span>}
-                : <span style={{color:materialColor,fontWeight:700}}>{m.vaultTotal} {m.unit||'un'}</span>
+                : <span style={{color:materialColor,fontWeight:700}}>{m.vaultTotal} {m.vaultUnit||m.unit||'un'}</span>
                 {m.remaining > 0 && <span style={{color:'var(--text-muted)'}}> / {fmtSCU(m.remaining, m.unit).primary} necessário</span>}
               </span>
             );
@@ -78,13 +84,13 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
 
 // ── Vault Use Panel ───────────────────────────────────────────────────────────
 // Painel dentro do MaterialRow para usar minério do baú
-function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onUseFromVault }) {
+function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onVaultChanged }) {
   const [vault, setVault] = useState(() => loadVault());
   const [pending, setPending] = useState({}); // entryId -> quantidade a usar
 
   function refresh() { setVault(loadVault()); }
 
-  const matches = useMemo(() => findVaultMatches(materialName, qualityMin).filter(e => {
+  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin).filter(e => {
     if (!unit) return true;
     return isCargoUnit(unit) && isCargoUnit(e.unit)
       ? areCargoUnitsCompatible(e.unit, unit)
@@ -146,7 +152,7 @@ function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onUs
       .map(([id, qty]) => ({ id: Number(id), qty }));
     if (uses.length === 0) return;
     deductOreEntries(uses.map(({id, qty}) => ({ id, amount: qty })));
-    onUseFromVault(totalPending);
+    onVaultChanged();
     refresh();
     setPending({});
   }
@@ -308,78 +314,8 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
   );
 }
 
-// ── Material collect input ─────────────────────────────────────────────────────
-function CollectInput({ material, unit, qualityMin = 0, onCollect, onUncollect }) {
-  const [amount, setQuantidade] = useState('');
-  const [mode, setMode] = useState('add'); // 'add' | 'remove'
-  const cargoMaterial = isCargoUnit(unit);
-  const requirementUnit = normalizeCargoUnit(unit || 'un');
-  const [inputUnit, setInputUnit] = useState(() => requirementUnit === 'SCU' ? 'SCU' : 'cSCU');
-
-  useEffect(() => {
-    if (cargoMaterial) setInputUnit(requirementUnit === 'SCU' ? 'SCU' : 'cSCU');
-  }, [cargoMaterial, requirementUnit]);
-
-  function parseAmount(value) {
-    if (cargoMaterial) return parseCargoInput(value, inputUnit);
-    return Number(value);
-  }
-
-  function submit() {
-    const n = parseAmount(amount);
-    if (!Number.isFinite(n) || n <= 0) return;
-    const selectedUnit = cargoMaterial ? inputUnit : requirementUnit;
-    if (mode === 'add') onCollect(material, n, qualityMin, selectedUnit);
-    else onUncollect(material, n, qualityMin, selectedUnit);
-    setQuantidade('');
-  }
-
-  const parsedAmount = amount ? parseAmount(amount) : 0;
-  const fmt = parsedAmount > 0 ? fmtSCU(parsedAmount, cargoMaterial ? inputUnit : requirementUnit) : null;
-  const visibleUnit = cargoMaterial ? inputUnit : requirementUnit;
-
-  return (
-    <div className="material-collect-input" style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-end' }}>
-      {cargoMaterial && (
-        <div className="material-unit-selector">
-          <span>Unidade da coleta</span>
-          <select aria-label="Unidade da coleta" value={inputUnit} onChange={event => setInputUnit(event.target.value)}>
-            <option value="cSCU">cSCU</option>
-            <option value="SCU">SCU</option>
-          </select>
-          <small>1 SCU = 100 cSCU</small>
-        </div>
-      )}
-      {/* Toggle add/remove */}
-      <div style={{ display:'flex', borderRadius:5, overflow:'hidden', border:'1px solid var(--border-subtle)' }}>
-        <button onClick={()=>setMode('add')} style={{ padding:'3px 8px',background:mode==='add'?'rgba(52,211,153,0.15)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:mode==='add'?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
-          + Coletei
-        </button>
-        <button onClick={()=>setMode('remove')} style={{ padding:'3px 8px',background:mode==='remove'?'rgba(251,113,133,0.12)':'transparent',border:'none',color:mode==='remove'?'var(--accent-red)':'var(--text-muted)',cursor:'pointer',fontSize:10,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
-          − Remover
-        </button>
-      </div>
-      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-        <input
-          type={cargoMaterial ? 'text' : 'number'} inputMode="decimal" min="0" step={cargoMaterial ? 'any' : '1'} value={amount}
-          onChange={event => setQuantidade(event.target.value)}
-          onKeyDown={event => event.key==='Enter' && submit()}
-          placeholder={`Qtd (${visibleUnit || 'un'})...`}
-          style={{ width:110,padding:'5px 8px',background:'var(--bg-base)',border:`1px solid ${mode==='remove'?'rgba(251,113,133,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none' }}
-        />
-        <button onClick={submit} style={{ display:'flex',alignItems:'center',gap:4,padding:'5px 10px',background:mode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)',border:`1px solid ${mode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`,borderRadius:5,color:mode==='add'?'var(--accent-green)':'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
-          {mode==='add'?<><CheckCircle2 size={11}/> OK</>:<><Minus size={11}/> OK</>}
-        </button>
-      </div>
-      {fmt?.secondary && (
-        <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--accent-gold)' }}>{fmt.primary} = {fmt.secondary}</span>
-      )}
-    </div>
-  );
-}
-
 // ── Material row ──────────────────────────────────────────────────────────────
-function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, expanded, onUseFromVault, isManual, onRemoveManual, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
+function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, isManual, onRemoveManual, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
   const color    = getMaterialColor(item.material_name);
   const pct      = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : 0;
   const isDone   = item.remaining === 0;
@@ -434,23 +370,11 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
             </div>
           </div>
         </div>
-        {/* Collect input */}
         {!isDone && (
-          <div className="material-collect-control" onClick={e=>e.stopPropagation()} draggable={false}>
-
-            <CollectInput material={item.material_name} unit={item.unit} qualityMin={item.quality_min} onCollect={onCollect} onUncollect={onUncollect}/>
-          </div>
+          <span className="material-vault-source-badge" title="A quantidade Já tenho é calculada diretamente no Baú de Minério">
+            <Archive size={11}/> Fonte: Baú
+          </span>
         )}
-        <button
-          className="material-reset-collected-button"
-          draggable={false}
-          disabled={item.collected <= 0}
-          onClick={event => { event.stopPropagation(); onReset(item.material_name, item.quality_min); }}
-          title={item.collected > 0 ? 'Zerar toda a coleta deste minério' : 'Nenhuma coleta para zerar'}
-          aria-label={item.collected > 0 ? `Zerar coleta de ${item.material_name}` : `Nenhuma coleta de ${item.material_name}`}
-        >
-          <RefreshCw size={11}/><span>Zerar coleta</span>
-        </button>
         {isManual && onRemoveManual && (
           <button draggable={false} onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
             <Trash2 size={11}/>
@@ -483,7 +407,7 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
               qualityMin={item.quality_min}
               needed={item.remaining}
               unit={item.unit}
-              onUseFromVault={(qty) => { onUseFromVault(item.material_name, qty, item.quality_min, item.unit); }}
+              onVaultChanged={onVaultChanged}
             />
           )}
         </div>
@@ -492,70 +416,8 @@ function MaterialRow({ item, onCollect, onUncollect, onReset, onToggleExpandir, 
   );
 }
 
-// ── Formulário de adição manual de material ──────────────────────────────────
-const KNOWN_MATERIALS = [
-  'Titanium','Copper','Orotite','Caranite','Steel','Laranite','Taranite',
-  'Bexalite','Quantainium','Hephaestanite','Dolivine','Corundum','Aluminum',
-  'Iron','Borase','Agricium','Gold','Diamond','Tungsten','Inert Material',
-  'Reactive Material','Polymer','Industrial Polymer','Medical Grade Polymer',
-];
-const MANUAL_UNITS = ['un', ...CARGO_UNITS, 'kg'];
-
-function AddManualMaterialForm({ onAdd }) {
-  const [open,    setOpen]    = useState(false);
-  const [name,    setName]    = useState('');
-  const [qty,     setQty]     = useState('');
-  const [unit,    setUnit]    = useState('un');
-  const [qmin,    setQmin]    = useState('');
-  const [error,   setError]   = useState('');
-
-  const isSCU = isCargoUnit(unit);
-
-  function handleAdd() {
-    if (!name.trim()) { setError('Nome obrigatório.'); return; }
-    const n = isSCU ? parseCargoInput(qty, unit) : parseInt(qty, 10);
-    if (!n || n <= 0) { setError('Quantidade deve ser maior que zero.'); return; }
-    onAdd(name.trim(), n, unit, parseInt(qmin)||0);
-    setName(''); setQty(''); setQmin(''); setError(''); setOpen(false);
-  }
-
-  const IS = { padding:'6px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' };
-  const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center', paddingRight:22 };
-
-  return (
-    <div style={{ marginBottom:12 }}>
-      {!open ? (
-        <button onClick={()=>setOpen(true)} style={{ display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.06)',border:'1px dashed rgba(56,189,248,0.25)',borderRadius:6,color:'var(--accent-primary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
-          <Plus size={11}/> Adicionar Minério Manual
-        </button>
-      ) : (
-        <div style={{ padding:'10px 12px',background:'rgba(56,189,248,0.04)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:8 }}>
-          <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>+ Adicionar Minério à Lista</div>
-          <div className="material-manual-grid" style={{ display:'grid',gridTemplateColumns:'2fr 90px 80px 80px auto',gap:6,alignItems:'center' }}>
-            <input style={{...IS,width:'100%'}} list="mat-names" placeholder="Nome do minério..." value={name} onChange={e=>setName(e.target.value)}/>
-            <datalist id="mat-names">{KNOWN_MATERIALS.map(m=><option key={m} value={m}/>)}</datalist>
-            <input style={{...IS,textAlign:'center',fontFamily:'Share Tech Mono,monospace'}} type="text" inputMode="decimal" placeholder={isSCU ? 'ex: 12.911' : 'Qtd'} value={qty} onChange={e=>setQty(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleAdd()}/>
-            <select style={SS} value={unit} onChange={e=>setUnit(e.target.value)}>
-              {MANUAL_UNITS.map(u=><option key={u}>{u}</option>)}
-            </select>
-            <input style={{...IS,textAlign:'center',width:60}} type="number" min="0" placeholder="Q min" value={qmin} onChange={e=>setQmin(e.target.value)}/>
-            <div style={{ display:'flex',gap:5 }}>
-              <button onClick={handleAdd} style={{ display:'flex',alignItems:'center',gap:4,padding:'6px 10px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:5,color:'var(--accent-green)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',whiteSpace:'nowrap' }}>
-                <Plus size={10}/> Adicionar
-              </button>
-              <button onClick={()=>{setOpen(false);setError('');}} style={{ width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:'pointer' }}><X size={11}/></button>
-            </div>
-          </div>
-          {error && <div style={{ fontSize:10,color:'var(--accent-red)',marginTop:5 }}>{error}</div>}
-          <div style={{ fontSize:10,color:'var(--text-muted)',marginTop:6 }}>Q min = qualidade mínima (opcional). O item aparecerá na lista de materiais separado dos blueprints.</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Planejamento de consumo de uma blueprint a partir do Baú ──────────────────
-function buildBlueprintRequirements(bp, shoppingList) {
+function buildBlueprintRequirements(bp) {
   const map = {};
   for (const ing of bp.ingredients || []) {
     const qualityMin = normalizeQualityMin(ing.quality_min);
@@ -567,16 +429,11 @@ function buildBlueprintRequirements(bp, shoppingList) {
     map[key].quantity += (Number(ing.quantity) || 0) * (Number(bp.quantity) || 1);
   }
 
-  return Object.values(map).map(req => {
-    const current = shoppingList.find(item => item.key === req.key);
-    const collectedBase = current ? toBase(Number(current.collected) || 0, current.unit) : 0;
-    const alreadyCollected = fromBase(collectedBase, req.unit);
-    return { ...req, quantity: Math.max(0, req.quantity - alreadyCollected) };
-  }).filter(req => req.quantity > 0);
+  return Object.values(map);
 }
 
-function planBlueprintConsumption(bp, shoppingList) {
-  const requirements = buildBlueprintRequirements(bp, shoppingList);
+function planBlueprintConsumption(bp) {
+  const requirements = buildBlueprintRequirements(bp);
   const reserved = new Map();
   const usages = [];
   const collectedByKey = new Map();
@@ -588,7 +445,7 @@ function planBlueprintConsumption(bp, shoppingList) {
 
   for (const req of requirements) {
     let remainingBase = toBase(req.quantity, req.unit);
-    const matches = findVaultMatches(req.material_name, req.quality_min)
+    const matches = findExactVaultMatches(req.material_name, req.quality_min)
       .filter(entry => {
         if (!req.unit) return true;
         return isCargoUnit(req.unit) && isCargoUnit(entry.unit)
@@ -668,13 +525,17 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
             <button onClick={() => onQtyChange(bp.bpId, bp.quantity + 1)} title="Aumentar quantidade" aria-label="Aumentar quantidade"><Plus size={10}/></button>
           </div>
         </div>
-        {isComplete ? (
-          <div className="bp-queue-complete-note"><CheckCircle2 size={13}/> Materiais prontos para craft</div>
-        ) : (
-          <button className="bp-queue-consume" onClick={() => onConsume(bp)} disabled={consuming} title="Usar os minérios elegíveis do Baú e concluir esta blueprint">
-            {consuming ? <RefreshCw size={12} className="bp-queue-spinner"/> : <Archive size={12}/>}<span>{consuming ? 'Calculando...' : 'Concluir do Baú'}</span>
-          </button>
-        )}
+        <button
+          className="bp-queue-consume bp-queue-consume-icon"
+          onClick={() => onConsume(bp)}
+          disabled={consuming}
+          title={consuming ? 'Calculando o uso do Baú' : isComplete ? 'Concluir e consumir do Baú' : 'Tentar concluir pelo Baú'}
+          aria-label={consuming ? `Calculando o uso do Baú para ${bp.bpName}` : `Concluir ${bp.bpName} usando os minérios elegíveis do Baú`}
+          aria-busy={consuming}
+          data-tooltip={consuming ? 'Calculando o uso do Baú...' : 'Concluir e consumir do Baú: usa os minérios elegíveis e mantém o estoque atualizado.'}
+        >
+          {consuming ? <RefreshCw size={14} className="bp-queue-spinner"/> : <Archive size={14}/>} 
+        </button>
       </div>
     </article>
   );
@@ -714,6 +575,7 @@ function QueuePanel({ queue, onAtualizar, shoppingList, onConsumeBlueprint, cons
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function MaterialTrackerPage() {
   const [queue,        setQueueState] = useState(loadQueue);
+  const [vault,        setVaultState] = useState(loadVault);
   const [materialOrder, setMaterialOrder] = useState(loadMaterialOrder);
   const [expandedMat,  setExpandiredMat]= useState(null);
   const [showDone,     setShowDone]   = useState(false);
@@ -724,6 +586,7 @@ export default function MaterialTrackerPage() {
 
   const refresh = useCallback(() => {
     setQueueState(loadQueue());
+    setVaultState(loadVault());
     setMaterialOrder(loadMaterialOrder());
   }, []);
 
@@ -734,7 +597,7 @@ export default function MaterialTrackerPage() {
     return () => window.removeEventListener('storage', handler);
   }, [refresh]);
 
-  const shoppingList = useMemo(() => calcShoppingList(queue), [queue]);
+  const shoppingList = useMemo(() => calcShoppingList(queue, vault.entries), [queue, vault]);
   const orderedShoppingList = useMemo(() => {
     const byKey = new Map(shoppingList.map(item => [String(item.key), item]));
     const used = new Set();
@@ -761,28 +624,9 @@ export default function MaterialTrackerPage() {
   const overallPct= totalMats > 0 ? Math.round((doneMats/totalMats)*100) : 0;
   const priorityMaterial = pending[0] || null;
 
-  function handleCollect(materialNome, amount, qualityMin = 0, unit = 'un') {
-    const qmin = normalizeQualityMin(qualityMin);
-    const sl = shoppingList.find(s => s.key === materialKey(materialNome, qmin));
-    collectMaterial(materialNome, amount, unit || sl?.unit || 'un', qmin);
-    refresh();
-  }
-  function handleUncollect(materialNome, amount, qualityMin = 0, unit = 'un') {
-    const qmin = normalizeQualityMin(qualityMin);
-    const sl = shoppingList.find(s => s.key === materialKey(materialNome, qmin));
-    uncollectMaterial(materialNome, amount, unit || sl?.unit || 'un', qmin);
-    refresh();
-  }
-  function handleReset(materialNome, qualityMin = 0) {
-    const qmin = normalizeQualityMin(qualityMin);
-    const current = shoppingList.find(item => item.key === materialKey(materialNome, qmin));
-    if (!current || current.collected <= 0) return;
-    const qualityLabel = qmin > 0 ? ` Q≥${qmin}` : '';
-    const confirmed = typeof window === 'undefined' || window.confirm(`Zerar toda a coleta de ${materialNome}${qualityLabel}?\n\nO requisito do material continuará na fila, mas o valor Já tenho voltará a zero.`);
-    if (!confirmed) return;
-    resetMaterialCollected(materialNome, qmin);
-    refresh();
-    setActionMessage({ type:'success', text:`Coleta de ${materialNome}${qualityLabel} zerada. O requisito continua na fila para nova coleta.` });
+  function handleVaultChanged() {
+    setVaultState(loadVault());
+    setActionMessage({ type:'success', text:'Baú atualizado. O progresso do Tracking foi recalculado usando o estoque real.' });
   }
   function handleLimparConcluída() {
     clearCompleted();
@@ -832,7 +676,7 @@ export default function MaterialTrackerPage() {
     setConsumingBpId(bp.bpId);
     setActionMessage(null);
     try {
-      const plan = planBlueprintConsumption(bp, shoppingList);
+      const plan = planBlueprintConsumption(bp);
       if (!plan.success) {
         const details = plan.missing.map(m => `${m.material_name}${m.quality_min > 0 ? ` Q≥${m.quality_min}` : ''}: faltam ${m.missing} ${m.unit}`).join(' · ');
         setActionMessage({ type:'error', text: details ? `Estoque elegível insuficiente. ${details}` : 'Nenhum material elegível encontrado no Baú.' });
@@ -840,11 +684,8 @@ export default function MaterialTrackerPage() {
       }
 
       // Só deduz depois que todos os requisitos passam na validação.
+      // O Baú é a fonte única: não gravar a mesma coleta em collectedMaterials.
       deductOreEntries(plan.usages);
-      for (const req of plan.requirements) {
-        const amount = plan.collectedByKey.get(req.key) || 0;
-        if (amount > 0) collectMaterial(req.material_name, amount, req.unit, req.quality_min);
-      }
       refresh();
       setActionMessage({ type:'success', text:`Blueprint "${bp.bpName}" concluída. ${plan.usages.length} entrada(s) do Baú foram atualizadas.` });
     } catch (e) {
@@ -937,8 +778,8 @@ export default function MaterialTrackerPage() {
               1. Vá para <strong>Blueprints</strong> e clique em <strong>🛒 Quero Craftar</strong><br/>
               2. Os materiais aparecem aqui consolidados<br/>
               3. Ajuste a <strong>quantidade</strong> de blueprints na fila<br/>
-              4. Colete o material e clique em <strong>✓ Coletei</strong><br/>
-              5. A barra de progresso atualiza em tempo real
+              4. Cadastre o minério uma única vez no <strong>Baú de Minério</strong>, com qualidade e local corretos<br/>
+              5. Expanda o material e use somente as entradas elegíveis do Baú; ao completar, a blueprint deduz o estoque automaticamente
             </div>
           </div>
         </div>
@@ -948,8 +789,9 @@ export default function MaterialTrackerPage() {
           {/* Vault match banner */}
           <VaultMatchBanner shoppingList={shoppingList}/>
 
-          {/* Formulário adição manual */}
-          <AddManualMaterialForm onAdd={(name,qty,unit,qmin)=>{addManualMaterial(name,qty,unit,qmin);refresh();}}/>
+          <div className="material-tracker-source-note" style={{ marginBottom:12, padding:'9px 11px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:7, color:'var(--text-secondary)', fontSize:11, lineHeight:1.5 }}>
+            <strong style={{ color:'var(--accent-primary)' }}>Fonte única de estoque:</strong> cadastre cada minério no <strong>Baú de Minério</strong> uma única vez, informando a qualidade real. O Tracking apenas consulta, filtra por qualidade e deduz o Baú quando a blueprint for concluída.
+          </div>
 
           {/* Controls */}
           <div className="materials-toolbar material-tracker-toolbar" style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
@@ -975,7 +817,7 @@ export default function MaterialTrackerPage() {
                 Vá para a aba <strong style={{ color:'var(--accent-primary)' }}>Blueprints</strong> e clique em<br/>
                 <strong style={{ color:'var(--accent-gold)' }}>🛒 Quero Craftar</strong> nos blueprints que deseja criar.<br/>
                 Os materiais necessários aparecerão aqui automaticamente.<br/>
-                Ou use o botão <strong style={{ color:'var(--accent-primary)' }}>+ Adicionar Minério Manual</strong> acima.
+                Cadastre os minérios necessários no <strong style={{ color:'var(--accent-primary)' }}>Baú de Minério</strong> para que o Tracking calcule automaticamente o que já está disponível.
               </div>
             </div>
           ) : display.length === 0 ? (
@@ -994,12 +836,9 @@ export default function MaterialTrackerPage() {
                 <MaterialRow
                   key={item.key}
                   item={item}
-                  onCollect={handleCollect}
-                  onUncollect={handleUncollect}
-                  onReset={handleReset}
                   expanded={expandedMat===item.key}
                   onToggleExpandir={()=>setExpandiredMat(expandedMat===item.key?null:item.key)}
-                  onUseFromVault={(matName, qty, qualityMin, unit) => { handleCollect(matName, qty, qualityMin, unit); }}
+                  onVaultChanged={handleVaultChanged}
                   isManual={item.is_manual}
                   onRemoveManual={item.is_manual ? (name)=>{removeManualMaterial(name);refresh();} : undefined}
                   onDragStart={event => handleDragStart(event, item)}

@@ -6,7 +6,6 @@
 const TOKEN_KEY     = 'sc_uex_token_v1';
 const SECRET_KEY    = 'sc_uex_secretkey_v1';
 const USERNAME_KEY  = 'sc_uex_username_v1';
-const GOOGLE_TRANSLATE_KEY = 'sc_google_translate_api_key_v1';
 const STATE_KEY      = 'sc_uex_notif_state_v1'; // { lastCheck, seenMessageIds:[], seenNotifIds:[] }
 
 export function loadToken()      { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
@@ -14,14 +13,6 @@ export function loadSecretKey()  { try { return localStorage.getItem(SECRET_KEY)
 export function saveSecretKey(v) { localStorage.setItem(SECRET_KEY, v); }
 export function clearSecretKey() { localStorage.removeItem(SECRET_KEY); }
 export function loadUsername()   { try { return localStorage.getItem(USERNAME_KEY) || ''; } catch { return ''; } }
-export function loadGoogleTranslateApiKey() {
-  try { return localStorage.getItem(GOOGLE_TRANSLATE_KEY) || ''; } catch { return ''; }
-}
-export function saveGoogleTranslateApiKey(value) {
-  const key = String(value || '').trim();
-  if (key) localStorage.setItem(GOOGLE_TRANSLATE_KEY, key);
-  else localStorage.removeItem(GOOGLE_TRANSLATE_KEY);
-}
 
 /**
  * Constrói a URL pública correta do anúncio UEX.
@@ -138,27 +129,15 @@ export async function sendNegotiationMessage(hash, message) {
   throw new Error(result.message || 'Erro ao enviar mensagem para a UEX');
 }
 
-/** Traduz texto entre os idiomas suportados pelo tradutor gratuito e pelo fallback Google. */
+/** Traduz texto usando somente o serviço gratuito MyMemory. */
 export async function translateText(text, source = 'pt', target = 'en') {
   const sourceText = String(text || '').trim();
   if (!sourceText) throw new Error('Escreva um texto antes de traduzir.');
-  if (!window.electronAPI) throw new Error('A tradução só funciona no app Electron.');
+  if (!window.electronAPI?.mymemoryTranslate) throw new Error('A tradução só funciona no app Electron.');
 
-  if (window.electronAPI.mymemoryTranslate) {
-    const freeResult = await window.electronAPI.mymemoryTranslate({ text: sourceText, source, target });
-    if (freeResult?.success && freeResult.translation) return freeResult.translation;
-
-    const googleApiKey = loadGoogleTranslateApiKey();
-    if (!googleApiKey) throw new Error(freeResult?.message || 'O limite gratuito do MyMemory foi atingido.');
-  }
-
-  const apiKey = loadGoogleTranslateApiKey();
-  if (!apiKey || !window.electronAPI.googleTranslate) {
-    throw new Error('O MyMemory não respondeu e não há uma chave Google Cloud configurada como fallback.');
-  }
-  const result = await window.electronAPI.googleTranslate({ text: sourceText, source, target, apiKey });
+  const result = await window.electronAPI.mymemoryTranslate({ text: sourceText, source, target });
   if (result?.success && result.translation) return result.translation;
-  throw new Error(result?.message || 'Não foi possível traduzir a mensagem.');
+  throw new Error(result?.message || 'O limite gratuito do MyMemory foi atingido ou o serviço não respondeu.');
 }
 
 export function translatePortugueseToEnglish(text) {

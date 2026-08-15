@@ -1,5 +1,6 @@
 // Catálogo de veículos UEX e Meu Hangar local.
 // A API UEX é consultada somente por HTTPS via window.electronAPI no Electron.
+import { readJson, readStorage, writeJson } from '../utils/storage';
 
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
 const VEHICLE_CATALOG_KEY = 'sc_uex_vehicles_catalog_v1';
@@ -9,6 +10,7 @@ const LEGACY_VEHICLE_CATALOG_KEYS = Object.freeze([
   'sc_uex_live_vehicles_v1',
 ]);
 const HANGAR_KEY = 'sc_hangar_v1';
+let vehicleSyncPromise = null;
 
 export const VEHICLE_CATALOG_VERSION = 1;
 export const UEX_VEHICLES_UPDATED_EVENT = 'sc-uex-vehicles-updated';
@@ -38,16 +40,11 @@ export const VEHICLE_ROLE_LABELS = Object.freeze({
 });
 
 function storageGet(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+  return readJson(key, fallback);
 }
 
 function storageSet(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  return writeJson(key, value);
 }
 
 function numberOrNull(value) {
@@ -69,11 +66,11 @@ function unwrapRows(payload) {
 }
 
 function loadToken() {
-  try { return localStorage.getItem('sc_uex_token_v1') || ''; } catch { return ''; }
+  return String(readStorage('sc_uex_token_v1', '') || '');
 }
 
 function loadSecretKey() {
-  try { return localStorage.getItem('sc_uex_secretkey_v1') || ''; } catch { return ''; }
+  return String(readStorage('sc_uex_secretkey_v1', '') || '');
 }
 
 async function requestUex(endpoint) {
@@ -191,29 +188,53 @@ export function saveVehicleCatalog(catalog) {
 }
 
 /** Sincroniza somente endpoints documentados de veículos da UEX. */
-export async function syncUexVehicles() {
-  const results = await Promise.allSettled([
-    requestUex('vehicles'),
-    requestUex('vehicles_purchases_prices_all'),
-    requestUex('vehicles_rentals_prices_all'),
-  ]);
+export function syncUexVehicles() {
+  // UEX Live e Hangar podem pedir a primeira sincronização ao mesmo tempo.
+  // Compartilhar a Promise evita duas consultas simultâneas e duas gravações.
+  if (vehicleSyncPromise) return vehicleSyncPromise;
 
-  const previous = loadVehicleCatalog() || {};
-  const failures = [];
-  const [vehiclesResult, purchasesResult, rentalsResult] = results;
-  for (const result of results) {
-    if (result.status === 'rejected') failures.push(result.reason?.message || 'Falha desconhecida');
-  }
+  const promise = (async () => {
+    const results = await Promise.allSettled([
+      requestUex('vehicles'),
+      requestUex('vehicles_purchases_prices_all'),
+      requestUex('vehicles_rentals_prices_all'),
+    ]);
 
-  const catalog = saveVehicleCatalog({
-    syncedAt: new Date().toISOString(),
-    vehicles: vehiclesResult.status === 'fulfilled' ? unwrapRows(vehiclesResult.value) : previous.vehicles || [],
-    purchasePrices: purchasesResult.status === 'fulfilled' ? unwrapRows(purchasesResult.value) : previous.purchasePrices || [],
-    rentalPrices: rentalsResult.status === 'fulfilled' ? unwrapRows(rentalsResult.value) : previous.rentalPrices || [],
+    const previous = loadVehicleCatalog() || {};
+    const failures = [];
+    const [vehiclesResult, purchasesResult, rentalsResult] = results;
+    for (const result of results) {
+      if (result.status === 'rejected') failures.push(result.reason?.message || 'Falha desconhecida');
+    }
+
+    const catalog = saveVehicleCatalog({
+      syncedAt: new Date().toISOString(),
+      vehicles: vehiclesResult.status === 'fulfilled' ? unwrapRows(vehiclesResult.value) : previous.vehicles || [],
+      purchasePrices: purchasesResult.status === 'fulfilled' ? unwrapRows(purchasesResult.value) : previous.purchasePrices || [],
+      rentalPrices: rentalsResult.status === 'fulfilled' ? unwrapRows(rentalsResult.value) : previous.rentalPrices || [],
+    });
+
+    if (!catalog.vehicles.length && failures.length) throw new Error(failures.join(' · '));
+    return { ...catalog, failures };
+  })();
+
+  vehicleSyncPromise = promise;
+  return promise.finally(() => {
+    if (vehicleSyncPromise === promise) vehicleSyncPromise = null;
   });
+}
 
-  if (!catalog.vehicles.length && failures.length) throw new Error(failures.join(' · '));
-  return { ...catalog, failures };
+/**
+ * Carrega o catálogo local e só consulta a UEX quando ele ainda não existe.
+ * `force: true` é usado pelo botão explícito Atualizar da aba Veículos.
+ */
+export async function ensureVehicleCatalog({ force = false } = {}) {
+  const localCatalog = loadVehicleCatalog();
+  if (!force && localCatalog?.vehicles?.length) {
+    return { ...localCatalog, failures: [], synced: false };
+  }
+  const syncedCatalog = await syncUexVehicles();
+  return { ...syncedCatalog, synced: true };
 }
 
 /** Consulta preços detalhados de um veículo expandido na tela. */
@@ -255,9 +276,10 @@ export function saveMyHangar(entries) {
     const quantity = Math.max(1, Number(entry.quantity) || 1);
     const legacyUnitPrice = numberOrNull(entry.unitPriceAuec ?? entry.purchasePriceAuec ?? entry.priceAuec ?? entry.price_auec);
     const storedTotal = numberOrNull(entry.totalCostAuec ?? entry.total_cost_auec);
-    const totalCostAuec = source === 'compra'
-      ? Math.max(0, storedTotal ?? ((legacyUnitPrice ?? 0) * quantity))
-      : 0;
+    const legacyTotal = (legacyUnitPrice ?? 0) * quantity;
+    // Registros antigos podem ter totalCostAuec=0 mesmo contendo o preço unitário.
+    const preferredTotal = storedTotal !== null && storedTotal > 0 ? storedTotal : legacyTotal;
+    const totalCostAuec = source === 'compra' ? Math.max(0, preferredTotal) : 0;
     const unitPriceAuec = source === 'compra' && totalCostAuec > 0
       ? totalCostAuec / quantity
       : (source === 'compra' ? legacyUnitPrice : null);
@@ -354,18 +376,32 @@ export function getPurchaseRows(catalog, vehicleId) {
   return (catalog?.purchasePrices || []).filter(row => Number(row.id_vehicle) === Number(vehicleId));
 }
 
+/** Retorna a média do preço de compra disponível no catálogo UEX local. */
+export function getVehiclePurchaseAverage(catalog, vehicleId) {
+  const values = getPurchaseRows(catalog, vehicleId)
+    .map(row => row.price_buy_avg ?? row.price_buy)
+    .map(Number)
+    .filter(value => Number.isFinite(value) && value > 0);
+  if (!values.length) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
 export function getRentalRows(catalog, vehicleId) {
   return (catalog?.rentalPrices || []).filter(row => Number(row.id_vehicle) === Number(vehicleId));
 }
 
-export function getPurchasedAuecTotal(entries = loadMyHangar()) {
+export function getPurchasedAuecTotal(entries = loadMyHangar(), catalog = null) {
   return (Array.isArray(entries) ? entries : [])
     .filter(entry => entry?.source !== 'wikelo')
     .reduce((total, entry) => {
       const quantity = Math.max(0, Number(entry?.quantity) || 0);
       const storedTotal = Number(entry?.totalCostAuec);
-      const legacyTotal = Number(entry?.unitPriceAuec ?? entry?.purchasePriceAuec ?? entry?.priceAuec ?? entry?.price_auec) * quantity;
-      return total + (Number.isFinite(storedTotal) ? Math.max(0, storedTotal) : (Number.isFinite(legacyTotal) ? Math.max(0, legacyTotal) : 0));
+      const legacyUnitPrice = Number(entry?.unitPriceAuec ?? entry?.purchasePriceAuec ?? entry?.priceAuec ?? entry?.price_auec);
+      const legacyTotal = Number.isFinite(legacyUnitPrice) ? legacyUnitPrice * quantity : 0;
+      const catalogAverage = catalog ? getVehiclePurchaseAverage(catalog, entry?.vehicleId) : null;
+      const catalogTotal = Number.isFinite(catalogAverage) ? catalogAverage * quantity : 0;
+      const usableTotal = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : (legacyTotal > 0 ? legacyTotal : catalogTotal);
+      return total + (Number.isFinite(usableTotal) ? Math.max(0, usableTotal) : 0);
     }, 0);
 }
 
@@ -380,7 +416,7 @@ export function getCatalogStats(catalog) {
     rentalOffers: (catalog?.rentalPrices || []).length,
     ownedTypes: owned.length,
     ownedUnits: owned.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
-    purchasedAuecTotal: getPurchasedAuecTotal(owned),
+    purchasedAuecTotal: getPurchasedAuecTotal(owned, catalog),
   };
 }
 

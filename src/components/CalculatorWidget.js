@@ -139,26 +139,26 @@ export default function CalculatorWidget() {
   return (
     <>
       {!open && (
-        <button onClick={()=>setOpen(true)} title="Abrir calculadora" aria-label="Abrir calculadora" style={{position:'fixed',right:12,bottom:12,zIndex:3999,width:46,height:46,borderRadius:'50%',border:'1px solid rgba(56,189,248,0.45)',background:'rgba(13,23,38,0.96)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 25px rgba(0,0,0,0.45),0 0 18px rgba(56,189,248,0.12)',pointerEvents:'auto'}}>
+        <button className="calculator-launcher" onClick={()=>setOpen(true)} title="Abrir calculadora" aria-label="Abrir calculadora" style={{position:'fixed',right:12,bottom:12,zIndex:3999,width:46,height:46,borderRadius:'50%',border:'1px solid rgba(56,189,248,0.45)',background:'rgba(13,23,38,0.96)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 25px rgba(0,0,0,0.45),0 0 18px rgba(56,189,248,0.12)',pointerEvents:'auto'}}>
           <Calculator size={20}/>
         </button>
       )}
       {open && (
-        <div style={panelStyle} role="dialog" aria-label="Calculadora flutuante">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 11px',background:'rgba(56,189,248,0.07)',borderBottom:'1px solid rgba(56,189,248,0.18)'}}>
+        <div className="calculator-panel" style={panelStyle} role="dialog" aria-label="Calculadora flutuante">
+          <div className="calculator-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 11px',background:'rgba(56,189,248,0.07)',borderBottom:'1px solid rgba(56,189,248,0.18)'}}>
             <div style={{display:'flex',alignItems:'center',gap:7,color:'var(--accent-primary)',fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase'}}><Calculator size={14}/> Calculadora</div>
             <div style={{display:'flex',alignItems:'center',gap:5}}>
               <GripHorizontal size={14} style={{color:'var(--text-muted)'}}/>
-              <button onClick={()=>setOpen(false)} title="Fechar calculadora" aria-label="Fechar calculadora" style={{width:23,height:23,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-muted)',cursor:'pointer'}}><X size={12}/></button>
+              <button className="calculator-close" onClick={()=>setOpen(false)} title="Fechar calculadora" aria-label="Fechar calculadora" style={{width:23,height:23,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-muted)',cursor:'pointer'}}><X size={12}/></button>
             </div>
           </div>
-          <div style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
+          <div className="calculator-display" style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
             <div style={{minHeight:18,textAlign:'right',color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatExpressionForDisplay(expression) || '0'}</div>
             <div style={{minHeight:32,textAlign:'right',color:error?'var(--accent-red)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:22,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayResult}</div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
+          <div className="calculator-keypad" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
             {BUTTONS.map((button,index)=>(
-              <button key={`${button.label}-${index}`} onClick={()=>handleButton(button)} style={buttonStyle(button)}>
+              <button className={`calculator-key ${button.tone ? `tone-${button.tone}` : ''}`} key={`${button.label}-${index}`} onClick={()=>handleButton(button)} style={buttonStyle(button)}>
                 {button.icon ? <button.icon size={15}/> : button.label}
               </button>
             ))}

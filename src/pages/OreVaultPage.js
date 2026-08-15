@@ -6,7 +6,7 @@ import {
   Gem, Minus, ArrowLeft, Camera, Download, Copy,
   Diamond, Sprout
 } from 'lucide-react';
-import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry } from '../data/oreVault';
+import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry, wipeVault } from '../data/oreVault';
 import TransferModal from '../components/TransferModal';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { getOreColor as getSharedOreColor } from '../data/oreColors';
@@ -701,6 +701,19 @@ export default function OreVaultPage() {
 
   function handleDelete(id) { removeOreEntry(id); refresh(); }
 
+  function handleWipeVault() {
+    const total = Array.isArray(vault.entries) ? vault.entries.length : 0;
+    if (total === 0) return;
+    const confirmed = window.confirm(`Deu wipe no Baú de Minério?\n\nTodas as ${total} entradas de minério serão apagadas permanentemente desta lista. Essa ação não pode ser desfeita.`);
+    if (!confirmed) return;
+    const result = wipeVault();
+    refresh();
+    setSelCategory(null);
+    setSelOre(null);
+    setSearch('');
+    window.alert(`Wipe concluído. ${result.removed} entrada(s) foram removida(s) do Baú de Minério.`);
+  }
+
   async function handleGenerateImage() {
     setGeneratingImg(true);
     try {
@@ -803,6 +816,9 @@ export default function OreVaultPage() {
         <div style={{display:'flex',gap:8}}>
           <button onClick={handleGenerateImage} disabled={totalEntries===0||generatingImg} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:totalEntries===0?'not-allowed':'pointer',opacity:totalEntries===0?0.5:1}}>
             {generatingImg ? <><RefreshCw size={14} style={{animation:'spin 1s linear infinite'}}/> Gerando...</> : <><Camera size={14}/> Gerar Imagem</>}
+          </button>
+          <button onClick={handleWipeVault} disabled={totalEntries === 0} data-help="Apaga todas as entradas do Baú de Minério depois de uma confirmação. Use quando ocorrer um wipe no jogo." style={{display:'flex',alignItems:'center',gap:7,padding:'9px 12px',background:totalEntries?'rgba(251,113,133,0.08)':'transparent',border:'1px solid rgba(251,113,133,0.28)',borderRadius:7,color:'var(--accent-red)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:800,textTransform:'uppercase',cursor:totalEntries?'pointer':'not-allowed',opacity:totalEntries?1:0.5}}>
+            <Trash2 size={13}/> Deu wipe
           </button>
           <button onClick={()=>{setShowForm(true);setEditEntry(null);setPreOre(selOre||null);}} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.35)',borderRadius:7,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
             <Plus size={14}/> Adicionar Minério

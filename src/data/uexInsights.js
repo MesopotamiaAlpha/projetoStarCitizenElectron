@@ -286,11 +286,13 @@ export function formatUec(value) {
 
 export function snapshotFreshness(snapshot, ttlHours = 24) {
   const time = Date.parse(snapshot?.syncedAt || '');
-  if (!Number.isFinite(time)) return { label: 'Nunca sincronizado', tone: 'muted', stale: true };
-  const ageHours = (Date.now() - time) / 36e5;
-  if (ageHours > ttlHours) return { label: 'Dados antigos', tone: 'danger', stale: true };
-  if (ageHours > ttlHours * 0.75) return { label: 'Atualização recomendada', tone: 'warning', stale: false };
-  return { label: 'Dados recentes', tone: 'success', stale: false };
+  if (!Number.isFinite(time)) return { label: 'Nunca sincronizado', tone: 'muted', stale: true, ageDays: null, ageLabel: 'sem data de atualização' };
+  const ageHours = Math.max(0, (Date.now() - time) / 36e5);
+  const ageDays = Math.floor(ageHours / 24);
+  const ageLabel = ageDays === 0 ? 'atualizado hoje' : ageDays === 1 ? 'há 1 dia' : `há ${ageDays} dias`;
+  if (ageHours > ttlHours) return { label: 'Dados antigos', tone: 'danger', stale: true, ageDays, ageLabel };
+  if (ageHours > ttlHours * 0.75) return { label: 'Atualização recomendada', tone: 'warning', stale: false, ageDays, ageLabel };
+  return { label: 'Dados recentes', tone: 'success', stale: false, ageDays, ageLabel };
 }
 
 export const UEX_INSIGHTS_EVENT = 'sc_uex_insights_updated';
