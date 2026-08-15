@@ -200,7 +200,7 @@ export default function DataDirectoryPage() {
       <div className="page-body">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '12px 15px', background: 'rgba(56,189,248,.05)', border: '1px solid rgba(56,189,248,.18)', borderRadius: 8, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.6, marginBottom: 18 }}>
           <Info size={15} style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }} />
-          <div><strong>Como funciona:</strong> na primeira execução, o app cria a pasta <strong>CompanheiroEmoto</strong> dentro do diretório escolhido. O SQLite fica em <code>dados</code>, os backups em <code>backup</code> e o localStorage do Electron permanece dentro dessa mesma pasta.</div>
+          <div><strong>Como funciona:</strong> a execução de desenvolvimento usa uma pasta separada chamada <strong>CompanheiroEmoto-Dev</strong>. A versão instalada usa <strong>CompanheiroEmoto</strong>. O SQLite fica em <code>dados</code>, os backups em <code>backup</code> e o localStorage do Electron permanece dentro da pasta do ambiente correspondente.</div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(300px, .65fr)', gap: 18, alignItems: 'start' }}>
@@ -209,6 +209,7 @@ export default function DataDirectoryPage() {
             <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 12 }}>Este é o diretório que deve ser copiado para backup manual ou manutenção.</div>
             {loading ? <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '18px 0' }}>Lendo configuração...</div> : (
               <div>
+                <PathRow label="Ambiente" value={info?.environment === 'development' ? 'Desenvolvimento — CompanheiroEmoto-Dev' : 'Produção — CompanheiroEmoto'} onCopy={copyPath} />
                 <PathRow label="Pasta principal" value={info?.dataRoot} onCopy={copyPath} />
                 <PathRow label="Banco SQLite" value={info?.databasePath} onCopy={copyPath} />
                 <PathRow label="Backups" value={info?.backupPath} onCopy={copyPath} />
@@ -217,6 +218,7 @@ export default function DataDirectoryPage() {
               </div>
             )}
             {copied && <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-green)', fontSize: 11, marginTop: 10 }}><CheckCircle2 size={13} /> Caminho copiado.</div>}
+            {migration.warnings?.length > 0 && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginTop: 12, padding: '9px 10px', background: 'rgba(251,191,36,.07)', border: '1px solid rgba(251,191,36,.25)', borderRadius: 6, color: 'var(--accent-gold)', fontSize: 11, lineHeight: 1.5 }}><AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /><span>{migration.warnings.join(' ')}</span></div>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 18 }}>
               <ActionButton icon={ExternalLink} onClick={openFolder} disabled={!isElectron() || busy === 'open'}>Abrir pasta</ActionButton>
               <ActionButton icon={FolderCog} tone="gold" onClick={chooseDirectory} disabled={!isElectron() || busy === 'choose'}>{busy === 'choose' ? 'Abrindo...' : 'Trocar diretório'}</ActionButton>

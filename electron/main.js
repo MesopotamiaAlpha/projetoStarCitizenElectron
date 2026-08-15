@@ -5,8 +5,15 @@ const fs   = require('fs');
 const isDev = process.env.NODE_ENV === 'development';
 
 const APP_DIR_NAME = 'CompanheiroEmoto';
+const APP_ID = 'com.companheiroemoto.app';
+const DATA_ENVIRONMENT = isDev ? 'development' : 'production';
+// Desenvolvimento e produção nunca compartilham ponte de configuração, pasta,
+// SQLite ou localStorage. Isso evita que o npm run dev contamine a instalação.
+const DATA_FOLDER_NAME = isDev ? `${APP_DIR_NAME}-Dev` : APP_DIR_NAME;
+const CONFIG_FOLDER_NAME = isDev ? `${APP_DIR_NAME}-Dev` : APP_DIR_NAME;
 const DB_FILE_NAME = 'companheiro_emoto.db';
 const DATA_CONFIG_FILE = 'config.json';
+const DATA_MANIFEST_FILE = '.companheiro-emoto-data.json';
 const TRANSIENT_DATA_NAMES = new Set([
   'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'Crashpad',
   'logs', 'SingletonCookie', 'SingletonLock', 'SingletonSocket'
@@ -48,26 +55,85 @@ function safeReadJson(filePath) {
 }
 
 function getDataConfigPath() {
-  return path.join(app.getPath('appData'), APP_DIR_NAME, DATA_CONFIG_FILE);
+  return path.join(app.getPath('appData'), CONFIG_FOLDER_NAME, DATA_CONFIG_FILE);
 }
 
 function getDefaultDataRoot() {
-  return path.join(path.parse(app.getPath('home')).root, APP_DIR_NAME);
+  return path.join(path.parse(app.getPath('home')).root, DATA_FOLDER_NAME);
 }
 
 function normalizeSelectedRoot(selectedPath) {
   const cleanPath = path.resolve(selectedPath);
-  return path.basename(cleanPath).toLowerCase() === APP_DIR_NAME.toLowerCase()
+  return path.basename(cleanPath).toLowerCase() === DATA_FOLDER_NAME.toLowerCase()
     ? cleanPath
-    : path.join(cleanPath, APP_DIR_NAME);
+    : path.join(cleanPath, DATA_FOLDER_NAME);
+}
+
+function isCurrentEnvironmentConfig(config) {
+  return Boolean(
+    config
+      && config.app === APP_DIR_NAME
+      && config.appId === APP_ID
+      && config.environment === DATA_ENVIRONMENT
+      && typeof config.dataRoot === 'string'
+      && config.dataRoot.trim(),
+  );
+}
+
+function getDataManifestPath(root) {
+  return path.join(root, DATA_MANIFEST_FILE);
+}
+
+function isCurrentEnvironmentRoot(root) {
+  const manifest = safeReadJson(getDataManifestPath(root));
+  return Boolean(
+    manifest
+      && manifest.app === APP_DIR_NAME
+      && manifest.appId === APP_ID
+      && manifest.environment === DATA_ENVIRONMENT,
+  );
+}
+
+function writeDataManifest(root) {
+  fs.writeFileSync(getDataManifestPath(root), JSON.stringify({
+    version: 1,
+    app: APP_DIR_NAME,
+    appId: APP_ID,
+    environment: DATA_ENVIRONMENT,
+    dataRoot: root,
+    createdAt: new Date().toISOString(),
+  }, null, 2), 'utf8');
+}
+
+function directoryHasPersistentData(root) {
+  if (!root || !fs.existsSync(root)) return false;
+  return [
+    path.join(root, 'dados', DB_FILE_NAME),
+    path.join(root, 'Local Storage'),
+    path.join(root, 'IndexedDB'),
+    path.join(root, 'Session Storage'),
+  ].some(candidate => fs.existsSync(candidate));
+}
+
+function makeLegacyArchivePath(root) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let candidate = `${root}-legado-${stamp}`;
+  let suffix = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = `${root}-legado-${stamp}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 function writeDataConfig(root) {
   dataConfigPath = dataConfigPath || getDataConfigPath();
   ensureDirectory(path.dirname(dataConfigPath));
   fs.writeFileSync(dataConfigPath, JSON.stringify({
-    version: 1,
+    version: 2,
     app: APP_DIR_NAME,
+    appId: APP_ID,
+    environment: DATA_ENVIRONMENT,
     dataRoot: root,
     updatedAt: new Date().toISOString(),
   }, null, 2), 'utf8');
@@ -167,18 +233,24 @@ function saveDb() {
 }
 
 async function configureDataDirectory() {
+  // Captura apenas o caminho padrão para diagnóstico. Nenhum arquivo desse
+  // diretório é copiado automaticamente para a instalação atual.
   legacyUserDataPath = app.getPath('userData');
   dataConfigPath = getDataConfigPath();
   const savedConfig = safeReadJson(dataConfigPath);
-  let selectedRoot = savedConfig && typeof savedConfig.dataRoot === 'string'
+  const hasValidSavedConfig = isCurrentEnvironmentConfig(savedConfig);
+  let selectedRoot = hasValidSavedConfig
     ? path.resolve(savedConfig.dataRoot)
     : null;
+  const ignoredConfig = Boolean(savedConfig && !hasValidSavedConfig);
+  const startupWarnings = [];
+  let archivedLegacyRoot = null;
 
   if (!selectedRoot) {
     const defaultRoot = getDefaultDataRoot();
     const result = await dialog.showOpenDialog({
       title: `Escolha onde criar a pasta ${APP_DIR_NAME}`,
-      message: `Selecione o diretório-pai. O aplicativo criará a pasta ${APP_DIR_NAME} dentro dele.`,
+      message: `Selecione o diretório-pai. O aplicativo criará a pasta ${DATA_FOLDER_NAME} dentro dele.`,
       defaultPath: path.parse(defaultRoot).root,
       properties: ['openDirectory', 'createDirectory'],
     });
@@ -191,23 +263,68 @@ async function configureDataDirectory() {
     ensureDirectory(selectedRoot);
   } catch (error) {
     // Se o diretório escolhido estiver protegido, não interrompemos o app.
-    selectedRoot = path.join(legacyUserDataPath, APP_DIR_NAME);
+    selectedRoot = path.join(legacyUserDataPath, DATA_FOLDER_NAME);
     ensureDirectory(selectedRoot);
-    dataMigration.warnings.push(`Não foi possível usar o diretório escolhido: ${error.message}`);
+    startupWarnings.push(`Não foi possível usar o diretório escolhido: ${error.message}`);
+  }
+
+  // Se a pasta escolhida já contém dados, mas não possui assinatura deste
+  // ambiente, não a abrimos silenciosamente. Por padrão preservamos a pasta
+  // antiga renomeando-a e iniciamos uma pasta limpa; o usuário pode escolher
+  // explicitamente a opção de reutilizar os dados existentes.
+  if (!hasValidSavedConfig && !isCurrentEnvironmentRoot(selectedRoot) && directoryHasPersistentData(selectedRoot)) {
+    const decision = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Dados antigos encontrados',
+      message: 'A pasta escolhida já contém dados sem identificação deste ambiente.',
+      detail: `Para evitar misturar dados de teste, o Companheiro Emoto pode preservar essa pasta e iniciar uma nova. Pasta encontrada: ${selectedRoot}`,
+      buttons: ['Criar pasta limpa e preservar antigos', 'Usar dados existentes'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (decision.response === 0) {
+      archivedLegacyRoot = makeLegacyArchivePath(selectedRoot);
+      fs.renameSync(selectedRoot, archivedLegacyRoot);
+      ensureDirectory(selectedRoot);
+      startupWarnings.push(`A pasta antiga foi preservada em ${archivedLegacyRoot}.`);
+    } else {
+      startupWarnings.push('Dados existentes foram reutilizados somente por escolha explícita.');
+    }
   }
 
   dataRoot = selectedRoot;
-  const migrationWarning = dataMigration.warnings.slice();
-  dataMigration = migrateLegacyData(legacyUserDataPath, dataRoot);
-  dataMigration.warnings.unshift(...migrationWarning);
-  if (migrateDatabaseInsideDataRoot(dataRoot)) dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
+  // Não migramos mais o userData antigo automaticamente. Esse diretório pode
+  // pertencer a uma execução de teste, a outro build ou a uma versão anterior.
+  // A transferência de dados deve acontecer somente por backup completo ou pela
+  // troca explícita de diretório dentro do aplicativo.
+  dataMigration = {
+    copied: [],
+    skipped: [],
+    warnings: startupWarnings,
+    at: new Date().toISOString(),
+    automatic: false,
+    ignoredConfig: Boolean(ignoredConfig),
+    archivedLegacyRoot,
+    source: null,
+  };
+  if (ignoredConfig) {
+    dataMigration.warnings.push('A configuração existente pertencia a outro ambiente ou versão e foi ignorada para evitar mistura de dados.');
+  }
+  // Migração de um banco legado dentro da pasta central só é permitida quando
+  // a própria ponte confirma que essa pasta pertence a este ambiente. Em uma
+  // instalação limpa, um .db encontrado por acaso não é tratado como usuário.
+  if (hasValidSavedConfig && migrateDatabaseInsideDataRoot(dataRoot)) {
+    dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
+  }
   ensureDirectory(path.join(dataRoot, 'dados'));
   ensureDirectory(path.join(dataRoot, 'backup'));
   ensureDirectory(path.join(dataRoot, 'exportados'));
+  writeDataManifest(dataRoot);
   writeDataConfig(dataRoot);
 
-  // A partir da criação da janela, localStorage, cookies e demais dados do
-  // Electron passam a ficar dentro da pasta central escolhida.
+  // A partir deste ponto, antes de criar BrowserWindow, localStorage, cookies e
+  // demais dados persistentes do Electron passam a ficar na pasta escolhida.
   app.setPath('userData', dataRoot);
   dbPath = path.join(dataRoot, 'dados', DB_FILE_NAME);
   return { dataRoot, legacyUserDataPath, dataConfigPath, migration: dataMigration };
@@ -1950,11 +2067,15 @@ function dataInfo() {
   return {
     success: true,
     app: APP_DIR_NAME,
+    appId: APP_ID,
+    environment: DATA_ENVIRONMENT,
     dataRoot,
     databasePath: dbPath,
+    databaseExists: Boolean(dbPath && fs.existsSync(dbPath)),
     backupPath: path.join(dataRoot, 'backup'),
     exportPath: path.join(dataRoot, 'exportados'),
     pointerConfigPath: dataConfigPath,
+    manifestPath: getDataManifestPath(dataRoot),
     legacyUserDataPath,
     migration: dataMigration,
   };
@@ -2122,7 +2243,7 @@ ipcMain.handle('data-open-folder', async () => {
 ipcMain.handle('data-choose-directory', async () => {
   const result = await dialog.showOpenDialog({
     title: `Escolha o novo diretório-pai de ${APP_DIR_NAME}`,
-    message: `A pasta ${APP_DIR_NAME} será criada dentro do diretório escolhido. O app será reiniciado depois da troca.`,
+    message: `A pasta ${DATA_FOLDER_NAME} será criada dentro do diretório escolhido. O app será reiniciado depois da troca.`,
     defaultPath: dataRoot || getDefaultDataRoot(),
     properties: ['openDirectory', 'createDirectory'],
   });

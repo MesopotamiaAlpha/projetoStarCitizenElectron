@@ -10,6 +10,7 @@ const LEGACY_VEHICLE_CATALOG_KEYS = Object.freeze([
   'sc_uex_live_vehicles_v1',
 ]);
 const HANGAR_KEY = 'sc_hangar_v1';
+let vehicleSyncPromise = null;
 
 export const VEHICLE_CATALOG_VERSION = 1;
 export const UEX_VEHICLES_UPDATED_EVENT = 'sc-uex-vehicles-updated';
@@ -187,29 +188,53 @@ export function saveVehicleCatalog(catalog) {
 }
 
 /** Sincroniza somente endpoints documentados de veículos da UEX. */
-export async function syncUexVehicles() {
-  const results = await Promise.allSettled([
-    requestUex('vehicles'),
-    requestUex('vehicles_purchases_prices_all'),
-    requestUex('vehicles_rentals_prices_all'),
-  ]);
+export function syncUexVehicles() {
+  // UEX Live e Hangar podem pedir a primeira sincronização ao mesmo tempo.
+  // Compartilhar a Promise evita duas consultas simultâneas e duas gravações.
+  if (vehicleSyncPromise) return vehicleSyncPromise;
 
-  const previous = loadVehicleCatalog() || {};
-  const failures = [];
-  const [vehiclesResult, purchasesResult, rentalsResult] = results;
-  for (const result of results) {
-    if (result.status === 'rejected') failures.push(result.reason?.message || 'Falha desconhecida');
-  }
+  const promise = (async () => {
+    const results = await Promise.allSettled([
+      requestUex('vehicles'),
+      requestUex('vehicles_purchases_prices_all'),
+      requestUex('vehicles_rentals_prices_all'),
+    ]);
 
-  const catalog = saveVehicleCatalog({
-    syncedAt: new Date().toISOString(),
-    vehicles: vehiclesResult.status === 'fulfilled' ? unwrapRows(vehiclesResult.value) : previous.vehicles || [],
-    purchasePrices: purchasesResult.status === 'fulfilled' ? unwrapRows(purchasesResult.value) : previous.purchasePrices || [],
-    rentalPrices: rentalsResult.status === 'fulfilled' ? unwrapRows(rentalsResult.value) : previous.rentalPrices || [],
+    const previous = loadVehicleCatalog() || {};
+    const failures = [];
+    const [vehiclesResult, purchasesResult, rentalsResult] = results;
+    for (const result of results) {
+      if (result.status === 'rejected') failures.push(result.reason?.message || 'Falha desconhecida');
+    }
+
+    const catalog = saveVehicleCatalog({
+      syncedAt: new Date().toISOString(),
+      vehicles: vehiclesResult.status === 'fulfilled' ? unwrapRows(vehiclesResult.value) : previous.vehicles || [],
+      purchasePrices: purchasesResult.status === 'fulfilled' ? unwrapRows(purchasesResult.value) : previous.purchasePrices || [],
+      rentalPrices: rentalsResult.status === 'fulfilled' ? unwrapRows(rentalsResult.value) : previous.rentalPrices || [],
+    });
+
+    if (!catalog.vehicles.length && failures.length) throw new Error(failures.join(' · '));
+    return { ...catalog, failures };
+  })();
+
+  vehicleSyncPromise = promise;
+  return promise.finally(() => {
+    if (vehicleSyncPromise === promise) vehicleSyncPromise = null;
   });
+}
 
-  if (!catalog.vehicles.length && failures.length) throw new Error(failures.join(' · '));
-  return { ...catalog, failures };
+/**
+ * Carrega o catálogo local e só consulta a UEX quando ele ainda não existe.
+ * `force: true` é usado pelo botão explícito Atualizar da aba Veículos.
+ */
+export async function ensureVehicleCatalog({ force = false } = {}) {
+  const localCatalog = loadVehicleCatalog();
+  if (!force && localCatalog?.vehicles?.length) {
+    return { ...localCatalog, failures: [], synced: false };
+  }
+  const syncedCatalog = await syncUexVehicles();
+  return { ...syncedCatalog, synced: true };
 }
 
 /** Consulta preços detalhados de um veículo expandido na tela. */

@@ -7338,3 +7338,31 @@ button[class*="add"]:hover {
 @media (prefers-reduced-motion: reduce) {
   .uex-quick-texts-popover { animation: none; }
 }
+
+/* Tracking: o Baú de Minério é a fonte única de estoque */
+.material-vault-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 5px;
+  background: rgba(251, 191, 36, 0.07);
+  color: var(--accent-gold);
+  font-family: "Exo 2", sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.material-tracker-source-note {
+  box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.4);
+}
+
+@media (max-width: 760px) {
+  .material-vault-source-badge {
+    margin-left: 38px;
+  }
+}

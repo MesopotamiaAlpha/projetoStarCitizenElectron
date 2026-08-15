@@ -3,11 +3,13 @@
 import {
   normalizeCargoUnit,
   isCargoUnit,
+  areCargoUnitsCompatible,
   toCargoBase,
   fromCargoBase,
   roundCargo,
 } from './cargoUnits';
 import { readJson, writeJson } from '../utils/storage';
+import { qualityMeetsMinimum } from './oreVault';
 
 const KEY = 'sc_material_queue_v1';
 const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
@@ -178,9 +180,31 @@ export function resetMaterialCollected(materialName, qualityMin = 0) {
   return q;
 }
 
-// Calculate the consolidated shopping list from all queued blueprints
+function normalizeStockName(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function getVaultCollectedBase(stockEntries, materialName, qualityMin, requiredUnit = 'un') {
+  const target = normalizeStockName(materialName);
+  const targetUnit = normalizeCargoUnit(requiredUnit || 'un');
+  return (Array.isArray(stockEntries) ? stockEntries : []).reduce((total, entry) => {
+    if (normalizeStockName(entry?.ore_name) !== target) return total;
+    if (!qualityMeetsMinimum(entry?.quality, qualityMin)) return total;
+    const entryUnit = normalizeCargoUnit(entry?.unit || 'un');
+    const compatible = isCargoUnit(targetUnit) && isCargoUnit(entryUnit)
+      ? areCargoUnitsCompatible(targetUnit, entryUnit)
+      : entryUnit === targetUnit;
+    if (!compatible) return total;
+    return total + toBase(Number(entry.quantity) || 0, entryUnit);
+  }, 0);
+}
+
+// Calculate the consolidated shopping list from all queued blueprints.
+// When stockEntries is provided, the Ore Vault is the single source of truth.
+// The old collectedMaterials map remains only as a compatibility fallback for
+// callers that do not yet provide the vault entries.
 // Returns: [{ material_name, needed_total, quality_min, collected, remaining, locations }]
-export function calcShoppingList(queue) {
+export function calcShoppingList(queue, stockEntries) {
   const map = {};
   for (const bp of queue.queuedBlueprints) {
     for (const ing of bp.ingredients || []) {
@@ -227,7 +251,9 @@ export function calcShoppingList(queue) {
   }
 
   return Object.values(map).map(item => {
-    const collectedBase = getCollectedAmount(queue, item.material_name, item.quality_min);
+    const collectedBase = Array.isArray(stockEntries)
+      ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit)
+      : getCollectedAmount(queue, item.material_name, item.quality_min);
     const neededBase    = roundCargo(item.needed_base);
     const needed        = fromBase(neededBase, item.unit);
     const collected    = fromBase(Math.min(collectedBase, neededBase), item.unit);

@@ -134,7 +134,24 @@ function buildMockAPI() {
   };
 }
 
-export const api = window.electronAPI || buildMockAPI();
+function buildUnavailableAPI() {
+  const message = 'A ponte Electron não foi carregada. Feche e reinstale o Companheiro Emoto; dados de demonstração não serão usados no aplicativo instalado.';
+  return new Proxy({}, {
+    get: () => async () => { throw new Error(message); },
+  });
+}
+
+const hasElectronBridge = Boolean(window.electronAPI?.isCompanheiroEmotoElectron);
+const isPackagedElectron = typeof window !== 'undefined' && window.location?.protocol === 'file:';
+if (isPackagedElectron && !hasElectronBridge) {
+  // Diagnóstico deliberado: uma instalação empacotada nunca deve cair no mock.
+  // No navegador de desenvolvimento/prévia o mock continua permitido.
+  console.error('Companheiro Emoto: preload.js não carregado; API mock bloqueada no aplicativo empacotado.');
+}
+
+export const api = hasElectronBridge
+  ? window.electronAPI
+  : (isPackagedElectron ? buildUnavailableAPI() : buildMockAPI());
 
 const NAV_GROUPS = [
   { id:'inicio', label:'Início', hint:'Visão geral', accent:'#38bdf8', groupIcon:BarChart3, pages:[

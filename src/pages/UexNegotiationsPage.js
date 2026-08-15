@@ -7,6 +7,7 @@ import {
 import {
   getNegotiationClosure, closeNegotiation, registerNegotiationSale,
 } from '../data/uexSales';
+import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
 
 function fmtDate(ts) {
@@ -67,6 +68,23 @@ function playChatNotificationSound() {
 
 function messageKey(message) {
   return String(message.id ?? `${message.date_added || 0}:${message.user_username || ''}:${message.message || ''}`);
+}
+
+function getNegotiationListingUrl(negotiation) {
+  const directUrl = [
+    negotiation?.listing_url,
+    negotiation?.listingUrl,
+    negotiation?.source_listing_url,
+    negotiation?.url,
+    negotiation?.link,
+  ].map(value => String(value || '').trim()).find(value => /^https?:\/\//i.test(value));
+  if (directUrl) return directUrl;
+
+  const slug = negotiation?.listing_slug
+    || negotiation?.source_listing_slug
+    || negotiation?.listing?.slug
+    || negotiation?.listing?.listing_slug;
+  return slug ? buildUexListingUrl(slug) : '';
 }
 
 const NEGOTIATION_COLORS = [
@@ -332,6 +350,7 @@ function NegotiationThread({ negotiation, onBack }) {
   }
 
   const lastUpdatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString('pt-BR') : '—';
+  const negotiationListingUrl = getNegotiationListingUrl(negotiation);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -343,6 +362,11 @@ function NegotiationThread({ negotiation, onBack }) {
           {negotiation.listing_title}
         </div>
         <div style={{ marginLeft: 'auto', position:'relative', display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', justifyContent:'flex-end' }}>
+          {negotiationListingUrl && (
+            <a href={negotiationListingUrl} target="_blank" rel="noreferrer" data-help="Abra o anúncio correspondente na UEX para revisar ou finalizar a venda diretamente no site." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+              Finalizar venda na UEX <ExternalLink size={11} />
+            </a>
+          )}
           <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'var(--accent-primary)', textDecoration:'none' }}>
             Abrir Spectrum <ExternalLink size={11} />
           </a>

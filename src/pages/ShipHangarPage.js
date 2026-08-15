@@ -20,6 +20,7 @@ import {
   updateMyHangarEntry,
   getPurchasedAuecTotal,
   getVehiclePurchaseAverage,
+  ensureVehicleCatalog,
   UEX_VEHICLES_UPDATED_EVENT,
   VEHICLE_ROLE_LABELS,
 } from '../data/uexVehicles';
@@ -501,17 +502,32 @@ export default function ShipHangarPage({ onNavigate }) {
     wikeloTypes: (hangar || []).filter(entry => entry.source === 'wikelo').length,
   }), [hangar]);
 
-  const sync = useCallback(() => {
+  const sync = useCallback(async () => {
     setLoading(true); setError(''); setMessage('');
-    const localCatalog = loadVehicleCatalog();
-    if (!localCatalog?.vehicles?.length) {
-      setError('Ainda não existe catálogo local. Abra UEX API (Live), entre na aba Veículos e clique em Atualizar.');
-    } else {
-      setCatalog(localCatalog);
-      setMessage(`Catálogo local carregado: ${localCatalog.vehicles.length} veículos, ${localCatalog.purchasePrices?.length || 0} registros de compra e ${localCatalog.rentalPrices?.length || 0} registros de aluguel. Nenhuma nova consulta foi feita pela tela Hangar.`);
+    try {
+      const result = await ensureVehicleCatalog();
+      if (!result?.vehicles?.length) {
+        setError('A UEX não retornou um catálogo de veículos. Verifique a conexão e tente novamente.');
+        return;
+      }
+      setCatalog(result);
+      setMessage(result.synced
+        ? `Catálogo sincronizado: ${result.vehicles.length} veículos, ${result.purchasePrices?.length || 0} registros de compra e ${result.rentalPrices?.length || 0} registros de aluguel.`
+        : `Catálogo local carregado: ${result.vehicles.length} veículos, ${result.purchasePrices?.length || 0} registros de compra e ${result.rentalPrices?.length || 0} registros de aluguel. Nenhuma nova consulta foi feita.`);
+    } catch (err) {
+      setError(err.message || 'Não foi possível sincronizar o catálogo de veículos da UEX.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    // Corrige o primeiro acesso: se o catálogo estiver vazio, o Hangar faz a
+    // sincronização sem depender da montagem da aba Veículos na UEX Live.
+    if (catalog?.vehicles?.length) return undefined;
+    sync();
+    return undefined;
+  }, [catalog?.vehicles?.length, sync]);
 
   async function loadDetails(vehicleId) {
     if (details[vehicleId]) { setExpandedId(expandedId === vehicleId ? null : vehicleId); return; }

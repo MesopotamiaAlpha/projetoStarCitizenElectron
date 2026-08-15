@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Marcador usado pelo renderer para diferenciar a ponte real do Electron do
+  // fallback de pré-visualização no navegador.
+  isCompanheiroEmotoElectron: true,
   // Armor sets
   getAllSets:          ()           => ipcRenderer.invoke('get-all-sets'),
   togglePiece:        (id)         => ipcRenderer.invoke('toggle-piece', id),

@@ -101,6 +101,17 @@ export function removeOreEntry(id) {
   return v;
 }
 
+// Limpar todo o Baú de Minério após confirmação explícita na interface.
+// A operação é intencionalmente centralizada para evitar que uma tela remova
+// somente parte do estado ou deixe a persistência divergente.
+export function wipeVault() {
+  const current = loadVault();
+  const removed = Array.isArray(current.entries) ? current.entries.length : 0;
+  const next = { ...EMPTY_VAULT, entries: [] };
+  saveVault(next);
+  return { success: true, removed, vault: next };
+}
+
 // Converte a qualidade cadastrada no baú para um valor comparável.
 // Qualidades textuais como "Grade A" não são consideradas suficientes para uma
 // exigência numérica, pois não há como provar que atingem Q≥800.
@@ -150,6 +161,19 @@ export function findVaultMatches(materialName, qualityMin = 0) {
   return v.entries.filter(e =>
     e.ore_name && e.ore_name.toLowerCase().includes(q) &&
     (Number(e.quantity) || 0) > 0 && qualityMeetsMinimum(e.quality, qualityMin)
+  );
+}
+
+// Busca exata para consumidores que não podem aceitar nomes parecidos,
+// como Iron e um item que apenas contém Iron no nome.
+export function findExactVaultMatches(materialName, qualityMin = 0) {
+  const normalize = value => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const target = normalize(materialName);
+  const v = loadVault();
+  return v.entries.filter(entry =>
+    normalize(entry.ore_name) === target
+    && (Number(entry.quantity) || 0) > 0
+    && qualityMeetsMinimum(entry.quality, qualityMin)
   );
 }
 

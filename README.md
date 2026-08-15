@@ -12,7 +12,7 @@ O projeto é um aplicativo Electron: o React representa a interface; o processo 
 |---|---|---|
 | Interface | React 18 | Renderização das páginas, formulários, cards, modais, filtros e estado visual. |
 | Shell da aplicação | `src/App.js` | Menu lateral, navegação por estado, carregamento inicial de armaduras, integração dos widgets globais e montagem das páginas. |
-| Processo principal | Electron 29 / `electron/main.js` | Janela, ciclo de vida, SQLite, IPC, migração de dados, diretório central, proxy UEX, tradução e abertura de pastas. |
+| Processo principal | Electron 43.4.0 / `electron/main.js` | Janela, ciclo de vida, SQLite, IPC, migração de dados, diretório central, proxy UEX, tradução MyMemory, anexos e monitor do Game.log. |
 | Ponte segura | `electron/preload.js` | Contrato explícito entre React e Electron por `window.electronAPI`. Não deve conter regras de negócio. |
 | Banco relacional | `sql.js` | SQLite compilado para JavaScript/WebAssembly, carregado em memória e exportado para um arquivo `.db` a cada persistência. A biblioteca permite importar um arquivo SQLite e exportar o banco como buffer [2]. |
 | Persistência leve | `localStorage` | Missões, mineração, baú de minério, tracking, notas, UEX, Wikelo, locais e datasets editáveis. |
@@ -60,8 +60,9 @@ O script de build executa o build React e depois `electron-builder --win`. O `pa
 ```text
 projetoStarCitizenElectron/
 ├── electron/
-│   ├── main.js                 Processo principal Electron, SQLite e IPC
-│   └── preload.js              API segura exposta ao renderer
+│   ├── main.js                 Processo principal Electron, SQLite, IPC, anexos e diretório central
+│   ├── preload.js              API segura exposta ao renderer
+│   └── missionWatcher.js       Leitura controlada do Game.log e eventos de missões
 ├── electron-icons/
 │   ├── icon.ico                Ícone Windows usado pelo builder
 │   ├── icon.png                Fonte visual do ícone
@@ -72,8 +73,8 @@ projetoStarCitizenElectron/
 │   ├── index.js                Ponto de entrada React
 │   ├── App.js                  Shell, menu e roteamento por estado
 │   ├── App.css                 Tema e responsividade global
-│   ├── components/             Widgets e componentes reutilizáveis
-│   ├── data/                   Regras de domínio e persistência local
+│   ├── components/             Widgets globais, ErrorBoundary, ajuda contextual, anexos, calculadora e sininho
+│   ├── data/                   Regras de domínio, persistência local e eventos entre telas
 │   └── pages/                  Telas funcionais do aplicativo
 ├── scripts/
 │   └── generate_windows_icon.py  Gera icon.ico a partir do PNG
@@ -81,6 +82,8 @@ projetoStarCitizenElectron/
 ├── package-lock.json           Versões resolvidas das dependências
 ├── CENTRALIZACAO_DADOS.md      Manual da pasta de dados centralizada
 ├── SEGURANCA_AVAST.md          Auditoria de segurança e distribuição
+├── DESENVOLVIMENTO.md          Guia complementar de arquitetura e manutenção
+├── manual usuario.md           Manual de uso para usuário final
 └── README.md                   Este manual técnico
 ```
 
@@ -192,8 +195,7 @@ Quando uma tela apresenta erro como `window.electronAPI.inventoryGetAll is not a
 | UEX | `uexTestToken(token)` | `uex-test-token` | Testa conectividade e autenticação. |
 | UEX | `uexFetch(data)` | `uex-fetch` | GET HTTPS para a API UEX. |
 | UEX | `uexPost(data)` | `uex-post` | POST HTTPS para a API UEX. |
-| Tradução | `mymemoryTranslate(data)` | `mymemory-translate` | Tradução gratuita MyMemory. |
-| Tradução | `googleTranslate(data)` | `google-translate` | Fallback Google Cloud com chave configurada. |
+| Tradução | `mymemoryTranslate(data)` | `mymemory-translate` | Tradução gratuita MyMemory, sem chave externa. |
 | Blueprints | `bpGetAll()` | `bp-get-all` | Lista blueprints e ingredientes. |
 | Blueprints | `bpToggleOwned(id)` | `bp-toggle-owned` | Alterna posse. |
 | Blueprints | `bpToggleWishlist(id)` | `bp-toggle-wishlist` | Alterna wishlist. |
@@ -211,6 +213,15 @@ Quando uma tela apresenta erro como `window.electronAPI.inventoryGetAll is not a
 | Dados | `dataRestartApp()` | `data-restart-app` | Reinicia o Electron após troca/restauração. |
 | Dados | `dataExportFull(data)` | `data-export-full` | Salva localStorage e copia o banco SQLite. |
 | Dados | `dataImportFull()` | `data-import-full` | Importa JSON de backup completo e banco adjacente. |
+| Notas | `notesSaveAttachment(payload)` | `notes-save-attachment` | Salva imagem/PDF em `notas-anexos` e retorna metadados. |
+| Notas | `notesReadAttachment(name)` | `notes-read-attachment` | Lê anexo validado e retorna base64/data URL. |
+| Notas | `notesDeleteAttachment(name)` | `notes-delete-attachment` | Remove o arquivo físico do anexo. |
+| Notas | `notesOpenAttachment(name)` | `notes-open-attachment` | Abre o arquivo no programa padrão do Windows. |
+| Notas | `notesDownloadAttachment(payload)` | `notes-download-attachment` | Copia o anexo para o caminho escolhido pelo usuário. |
+| Monitor | `missionMonitorChooseLog()` | `mission-monitor-choose-log` | Abre seletor para o Game.log. |
+| Monitor | `missionMonitorStart(path)` / `missionMonitorStop()` | `mission-monitor-start` / `mission-monitor-stop` | Liga ou desliga a leitura do log. |
+| Monitor | `missionMonitorStatus()` | `mission-monitor-status` | Retorna estado, missão ativa, caminho e eventos recentes. |
+| Monitor | `onMissionMonitorEvent(callback)` / `onMissionMonitorStatus(callback)` | eventos `mission-monitor-event` / `mission-monitor-status` | Assinaturas IPC com função de limpeza. |
 
 ## 7. Processo principal e diretório de dados
 
@@ -221,7 +232,7 @@ Na primeira execução, o aplicativo cria ou solicita uma pasta-pai e usa a past
 ```text
 C:\CompanheiroEmoto\
 ├── dados\
-│   └── sc_armor_tracker_v3.db
+│   └── companheiro_emoto.db
 ├── backup\
 ├── exportados\
 ├── Local Storage\
@@ -240,7 +251,7 @@ O fluxo implementado em `initializeDataDirectory()` é:
 4. Copiar dados legados do `userData` antigo, ignorando caches e arquivos transitórios.
 5. Criar `dados`, `backup` e `exportados`.
 6. Executar `app.setPath('userData', dataRoot)` antes de criar a janela.
-7. Definir `dbPath` como `dataRoot\dados\sc_armor_tracker_v3.db`.
+7. Definir `dbPath` como `dataRoot\dados\companheiro_emoto.db`.
 
 Quando a pasta é trocada, os dados são copiados para o novo local e o app é reiniciado. Não remova manualmente o banco antigo antes de confirmar que a migração foi concluída.
 
@@ -302,7 +313,7 @@ Guarda posse, quantidade craftada, wishlist, notas e data de obtenção por blue
 
 Migrações atuais adicionam `inventory_items.is_crafted`, `inventory_items.craft_status`, `blueprints.source`, `blueprints.scmdb_tag` e `blueprints.scmdb_url` quando ainda não existem.
 
-> **Atenção para manutenção:** o handler `update-piece-quantity` ainda executa `UPDATE armor_pieces SET quantity = ...`, mas o schema atual não possui a coluna `quantity` em `armor_pieces`. Ao corrigir esse fluxo, decida se a quantidade deve viver em `user_pieces` ou se uma migração de schema é realmente necessária. Não apenas remova o erro silenciosamente.
+> **Atenção para manutenção:** o handler `update-piece-quantity` grava a quantidade em `user_pieces.quantity`, que é a tabela correta de estado do usuário. Não mova esse campo para `armor_pieces` sem uma decisão explícita de modelagem, pois o catálogo da peça deve permanecer separado da posse do jogador.
 
 ## 8. Persistência localStorage
 
@@ -338,14 +349,15 @@ A maior parte das telas usa chaves versionadas. Ao criar uma nova chave, inclua-
 | `sc_uex_token_v1` | `uexNegotiations.js` / `UexApiPage` | Token UEX sensível. |
 | `sc_uex_secretkey_v1` | `uexNegotiations.js` | Secret key UEX sensível. |
 | `sc_uex_username_v1` | `uexNegotiations.js` | Usuário UEX. |
-| `sc_uex_notif_state_v1` | `uexNegotiations.js` | IDs vistos e último polling. |
-| `sc_google_translate_api_key_v1` | `uexNegotiations.js` | Chave opcional do Google Translate. |
+| `sc_uex_notif_state_v1` | `uexNegotiations.js` | IDs vistos, notificações deduplicadas e último polling. |
+| `sc_uex_active_negotiation_v1` | `uexUiEvents.js` / `UexNotificationBell.js` | Identificador da conversa aberta durante a sessão; usado para não notificar mensagens já visíveis. Fica em `sessionStorage`. |
+| `sc_uex_notif_sound_muted_v1` | `UexNotificationBell.js` | Preferência local para silenciar o som do sininho. |
 | `sc_uex_items_db_v1` | `uexItemsDB.js` | Catálogo local de itens UEX. |
 | `sc_uex_locations_db_v1` | `uexLocationsDB.js` | Locais sincronizados da UEX. |
 | `sc_uex_mining_db_v1` | `uexMiningDB.js` | Minérios sincronizados da UEX. |
 | `sc_uex_marketplace_averages_v1` | `uexMarketDB.js` / `uexInsights.js` | Médias de marketplace por item, qualidade, operação e moeda. |
 | `sc_uex_marketplace_history_v1` | `uexInsights.js` | Histórico de snapshots de preço sob demanda. |
-| `sc_uex_marketplace_trends_v1` | `uexInsights.js` / `UexInsightsPage.js` | Tendências, atividade de negociações, anúncios ativos e médias para o ranking analítico. |
+| `sc_uex_marketplace_trends_v1` | `uexInsights.js`, `UexInsightsPage.js` e `UexSalesPage.js` | Tendências, atividade, filtros, timestamp, ranking analítico e comparação de anúncios do catálogo. |
 | `sc_uex_data_monitor_v1` | `uexInsights.js` | Frescor por terminal e tipo de dado. |
 | `sc_uex_commodity_alerts_v1` / `sc_uex_commodity_averages_v1` / `sc_uex_commodity_status_v1` | `uexCommoditiesDB.js` | Alertas, médias e status de commodities. |
 | `sc_uex_refineries_v1` / `sc_uex_refinery_jobs_v1` | `uexRefineriesDB.js` | Métodos, rendimentos, capacidades e jobs autenticados. |
@@ -353,12 +365,14 @@ A maior parte das telas usa chaves versionadas. Ao criar uma nova chave, inclua-
 | `sc_uex_item_attributes_v1` / `sc_uex_fuel_prices_v1` / `sc_uex_terminal_distances_v1` | `uexInsights.js` | Atributos técnicos, combustível e distâncias. |
 | `sc_uex_vehicles_catalog_v1` | `uexVehicles.js` / `ShipHangarPage` | Catálogo local de naves e veículos sincronizado pela UEX API Live. |
 | `sc_hangar_v1` | `uexVehicles.js` / `ShipHangarPage` | Naves compradas e naves adicionadas manualmente como Wikelo. |
-| `sc_hangar_view_v1` | `ShipHangarPage` | Preferência entre visualização em cards e lista. |
+| `sc_hangar_view_v1`, `sc_hangar_catalog_view_v1`, `sc_hangar_owned_view_v1` | `ShipHangarPage` | Preferências de visualização em cards/lista para o Hangar e catálogo. |
 | `sc_inventory_v1` | fallback browser do inventário | Fallback quando não existe Electron. |
 | `sc_provenance_v1` | `provenance.js` | Procedência de dados. |
 | `sc_nav_collapsed_groups_v1` | `App.js` | Grupos recolhidos da sidebar. |
 | `sc_sidebar_collapsed_v1` | `App.js` | Estado recolhido/expandido da sidebar. |
-| `sc_data_override_*` | `dataStore.js` / `DataEditorPage` | Datasets editados pelo usuário. |
+| `sc_data_override_*` | `dataStore.js` | Overrides consumidos pelos hooks de datasets. |
+| `sc_data_v2_*` | `DataEditorPage.js` | Cópias editáveis mantidas pelo editor legado/independente; confira o prefixo antes de ajustar backup. |
+| `sc_uex_texts_updated_v1` e `sc_uex_active_negotiation_changed_v1` | `uexUiEvents.js` | Eventos de sessão, não são registros de domínio. |
 
 A chave `sc_inventory_v1` é o fallback do navegador. No Electron, `InventoryPage` usa os métodos `inventoryGetAll`, `inventoryCreate`, `inventoryUpdate`, `inventoryDelete` e `inventoryGetStats`, que persistem no SQLite.
 
@@ -382,6 +396,8 @@ A chave `sc_inventory_v1` é o fallback do navegador. No Electron, `InventoryPag
 | `uexMiningDB.js` | Catálogo de minérios UEX. | Sincronização de mineração. |
 | `uexInsights.js` | Proxy GET compartilhada, snapshots, preços, histórico, monitor, commodities, refinarias, frota e utilidades. | Endpoint, credencial, formato de retorno ou frescor. |
 | `uexMarketDB.js` | Compatibilidade para preço médio por item/qualidade usado pelo Inventário. | “Importar preço” e matching por `id_item`/nome. |
+| `inventoryEvents.js` | Evento `sc_inventory_updated` para sincronização entre Inventário e Acompanhamento UEX. | Estoque interno não atualiza após editar inventário. |
+| `uexUiEvents.js` | Eventos de negociação ativa e atualização dos Textos UEX. | Sininho continua notificando chat aberto ou atalhos não atualizam. |
 | `uexCommoditiesDB.js` | Persistência de alertas, médias e status de commodities. | Cache e eventos de commodities. |
 | `uexRefineriesDB.js` | Persistência de métodos, yields, capacidades e jobs. | Cache e eventos de refinarias. |
 | `uexNegotiationReviews.js` | Avaliações locais e mensagem de fechamento. | Review ou registro de negociação concluída. |
@@ -457,11 +473,11 @@ Se o comportamento desejado for calcular os tipos de script separadamente, use `
 
 A base documentada usada pela proxy é `https://api.uexcorp.uk/2.0`. A função `uexRequest()` monta a URL, adiciona Bearer token, secret key e faz requisições HTTPS. Não altere endpoints sem conferir a documentação UEX e sem testar o retorno real.
 
-`uexNegotiations.js` consulta `marketplace_negotiations`, `marketplace_negotiations_messages` e `user_notifications`. A deduplicação possui três camadas: identidade por ID, fallback por data/usuário/texto e `isCrossFeedDuplicate()` para eliminar a mesma mensagem publicada no feed de negociação e no feed geral.
+`uexNegotiations.js` consulta `marketplace_negotiations`, `marketplace_negotiations_messages` e `user_notifications`. A deduplicação possui três camadas: identidade por ID, fallback por data/usuário/texto e `isCrossFeedDuplicate()` para eliminar a mesma mensagem publicada no feed de negociação e no feed geral. O chat atualiza a thread a cada 5 segundos; o sininho global usa polling separado de 90 segundos. Quando uma thread está aberta, `UexNegotiationsPage.js` emite `UEX_ACTIVE_NEGOTIATION_EVENT`, e `UexNotificationBell.js` remove do contador, da lista e do som as mensagens daquela conversa.
 
-O polling atual não é um WebSocket. Para alterar frequência, busca incremental ou notificações, procure `UexNotificationBell.js` e `checkForUpdates()` em `uexNegotiations.js`.
+O polling atual não é um WebSocket. Para alterar frequência, busca incremental ou notificações, procure `UexNegotiationsPage.js`, `UexNotificationBell.js` e `checkForUpdates()` em `uexNegotiations.js`. O chat também possui preview de mensagens novas, som local, tradução por mensagem, cópia do nick do comprador e caixa de resposta em português/inglês.
 
-A tradução usa MyMemory gratuitamente primeiro. Google Cloud Translation é somente fallback e exige chave salva em `sc_google_translate_api_key_v1`. O endpoint de tradução fica em `electron/main.js`; a composição bilíngue da tela fica em `UexNegotiationsPage.js`.
+A tradução usa exclusivamente o MyMemory gratuito, sem chave externa. O handler `mymemory-translate` fica em `electron/main.js`, é exposto pelo preload e consumido por `uexNegotiations.js`; a composição bilíngue da tela fica em `UexNegotiationsPage.js`. A orientação para token UEX aponta para `https://uexcorp.space/account`.
 
 ### 10.8 UEX Insights e regras de integração
 
@@ -519,13 +535,57 @@ Para acrescentar um endpoint futuro, implemente primeiro a função `fetch...` e
 
 Inventário, transferência de itens e baú devem usar essa função ou os helpers derivados dela. Não crie uma lista estática paralela dentro de uma tela. A administração fica em `LocationsAdminPage.js`; a persistência é `sc_locations_admin_v1`.
 
+### 10.10 Acompanhamento UEX, anúncios, tendências e estoque interno
+
+`UexSalesPage.js` é a tela de vendas e anúncios locais. `uexSales.js` persiste `sc_uex_sales_v1`, `sc_uex_catalog_v1` e `sc_uex_negotiation_closures_v1` em localStorage. Uma negociação concluída pelo chat pode ser convertida em venda local por `registerNegotiationSale()`, preservando hash da negociação, id/slug do anúncio, preço, quantidade, comprador, qualidade, local, estoque e receita.
+
+O bloco **Estoque Interno** pode ser vinculado ao Inventário de Itens. O anúncio guarda `inventory_binding.locationKeys`, usando a chave composta `system::location_type::location_name`. O usuário pode selecionar um ou mais locais administrados. `getInventoryStockSummary()` soma somente as quantidades do item nos locais selecionados, mostra o total encontrado, o saldo depois da venda e diferencia `Estoque desconhecido`, `Estoque não vinculado` e estoque vinculado. O evento `sc_inventory_updated`, definido em `src/data/inventoryEvents.js`, faz a tela recarregar o inventário após cadastro, edição, exclusão, quantidade ou transferência.
+
+A aba **Tendências** consulta `marketplace_trends` para os itens do catálogo local e associa os resultados por `id_item`, `item_slug` ou nome completo normalizado. Nunca use apenas a primeira palavra do item, pois isso mistura nomes como Yormandi Tongue e Yormandi Eye. O card registra `trendDataFetchedAt`, informa a fonte, mostra o snapshot consultado e considera que a UEX pode manter cache por até uma hora.
+
+As tendências podem ser filtradas por nome, média atual de venda, média de 30 dias, mínimo, máximo, anúncios ativos, negociações e variação percentual. A ordenação inclui alta contra 30 dias, média atual, anúncios, negociações e nome. O card possui link direto para o anúncio UEX e o botão **Comparar 3 anúncios**, que consulta `marketplace_listings?id_item=...&operation=sell` somente ao expandir, remove o próprio anúncio e anúncios esgotados, ordena por preço e mostra até três referências com vendedor, local, qualidade, durabilidade, estoque, origem, expiração e link individual.
+
+Para qualquer nova métrica, confira primeiro a documentação oficial da UEX. `price_avg_sell` é média atual de venda, `price_avg_month_sell` é média de 30 dias, `price_min_sell`/`price_max_sell` são limites observados e `listings_count_sell`/`negotiations_count` são contagens de atividade. Métricas de mercado não representam garantia de venda.
+
+### 10.11 Negociações UEX e atalhos de Textos UEX
+
+`UexNegotiationsPage.js` abre uma negociação por hash, carrega mensagens, atualiza a cada 5 segundos, mostra participantes por cards coloridos e permite copiar o nick do comprador, abrir o Spectrum, enviar em português ou inglês e traduzir mensagens recebidas individualmente. O fluxo de fechamento é local: `closeNegotiation()` grava sucesso/falha; somente o status de sucesso alimenta `registerNegotiationSale()` e cria/atualiza o registro em Acompanhamento UEX. O app não finaliza a negociação nem envia avaliação para a UEX.
+
+O cabeçalho da thread possui o botão **Textos UEX**. Ele lê `sc_uex_texts_v1`, ordena textos fixados e atualizados recentemente, mostra título e resumo e copia cada texto sem sair do chat. `NotesPage.js` emite `UEX_TEXTS_UPDATED_EVENT` ao criar, editar, salvar ou remover textos, e a thread atualiza o menu imediatamente.
+
+### 10.12 Bloco de Notas com imagens e PDFs
+
+`NotesPage.js` mantém notas e Textos UEX no localStorage, mas não coloca o conteúdo binário dos anexos nessa camada. O modelo da nota possui `attachments: []` com `{ id, filename, originalName, mimeType, size, addedAt }`. `NoteAttachments.js` oferece upload múltiplo, miniaturas, preview de imagem, identificação de PDF, abrir, baixar e excluir.
+
+No Electron, `electron/main.js` salva os arquivos em `CompanheiroEmoto/notas-anexos/`. São permitidos JPG, JPEG, PNG, GIF, WEBP, BMP, SVG e PDF, com limite de 20 MB por arquivo. O nome físico usa `{noteId}_{attachmentId}.{ext}`. Os handlers validam extensão/MIME, tamanho, identificador e path traversal antes de ler ou gravar. A leitura retorna base64/data URL; a abertura usa `shell.openPath`; o download usa `dialog.showSaveDialog`. Ao excluir uma nota, `NotesPage.js` tenta remover também os arquivos físicos associados. Notas antigas sem `attachments` devem ser normalizadas para array vazio.
+
+### 10.13 Monitor automático de missões
+
+`electron/missionWatcher.js` lê apenas o arquivo local `Game.log` selecionado pelo usuário. Ele acompanha início, encerramento, conclusão, abandono, falha, recompensa, reputação e blueprints correlacionadas, sem alterar os arquivos do Star Citizen. O estado operacional (`running`, caminho, posição, missão ativa, último erro e eventos recentes) é comunicado por `mission-monitor-event` e `mission-monitor-status`; o histórico resumido e as missões AUTO são persistidos em `sc_mission_auto_monitor_v1` e `sc_missions_v2`.
+
+O parser aceita formatos de recompensa e reputação do log, mas o valor aUEC pode ficar pendente quando o jogo não o grava. Nessa situação, a missão recebe `auto_reward_status: 'pending'` e deve ser preenchida manualmente. O limite do histórico automático é 300 eventos. Reiniciar o aplicativo encerra a sessão de leitura; o caminho selecionado pode ser restaurado pelo estado persistido, mas o processo de polling precisa ser ligado novamente.
+
+### 10.14 Interface transversal e manutenção visual
+
+`ErrorBoundary.js` envolve a aplicação para mostrar diagnóstico de erro sem deixar uma tela branca silenciosa. `ContextHelpOverlay.js` observa elementos interativos e exibe uma dica contextual após aproximadamente 10 segundos de foco/hover, respeitando `prefers-reduced-motion`. `App.css` concentra transições de páginas, cards, modais, botões, progresso, notificações, calculadora, sidebar recolhível e responsividade sci-fi. Ao adicionar uma função interativa, prefira `title`, aria-label ou os atributos usados pelo overlay e não bloqueie elementos atrás de widgets flutuantes.
+
+A sidebar usa `sc_sidebar_collapsed_v1` e `sc_nav_collapsed_groups_v1` para lembrar o estado visual. O `CalculatorWidget` e `UexNotificationBell` são globais e devem ser montados fora do switch de páginas. O componente `DashboardPage` deve consumir os mesmos módulos de domínio, não duplicar regras de Wikelo, DCHS, PAF, inventário, naves ou missões.
+
+### 10.15 Hangar de Naves
+
+`ShipHangarPage.js` consome o catálogo local de veículos salvo em `sc_uex_vehicles_catalog_v1`, normalmente preenchido por UEX API (Live). A tela possui catálogo de compra e Meu Hangar, filtros, visualização em cards/lista para ambas as abas, contagem total de naves e contador de aUEC gasto.
+
+Ao clicar em **Comprei**, o modal usa `price_buy_avg`/média de compra disponível no catálogo local como preenchimento inicial. O usuário pode editar o preço realmente pago. O registro guarda quantidade, preço unitário, total e marcação de edição Wikelo. O total financeiro soma somente aquisições com gasto; naves Wikelo não entram no gasto em aUEC. A reconstrução de registros antigos sem total usa o preço unitário salvo ou a média local disponível.
+
+O catálogo UEX e o Meu Hangar são dados locais do usuário; frota e loaners da UEX são somente informativos e não devem ser somados automaticamente ao hangar comprado. Para corrigir quantidade, custo, edição Wikelo, visão ou filtro, procure `src/data/uexVehicles.js` e `ShipHangarPage.js`. As preferências visuais ficam separadas dos dados em `sc_hangar_view_v1`, `sc_hangar_catalog_view_v1` e `sc_hangar_owned_view_v1`.
+
 ## 11. Backup e restauração
 
 Existem dois fluxos distintos.
 
 ### Backup seletivo — `BackupPage` e `backupManager.js`
 
-O backup seletivo exporta categorias escolhidas do localStorage e blueprints customizadas por IPC. As categorias estão em `BACKUP_CATEGORIES`. Ele cobre missões, notas, mineração, tracking, baú, cofre, locais, Wikelo, UEX e overrides de datasets.
+O backup seletivo exporta categorias escolhidas do localStorage e blueprints customizadas por IPC. As categorias estão em `BACKUP_CATEGORIES`. Ele cobre missões, notas e anexos somente pelos metadados, mineração, tracking, baú, cofre, locais, Wikelo, UEX e overrides de datasets. Os arquivos físicos de `notas-anexos` não são embutidos no JSON seletivo; use o backup completo ou copie essa pasta separadamente.
 
 Armaduras e Inventário de Itens não fazem parte do backup seletivo porque vivem no SQLite. Para adicionar uma categoria localStorage, inclua a chave em `BACKUP_CATEGORIES`, teste `countCategoryItems()` e confirme a restauração em `restoreBackup()`.
 
@@ -537,7 +597,7 @@ O backup completo exporta todas as chaves presentes no localStorage, copia o arq
 
 A importação valida `app`, `format` e a estrutura localStorage. O nome do `.db` é reduzido ao basename e precisa estar junto do JSON para impedir que um arquivo de backup aponte para um caminho arbitrário do computador.
 
-Para transportar o projeto para outro computador, copie o JSON e o `.db` juntos. Não compartilhe backups que contenham token UEX, secret key ou chave Google.
+Para transportar o projeto para outro computador, copie o JSON e o `.db` juntos e, se houver notas com anexos, copie também a pasta `notas-anexos`. Não compartilhe backups que contenham token UEX, secret key ou dados pessoais de negociação.
 
 ## 12. Datasets editáveis
 
@@ -577,7 +637,7 @@ O reset remove o override e faz o dataset voltar ao fallback embutido. Ao adicio
 | Local aparece em uma tela e não em outra | `locations.js` | `buildManagedLocationOptions()` | Tela criou lista estática paralela. |
 | Mensagem UEX duplicada | `uexNegotiations.js` | `UexNotificationBell.js` | Identidade ou deduplicação cruzada incompleta. |
 | Chat não atualiza | `UexNotificationBell.js` | `checkForUpdates()` | Polling, token, timestamp ou endpoint. |
-| Tradução falha | `uexNegotiations.js` | `electron/main.js` | Limite MyMemory ou chave Google ausente. |
+| Tradução falha | `uexNegotiations.js` | `electron/main.js` | Limite, indisponibilidade ou resposta inválida do MyMemory. |
 | Backup não inclui novo dado | `backupManager.js` | `DataDirectoryPage.js` | Chave não está em `BACKUP_CATEGORIES` ou só existe no SQLite. |
 | Banco não abre | `electron/main.js` | `dbPath`, `sql.js`, `saveDb()` | Caminho, arquivo corrompido ou WASM não localizado. |
 | Instalador Windows falha | `package.json` | ambiente Windows, certificado e electron-builder | Dependências, Wine ausente no cross-build ou assinatura. |
@@ -614,11 +674,11 @@ Adicione o valor a `LOCATION_TYPES` em `locations.js`, ajuste a inferência some
 
 O renderer não possui acesso direto ao sistema. O preload expõe somente operações conhecidas. Não use `contextBridge.exposeInMainWorld` para expor `ipcRenderer.send` genericamente, não aceite caminhos arbitrários sem validação e não coloque tokens no código-fonte.
 
-Os tokens UEX e a chave Google são armazenados no localStorage do usuário e entram no backup completo e na categoria sensível do backup seletivo. Um backup deve ser tratado como arquivo privado.
+O token UEX e a secret key são armazenados no localStorage do usuário e entram no backup completo e na categoria sensível do backup seletivo. Um backup deve ser tratado como arquivo privado.
 
-O app usa requisições externas para UEX, MyMemory e opcionalmente Google Translation. Erros de rede devem retornar mensagens tratáveis, sem travar o renderer. A documentação de segurança e falso positivo fica em `SEGURANCA_AVAST.md`.
+O app usa requisições externas para UEX e MyMemory. Erros de rede devem retornar mensagens tratáveis, sem travar o renderer. A documentação de segurança e falso positivo fica em `SEGURANCA_AVAST.md`.
 
-Para reduzir alertas de reputação no Windows, distribua builds assinadas com certificado real de código. O `publisherName` apenas identifica o editor; ele não substitui a assinatura. Mantenha o `appId` `com.sctracker.armor` estável se já houver usuários instalados, pois alterar o identificador pode quebrar reconhecimento de atualização e desinstalação.
+Para reduzir alertas de reputação no Windows, distribua builds assinadas com certificado real de código. A assinatura é diferente do nome visual do produto e não deve ser substituída por configuração textual. Mantenha o `appId` `com.companheiroemoto.app` estável se já houver usuários instalados, pois alterar o identificador pode quebrar reconhecimento de atualização e desinstalação.
 
 ## 17. Empacotamento Windows
 
@@ -628,7 +688,7 @@ O bloco `build` do `package.json` possui as decisões atuais:
 {
   "main": "electron/main.js",
   "build": {
-    "appId": "com.sctracker.armor",
+    "appId": "com.companheiroemoto.app",
     "productName": "Companheiro Emoto",
     "artifactName": "Companheiro-Emoto-${version}.${ext}",
     "asar": true,
@@ -642,8 +702,7 @@ O bloco `build` do `package.json` possui as decisões atuais:
     "win": {
       "target": ["nsis", "zip"],
       "icon": "electron-icons/icon.ico",
-      "requestedExecutionLevel": "asInvoker",
-      "publisherName": "Companheiro Emoto"
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,

@@ -1,6 +1,6 @@
 {
   "name": "companheiro-emoto",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Companheiro Emoto — Star Citizen Companion App",
   "author": "Companheiro Emoto",
   "main": "electron/main.js",
@@ -9,7 +9,8 @@
     "dev": "concurrently \"cross-env BROWSER=none CI=true react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
     "react-build": "react-scripts build",
     "build": "npm run build:win",
-    "build:win": "npm run react-build && electron-builder --win",
+    "clean:dist": "node scripts/clean-dist.cjs",
+    "build:win": "npm run clean:dist && npm run react-build && electron-builder --win",
     "electron": "electron .",
     "check:electron": "node --check electron/main.js && node --check electron/preload.js && node --check electron/missionWatcher.js",
     "test": "react-scripts test --watchAll=false --passWithNoTests",
@@ -49,7 +50,12 @@
       "build/**/*",
       "electron/**/*",
       "!**/CompanheiroEmoto{,/**/*}",
+      "!**/CompanheiroEmoto-Dev{,/**/*}",
+      "!**/dados{,/**/*}",
       "!**/backup{,/**/*}",
+      "!**/*.db",
+      "!**/*.sqlite",
+      "!**/*.sqlite3",
       "!**/*.map"
     ],
     "directories": {
@@ -61,8 +67,7 @@
         "zip"
       ],
       "icon": "electron-icons/icon.ico",
-      "requestedExecutionLevel": "asInvoker",
-      "publisherName": "Companheiro Emoto"
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,

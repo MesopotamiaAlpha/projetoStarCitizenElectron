@@ -9,7 +9,7 @@ import { setBatchProvenance, SOURCES } from '../data/provenance';
 import { saveUexItemsDB, loadUexItemsDB, normalizeUexNumber, normalizeUexItemName, getUexItemAveragePrice } from '../data/uexItemsDB';
 import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
 import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
-import { loadVehicleCatalog, saveVehicleCatalog, syncUexVehicles } from '../data/uexVehicles';
+import { ensureVehicleCatalog, loadVehicleCatalog } from '../data/uexVehicles';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
 import { loadMarketPrices, syncMarketPrices } from '../data/uexMarketDB';
 
@@ -158,8 +158,8 @@ function TokenConfigPanel({ onTokenChange }) {
       {expanded && (
         <div style={{ padding: '0 16px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
-            O token é salvo <strong>apenas no seu computador</strong> (localStorage) e nunca é enviado para nenhum outro serviço além da UEX Corp API.
-            Obtenha seu token em <a href="https://uexcorp.space/account" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account</a>.
+            O <strong>Bearer Token</strong> é salvo <strong>apenas no seu computador</strong> (localStorage) e nunca é enviado para nenhum outro serviço além da UEX Corp API.
+            Obtenha o seu Bearer Token em <a href="https://uexcorp.space/api/apps" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/api/apps</a>.
           </div>
 
           {/* Token input */}
@@ -190,8 +190,8 @@ function TokenConfigPanel({ onTokenChange }) {
 
           {/* Secret key input (necessária para negociações/notificações do Marketplace) */}
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '2px 0 6px' }}>
-            Para receber notificações de novas mensagens de negociação do Marketplace, informe também a <strong>secret key</strong> do seu app UEX (gerada em{' '}
-            <a href="https://uexcorp.space/api/apps/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/api/apps</a>).
+            A <strong>secret key</strong> é a chave do seu aplicativo UEX e é diferente do Bearer Token. Para receber notificações de novas mensagens de negociação do Marketplace, informe a secret key gerada em{' '}
+            <a href="https://uexcorp.space/account" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account</a>.
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <div style={{ position: 'relative', flex: 1 }}>
@@ -625,10 +625,10 @@ function VeículosTab() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const catalog = await syncUexVehicles();
-      // Gravação explícita e verificação: o Hangar e a UEX Live precisam ler
-      // exatamente o mesmo objeto na mesma chave do localStorage.
-      const savedCatalog = saveVehicleCatalog(catalog);
+      // A aba força uma atualização explícita. Se a UEX API já estiver
+      // sincronizando em paralelo pelo carregamento inicial, a mesma Promise é
+      // reaproveitada pelo módulo de veículos.
+      const savedCatalog = await ensureVehicleCatalog({ force: true });
       const verifiedCatalog = loadVehicleCatalog();
       if (!verifiedCatalog?.vehicles?.length) {
         throw new Error('A sincronização terminou, mas o catálogo local de veículos não pôde ser confirmado.');
@@ -1176,12 +1176,34 @@ function MarketPricesSyncButton() {
 export default function UexApiPage() {
   const [activeTab, setActiveTab] = useState('commodities');
   const [apiStatus, setApiStatus] = useState(null); // null | true | false
+  const [vehicleSyncMessage, setVehicleSyncMessage] = useState('');
 
   useEffect(() => {
     fetch(`${UEX_BASE}/game_versions`)
       .then(r => r.json())
       .then(j => setApiStatus(j.status === 'ok'))
       .catch(() => setApiStatus(false));
+  }, []);
+
+  useEffect(() => {
+    // A primeira abertura da tela deve preparar o Hangar mesmo que o usuário
+    // nunca tenha entrado na aba Veículos. Com catálogo existente, não há nova
+    // consulta: o cache local continua sendo reaproveitado.
+    if (loadVehicleCatalog()?.vehicles?.length) return undefined;
+    let active = true;
+    setVehicleSyncMessage('Carregando catálogo de veículos para o Hangar...');
+    ensureVehicleCatalog()
+      .then(result => {
+        if (!active) return;
+        setVehicleSyncMessage(result?.vehicles?.length
+          ? `Catálogo de veículos pronto: ${result.vehicles.length} registros.`
+          : 'A UEX não retornou veículos nesta sincronização.');
+      })
+      .catch(error => {
+        if (!active) return;
+        setVehicleSyncMessage(`Catálogo de veículos não carregado: ${error.message || 'erro de conexão'}.`);
+      });
+    return () => { active = false; };
   }, []);
 
   return (
@@ -1197,7 +1219,8 @@ export default function UexApiPage() {
             Dados em tempo real da comunidade Star Citizen via UEX Corp API 2.0 · api.uexcorp.uk/2.0
           </div>
         </div>
-        <div style={{ display:'flex',gap:8,alignItems:'center' }}>
+        <div style={{ display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end' }}>
+          {vehicleSyncMessage && <span style={{ maxWidth: 280, fontSize: 10, color: vehicleSyncMessage.includes('não carregado') ? 'var(--accent-red)' : 'var(--text-muted)', textAlign: 'right' }}>{vehicleSyncMessage}</span>}
           <ItemDBSyncButton/>
           <MarketPricesSyncButton/>
           <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
