@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { MissionLogWatcher } = require('./missionWatcher');
 const fs   = require('fs');
+const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
 
 const APP_DIR_NAME = 'CompanheiroEmoto';
@@ -463,10 +464,17 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   try { db.run(`ALTER TABLE blueprints ADD COLUMN source TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE blueprints ADD COLUMN scmdb_tag TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE blueprints ADD COLUMN scmdb_url TEXT DEFAULT ''`); } catch(e) {}
+  db.run(`CREATE TABLE IF NOT EXISTS scmdb_catalog_state (
+    catalog_key TEXT PRIMARY KEY,
+    catalog_version TEXT NOT NULL,
+    installed_at TEXT DEFAULT (datetime('now'))
+  )`);
 
   const changed = seedData();
   const bpChanged = seedBlueprints();
-  if (changed || bpChanged) saveDb();
+  const scmdbChanged = seedScmdbBlueprints();
+  const scmdbUnitsChanged = migrateScmdbFractionalUnits();
+  if (changed || bpChanged || scmdbChanged || scmdbUnitsChanged) saveDb();
 }
 
 function queryAll(sql, params = []) {
@@ -1556,6 +1564,182 @@ function seedBlueprints() {
   return inserted > 0;
 }
 
+// ── Catálogo padrão SCMDB ──────────────────────────────────────────────────────
+function inferScmdbSeedCategory(entry) {
+  const text = `${entry?.tag || ''} ${entry?.productName || ''} ${entry?.type || ''} ${entry?.gear || ''}`.toLowerCase();
+  if (entry?.type === 'armour' || /armor|armour|helmet|backpack|undersuit|flight.?suit/.test(text)) return 'FPS Armor';
+  if (entry?.type === 'ammo' || /magazine|battery|ammo|munition/.test(text)) return 'Ammo';
+  if (entry?.gear === 'shipcomponents' || /cooler|powerplant|power_plant|shield|thruster|quantum|radar|avionics|component|mininglaser/.test(text)) return 'Ship Component';
+  if (/laser|ballistic|cannon|gatling|repeater|scattergun|massdriver|tachyon|weapon|rifle|pistol|smg|shotgun/.test(text)) return 'FPS Weapon';
+  if (/consumable|medpen|food|drink/.test(text)) return 'Consumable';
+  return 'Outro';
+}
+
+function inferScmdbSeedSize(entry) {
+  const text = `${entry?.tag || ''} ${entry?.productName || ''}`;
+  const match = text.match(/(?:^|[_\\s])S([1-9])(?:$|[_\\s])/i) || text.match(/size\\s*([1-9])/i);
+  return match ? match[1] : 'Personal';
+}
+
+function buildScmdbIngredients(entry) {
+  return (entry?.materials || []).map(material => {
+    const isResource = material.inputType === 'resource';
+    const quantity = Number(material.quantityExact);
+    if (!material.name || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      material_name: material.name,
+      quantity,
+      quality_min: 0,
+      unit: isResource ? String(material.quantityUnit || 'SCU') : 'un',
+      notes: `SCMDB · ${isResource ? 'resource' : 'item'} · slot: ${material.slot || '—'}`,
+    };
+  }).filter(Boolean);
+}
+
+function findScmdbCatalogEntry({ tag = '', name = '' } = {}) {
+  const tagKey = String(tag || '').trim().toLowerCase();
+  const nameKey = String(name || '').trim().toLowerCase();
+  return (SCMDB_CATALOG.blueprints || []).find(entry => {
+    const entryTag = String(entry?.tag || '').trim().toLowerCase();
+    const entryName = String(entry?.productName || '').trim().toLowerCase();
+    return (tagKey && entryTag === tagKey) || (!tagKey && nameKey && entryName === nameKey);
+  }) || null;
+}
+
+function normalizeBlueprintIngredients(ingredients) {
+  return (Array.isArray(ingredients) ? ingredients : []).map(ingredient => {
+    const materialName = String(ingredient?.material_name || ingredient?.material || ingredient?.name || '').trim();
+    const quantity = Number(ingredient?.quantity ?? ingredient?.amount ?? 0);
+    if (!materialName || !Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      material_name: materialName,
+      quantity,
+      unit: String(ingredient?.unit || 'un'),
+      notes: String(ingredient?.notes || ''),
+    };
+  }).filter(Boolean);
+}
+
+function replaceBlueprintIngredients(bpId, ingredients) {
+  db.run('DELETE FROM blueprint_ingredients WHERE blueprint_id=?', [bpId]);
+  for (const ingredient of ingredients) {
+    db.run('INSERT INTO blueprint_ingredients (blueprint_id,material_name,quantity,quality_min,unit,notes) VALUES (?,?,?,?,?,?)',
+      [bpId, ingredient.material_name, ingredient.quantity, 0, ingredient.unit, ingredient.notes || '']);
+  }
+}
+
+function ensureBlueprintUserState(bpId) {
+  db.run('INSERT OR IGNORE INTO user_blueprints (blueprint_id,owned,wishlist,crafted_count,notes,obtained_date) VALUES (?,0,0,0,?,NULL)', [bpId, '']);
+}
+
+function seedScmdbBlueprints() {
+  const catalogVersion = String(SCMDB_CATALOG.sourceVersion || 'unknown');
+  const catalogEntries = Array.isArray(SCMDB_CATALOG.blueprints) ? SCMDB_CATALOG.blueprints : [];
+  if (!catalogEntries.length) return false;
+  const deletedKeys = new Set(queryAll("SELECT catalog_key FROM scmdb_catalog_state WHERE catalog_key LIKE 'deleted:%'").map(row => String(row.catalog_key).slice(8).toLowerCase()));
+  const seededMaterialKeys = new Set(queryAll("SELECT catalog_key FROM scmdb_catalog_state WHERE catalog_key LIKE 'materials:%'").map(row => String(row.catalog_key).slice(9).toLowerCase()));
+  const existingRows = queryAll('SELECT * FROM blueprints ORDER BY is_default DESC, id ASC');
+  const existingByName = new Map();
+  const existingByTag = new Map();
+  existingRows.forEach(row => {
+    const nameKey = String(row.name || '').toLowerCase();
+    const tagKey = String(row.scmdb_tag || '').toLowerCase();
+    if (nameKey && !existingByName.has(nameKey)) existingByName.set(nameKey, row);
+    if (tagKey && !existingByTag.has(tagKey)) existingByTag.set(tagKey, row);
+  });
+  let changed = false;
+
+  for (const entry of catalogEntries) {
+    const name = String(entry.productName || '').trim();
+    const tag = String(entry.tag || '').trim();
+    if (!name || !tag || deletedKeys.has(tag.toLowerCase())) continue;
+    const nameKey = name.toLowerCase();
+    const tagKey = tag.toLowerCase();
+    const byTag = existingByTag.get(tagKey) || null;
+    const byName = existingByName.get(nameKey) || null;
+    const ingredients = buildScmdbIngredients(entry);
+    const fields = [
+      name, inferScmdbSeedCategory(entry), entry.subtype || entry.type || entry.gear || 'SCMDB',
+      entry.manufacturer || '', inferScmdbSeedSize(entry), '', entry.type || '',
+      `Blueprint padrão do catálogo SCMDB ${catalogVersion}.`,
+      'Catálogo SCMDB — Fabricator', '', entry.subtype || '', catalogVersion,
+      1, `SCMDB ${catalogVersion} · GUID: ${entry.guid || '—'}`, 'SCMDB', tag,
+      'https://scmdb.net/?page=fab',
+    ];
+
+    if (byTag) {
+      // Registros SCMDB existentes são preservados para respeitar edições do usuário.
+      // Apenas versões antigas padrão sem ingredientes recebem o seed uma vez.
+      const ingredientCount = queryOne('SELECT COUNT(*) as c FROM blueprint_ingredients WHERE blueprint_id=?', [byTag.id])?.c || 0;
+      if (byTag.is_default === 1 && ingredientCount === 0 && !seededMaterialKeys.has(tagKey) && ingredients.length) {
+        replaceBlueprintIngredients(byTag.id, ingredients);
+        db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', [`materials:${tagKey}`, catalogVersion, new Date().toISOString()]);
+        seededMaterialKeys.add(tagKey);
+        changed = true;
+      }
+      ensureBlueprintUserState(byTag.id);
+      continue;
+    }
+
+    if (byName && byName.is_default === 1 && !byName.source && !byName.scmdb_tag) {
+      // Converte um seed antigo homônimo para o registro oficial SCMDB, preservando a posse.
+      db.run(`UPDATE blueprints SET name=?,category=?,subcategory=?,manufacturer=?,item_size=?,grade=?,item_class=?,description=?,how_to_get=?,faction=?,mission_type=?,patch_added=?,is_default=?,notes=?,source=?,scmdb_tag=?,scmdb_url=? WHERE id=?`, [...fields, byName.id]);
+      replaceBlueprintIngredients(byName.id, ingredients);
+      ensureBlueprintUserState(byName.id);
+      const updatedRow = queryOne('SELECT * FROM blueprints WHERE id=?', [byName.id]);
+      existingByName.set(nameKey, updatedRow);
+      existingByTag.set(tagKey, updatedRow);
+      db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', [`materials:${tagKey}`, catalogVersion, new Date().toISOString()]);
+      seededMaterialKeys.add(tagKey);
+      changed = true;
+      continue;
+    }
+
+    if (byName) {
+      // Uma blueprint manual com o mesmo nome tem precedência e não é sobrescrita.
+      continue;
+    }
+
+    db.run(`INSERT INTO blueprints (name,category,subcategory,manufacturer,item_size,grade,item_class,description,how_to_get,faction,mission_type,patch_added,is_default,notes,source,scmdb_tag,scmdb_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, fields);
+    const bpId = queryOne('SELECT last_insert_rowid() as id').id;
+    ensureBlueprintUserState(bpId);
+    replaceBlueprintIngredients(bpId, ingredients);
+    const insertedRow = queryOne('SELECT * FROM blueprints WHERE id=?', [bpId]);
+    existingByName.set(nameKey, insertedRow);
+    existingByTag.set(tagKey, insertedRow);
+    db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', [`materials:${tagKey}`, catalogVersion, new Date().toISOString()]);
+    seededMaterialKeys.add(tagKey);
+    changed = true;
+  }
+
+  const state = queryOne('SELECT catalog_version FROM scmdb_catalog_state WHERE catalog_key=?', ['catalog']);
+  if (!state || state.catalog_version !== catalogVersion) {
+    db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', ['catalog', catalogVersion, new Date().toISOString()]);
+    changed = true;
+  }
+  return changed;
+}
+
+function migrateScmdbFractionalUnits() {
+  const migrationKey = 'units:fractional-cscu-v1';
+  if (queryOne('SELECT catalog_key FROM scmdb_catalog_state WHERE catalog_key=?', [migrationKey])) return false;
+  let changed = false;
+  const rows = queryAll(`
+    SELECT bi.id, bi.quantity, bi.unit
+    FROM blueprint_ingredients bi
+    JOIN blueprints b ON b.id = bi.blueprint_id
+    WHERE (b.source='SCMDB' OR b.scmdb_tag IS NOT NULL AND b.scmdb_tag<>'') AND lower(bi.unit)='scu'
+  `);
+  for (const row of rows) {
+    const quantity = Number(row.quantity);
+    if (!Number.isFinite(quantity) || Number.isInteger(quantity)) continue;
+    db.run('UPDATE blueprint_ingredients SET quantity=?,unit=? WHERE id=?', [quantity * 100, 'cSCU', row.id]);
+    changed = true;
+  }
+  db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', [migrationKey, String(SCMDB_CATALOG.sourceVersion || 'unknown'), new Date().toISOString()]);
+  return changed || rows.length > 0;
+}
+
 // ── Blueprint IPC ─────────────────────────────────────────────────────────────
 ipcMain.handle('bp-get-all', () => {
   const bps = queryAll(`
@@ -1629,40 +1813,61 @@ ipcMain.handle('bp-update-custom', (event, { bpId, bp, ingredients }) => {
 });
 
 ipcMain.handle('bp-delete-custom', (event, bpId) => {
-  const bp = queryOne('SELECT is_default FROM blueprints WHERE id=?', [bpId]);
-  if (!bp || bp.is_default) return { success: false, error: 'Cannot delete default blueprint' };
+  const bp = queryOne('SELECT id,is_default,source,scmdb_tag FROM blueprints WHERE id=?', [bpId]);
+  const isScmdb = bp?.source === 'SCMDB' || Boolean(bp?.scmdb_tag);
+  if (!bp || (bp.is_default && !isScmdb)) return { success: false, error: 'Cannot delete protected default blueprint' };
   db.run('DELETE FROM user_blueprints WHERE blueprint_id=?', [bpId]);
   db.run('DELETE FROM blueprint_ingredients WHERE blueprint_id=?', [bpId]);
   db.run('DELETE FROM blueprints WHERE id=?', [bpId]);
+  if (isScmdb && bp.scmdb_tag) {
+    db.run('INSERT OR REPLACE INTO scmdb_catalog_state (catalog_key,catalog_version,installed_at) VALUES (?,?,?)', [`deleted:${String(bp.scmdb_tag).toLowerCase()}`, String(SCMDB_CATALOG.sourceVersion || 'unknown'), new Date().toISOString()]);
+  }
   saveDb(); return { success: true };
 });
 
 ipcMain.handle('bp-import-scmdb', (event, list) => {
-  const existingNames = new Set(queryAll('SELECT name FROM blueprints').map(r => String(r.name || '').toLowerCase()));
-  const existingTags = new Set(queryAll("SELECT scmdb_tag FROM blueprints WHERE scmdb_tag IS NOT NULL AND scmdb_tag<>''").map(r => String(r.scmdb_tag).toLowerCase()));
-  let imported = 0, skipped = 0;
+  let imported = 0, updated = 0, enriched = 0, skipped = 0;
   for (const item of (list || [])) {
     const name = String(item?.name || '').trim();
     const tag = String(item?.scmdb_tag || '').trim();
-    if (!name || existingNames.has(name.toLowerCase()) || (tag && existingTags.has(tag.toLowerCase()))) { skipped++; continue; }
+    if (!name) { skipped++; continue; }
+    const existingByTag = tag ? queryOne('SELECT * FROM blueprints WHERE lower(scmdb_tag)=? LIMIT 1', [tag.toLowerCase()]) : null;
+    const existing = existingByTag || queryOne('SELECT * FROM blueprints WHERE lower(name)=? ORDER BY is_default DESC, id ASC LIMIT 1', [name.toLowerCase()]);
+    const catalogEntry = findScmdbCatalogEntry({ tag, name });
+    const catalogIngredients = catalogEntry ? buildScmdbIngredients(catalogEntry) : [];
+    const currentIngredients = existing ? queryAll('SELECT material_name,quantity,unit,notes FROM blueprint_ingredients WHERE blueprint_id=? ORDER BY id', [existing.id]) : [];
+
+    if (existing) {
+      // O backup não deve apagar materiais já cadastrados pelo usuário.
+      // Quando a blueprint existe no catálogo e está sem materiais, completamos automaticamente.
+      if (catalogIngredients.length && currentIngredients.length === 0) {
+        replaceBlueprintIngredients(existing.id, catalogIngredients);
+        enriched++;
+      } else {
+        skipped++;
+      }
+      restoreBlueprintUserState(existing.id, item.userState || {});
+      continue;
+    }
+
+    const ingredients = catalogIngredients.length ? catalogIngredients : normalizeBlueprintIngredients(item.ingredients);
+    const isKnownCatalogBlueprint = Boolean(catalogEntry);
     db.run(`INSERT INTO blueprints (name,category,subcategory,manufacturer,item_size,grade,item_class,description,how_to_get,faction,mission_type,patch_added,is_default,notes,source,scmdb_tag,scmdb_url)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)`,
-      [name, item.category||'Outro', item.subcategory||'SCMDB', item.manufacturer||'',
-       item.item_size||'Personal', item.grade||'', item.item_class||'',
-       item.description||'', item.how_to_get||'', item.faction||'', item.mission_type||'',
-       item.patch_added||'SCMDB', item.notes||'', 'SCMDB', tag, item.scmdb_url||'']);
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      name, item.category|| (catalogEntry ? inferScmdbSeedCategory(catalogEntry) : 'Outro'),
+      item.subcategory|| (catalogEntry?.subtype || 'SCMDB'), item.manufacturer||catalogEntry?.manufacturer||'',
+      item.item_size|| (catalogEntry ? inferScmdbSeedSize(catalogEntry) : 'Personal'), item.grade||'',
+      item.item_class||catalogEntry?.type||'', item.description||'', item.how_to_get||'Importada do backup SCMDB',
+      item.faction||'', item.mission_type||catalogEntry?.subtype||'', item.patch_added||SCMDB_CATALOG.sourceVersion||'SCMDB',
+      isKnownCatalogBlueprint ? 1 : 0, item.notes||`SCMDB · ${SCMDB_CATALOG.sourceVersion || 'catálogo'}`, 'SCMDB', tag, item.scmdb_url||'https://scmdb.net/?page=fab',
+    ]);
     const bpId = queryOne('SELECT last_insert_rowid() as id').id;
-    const state = item.userState || {};
-    db.run('INSERT INTO user_blueprints (blueprint_id,owned,wishlist,crafted_count,notes,obtained_date) VALUES (?,?,?,?,?,?)',
-      [bpId, state.owned ? 1 : 0, state.wishlist ? 1 : 0, 0, '', state.owned ? new Date().toISOString() : null]);
-    // O backup SCMDB não carrega materiais. A blueprint entra sem ingredientes,
-    // permitindo que a interface destaque o cadastro pendente.
-    existingNames.add(name.toLowerCase());
-    if (tag) existingTags.add(tag.toLowerCase());
+    replaceBlueprintIngredients(bpId, ingredients);
+    restoreBlueprintUserState(bpId, item.userState || {});
     imported++;
   }
   saveDb();
-  return { success: true, imported, skipped };
+  return { success: true, imported, updated, enriched, skipped };
 });
 
 ipcMain.handle('bp-get-stats', () => {
@@ -1676,10 +1881,11 @@ ipcMain.handle('bp-get-stats', () => {
     GROUP BY b.category ORDER BY total DESC`);
   return { total, owned, wishlist, totalCrafted, byCat };
 });
-// ── Backup / Restauração de Blueprints Customizadas ───────────────────────────
-// Só as cadastradas manualmente (is_default=0) — as padrão já vêm seedadas pelo próprio app.
+// ── Backup / Restauração de Blueprints ─────────────────────────────────────────
+// Exporta blueprints manuais e também o catálogo SCMDB para que materiais e
+// estado do usuário possam ser restaurados em uma instalação limpa.
 ipcMain.handle('bp-export-custom', () => {
-  const bps = queryAll('SELECT * FROM blueprints WHERE is_default=0 ORDER BY name');
+  const bps = queryAll("SELECT * FROM blueprints WHERE is_default=0 OR source='SCMDB' ORDER BY name");
   return bps.map(bp => {
     const ingredients = queryAll('SELECT material_name,quantity,quality_min,unit,notes FROM blueprint_ingredients WHERE blueprint_id=? ORDER BY id', [bp.id]);
     const userState = queryOne('SELECT owned,wishlist,crafted_count,notes as user_notes,obtained_date FROM user_blueprints WHERE blueprint_id=?', [bp.id]);
@@ -1688,35 +1894,56 @@ ipcMain.handle('bp-export-custom', () => {
       manufacturer: bp.manufacturer, item_size: bp.item_size, grade: bp.grade,
       item_class: bp.item_class, description: bp.description, how_to_get: bp.how_to_get,
       faction: bp.faction, mission_type: bp.mission_type, patch_added: bp.patch_added,
-      notes: bp.notes, ingredients, userState: userState || {},
+      notes: bp.notes, source: bp.source || '', scmdb_tag: bp.scmdb_tag || '', scmdb_url: bp.scmdb_url || '',
+      ingredients, userState: userState || {},
     };
   });
 });
 
+function restoreBlueprintUserState(bpId, userState = {}) {
+  ensureBlueprintUserState(bpId);
+  db.run(`UPDATE user_blueprints SET owned=?,wishlist=?,crafted_count=?,notes=?,obtained_date=? WHERE blueprint_id=?`, [
+    userState.owned ? 1 : 0,
+    userState.wishlist ? 1 : 0,
+    Math.max(0, Number(userState.crafted_count) || 0),
+    String(userState.user_notes || userState.notes || ''),
+    userState.obtained_date || null,
+    bpId,
+  ]);
+}
+
 ipcMain.handle('bp-import-custom', (event, list) => {
-  const existingNames = new Set(queryAll('SELECT name FROM blueprints').map(r => r.name.toLowerCase()));
-  let imported = 0, skipped = 0;
+  let imported = 0, updated = 0, skipped = 0;
   for (const item of (list || [])) {
-    if (!item.name || existingNames.has(item.name.toLowerCase())) { skipped++; continue; }
-    db.run(`INSERT INTO blueprints (name,category,subcategory,manufacturer,item_size,grade,item_class,description,how_to_get,faction,mission_type,patch_added,is_default,notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
-      [item.name, item.category||'Other', item.subcategory||'', item.manufacturer||'',
-       item.item_size||'', item.grade||'', item.item_class||'',
-       item.description||'', item.how_to_get||'', item.faction||'', item.mission_type||'',
-       item.patch_added||'4.7', item.notes||'']);
-    const bpId = queryOne('SELECT last_insert_rowid() as id').id;
-    for (const ing of (item.ingredients||[])) {
-      db.run('INSERT INTO blueprint_ingredients (blueprint_id,material_name,quantity,quality_min,unit,notes) VALUES (?,?,?,?,?,?)',
-        [bpId, ing.material_name, ing.quantity||1, ing.quality_min||0, ing.unit||'un', ing.notes||'']);
+    const name = String(item?.name || '').trim();
+    const tag = String(item?.scmdb_tag || '').trim();
+    if (!name) { skipped++; continue; }
+    const existingByTag = tag ? queryOne('SELECT * FROM blueprints WHERE lower(scmdb_tag)=? LIMIT 1', [tag.toLowerCase()]) : null;
+    const existing = existingByTag || queryOne('SELECT * FROM blueprints WHERE lower(name)=? ORDER BY is_default DESC, id ASC LIMIT 1', [name.toLowerCase()]);
+    const ingredients = normalizeBlueprintIngredients(item.ingredients);
+
+    if (existing) {
+      replaceBlueprintIngredients(existing.id, ingredients);
+      restoreBlueprintUserState(existing.id, item.userState || {});
+      updated++;
+      continue;
     }
-    const us = item.userState || {};
-    db.run('INSERT INTO user_blueprints (blueprint_id,owned,wishlist,crafted_count,notes,obtained_date) VALUES (?,?,?,?,?,?)',
-      [bpId, us.owned?1:0, us.wishlist?1:0, us.crafted_count||0, us.user_notes||'', us.obtained_date||null]);
-    existingNames.add(item.name.toLowerCase());
+
+    const isScmdb = item.source === 'SCMDB' || Boolean(tag);
+    db.run(`INSERT INTO blueprints (name,category,subcategory,manufacturer,item_size,grade,item_class,description,how_to_get,faction,mission_type,patch_added,is_default,notes,source,scmdb_tag,scmdb_url)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      name, item.category||'Other', item.subcategory||'', item.manufacturer||'',
+      item.item_size||'', item.grade||'', item.item_class||'', item.description||'',
+      item.how_to_get||'', item.faction||'', item.mission_type||'', item.patch_added||'4.7',
+      isScmdb ? 1 : 0, item.notes||'', isScmdb ? 'SCMDB' : '', tag, item.scmdb_url||'',
+    ]);
+    const bpId = queryOne('SELECT last_insert_rowid() as id').id;
+    replaceBlueprintIngredients(bpId, ingredients);
+    restoreBlueprintUserState(bpId, item.userState || {});
     imported++;
   }
   saveDb();
-  return { success: true, imported, skipped };
+  return { success: true, imported, updated, skipped };
 });
 
 // ── UEX API Proxy (handles CORS via main process) ────────────────────────────

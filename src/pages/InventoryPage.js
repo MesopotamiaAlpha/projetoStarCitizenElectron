@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
-  BarChart3, Filter, RefreshCw, Coins, Minus, Star
+  BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
@@ -10,13 +10,31 @@ import { searchUexItems, loadUexItemsDB, getUexItemAveragePrice, normalizeUexNum
 import { getItemMarketPrice, getMarketPriceForName } from '../data/uexMarketDB';
 import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
-import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
+import { SCRIPT_RATIO, isScriptItem, normalizeScriptName, calcWikeloFavors } from '../data/wikelo';
+import { loadUnknownVault, removeFromUnknownVault, UNKNOWN_VAULT_UPDATED_EVENT } from '../data/unknownVault';
 import { publishInventoryUpdate } from '../data/inventoryEvents';
+import {
+  DEFAULT_INVENTORY_TAXONOMY,
+  INVENTORY_TAXONOMY_UPDATED_EVENT,
+  getInventoryCategoryOptions,
+  getInventorySubcategoryOptions,
+  loadInventoryTaxonomy,
+} from '../data/inventoryTaxonomy';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
 const WIKELO_COLOR = '#a29bfe';
+const UNKNOWN_VAULT_SYSTEM = 'Baú Desconhecido';
+const UNKNOWN_VAULT_LOCATION_TYPE = 'Baú Desconhecido';
+const UNKNOWN_VAULT_LOCATION_NAME = 'Sem localização definida';
+
+function isUnknownVaultItem(item) {
+  return Boolean(item?.is_unknown_vault)
+    || String(item?.system || '') === UNKNOWN_VAULT_SYSTEM
+    || String(item?.location_type || '') === UNKNOWN_VAULT_LOCATION_TYPE
+    || String(item?.location_name || '') === UNKNOWN_VAULT_LOCATION_NAME;
+}
 
 function qualityTierFromUexItem(item) {
   if (item?.quality_tier !== undefined && item?.quality_tier !== null && item?.quality_tier !== '') return item.quality_tier;
@@ -413,21 +431,9 @@ const LOCATIONS_STATIC = {
   },
 };
 
-const CATEGORIES = {
-  'Arma Pessoal': ['Rifle de Assalto','Rifle de Sniper','Espingarda (Shotgun)','SMG','Pistola','Lança-granadas','Lança-foguetes','Arma Melee','Munição'],
-  'Acessório de Arma': ['Mira/Scope','Supressor','Lanterna Tática','Carregador','Underbarrel','Empunhadura'],
-  'Armadura FPS': ['Capacete','Torso','Braços','Pernas','Mochila','Set Completo','Undersuit'],
-  'Roupa': ['Chapéu / Boné','Jaqueta','Camisa','Calça','Calçado','Luvas','Óculos','Macacão'],
-  'Componente de Nave': ['Arma de Nave','Escudo','Propulsor Quântico','Planta de Energia','Cooler','Thruster','Radar/Avionics','Módulo de Mining','Módulo de Salvage','Módulo de Fabricação'],
-  'Utilitário': ['Medpen','Stimpak','Multi-Tool','Extrator de Mining','Faca / Multifaca','Tractor Beam','Docking Collar','Scanner','Gadget'],
-  'Recurso / Minério': ['Quantainium','Bexalite','Taranite','Borase','Laranite','Agricium','Titanium','Copper','Iron','Gold','Corundum','Hephaestanite','Dolivine'],
-  'Commodity': ['Processed Food','Medical Supplies','Stims','Agricultural Supplies','Hydrogen Fuel','Quantum Fuel','Waste','Scrap','Altruciatoxin','Neon','Widow','WiDoW','GreenGro','SLAM'],
-  'Blueprint': ['Blueprint de Arma','Blueprint de Armadura','Blueprint de Componente','Blueprint de Munição','Blueprint de Utilitário'],
-  'Decoração / Flair': ['Trdeéu','Pintura de Nave','Decalque','Item de Hangar','Livro / Lore','Objeto Colecionável'],
-  'Consumível': ['Bebida','Comida','Remédio','Explosivo','Sinalizador'],
-  'Contrabando': ['Droga ilegal','Arma proibida','Item Contrabandoeado'],
-  'Miscellaneous': ['Container','Item Desconhecido','Outro'],
-};
+// Mapa padrão usado somente para regras de auto-classificação da UEX.
+// Os seletores do Inventário usam taxonomy, que é administrável na tela Sistema.
+const CATEGORIES = DEFAULT_INVENTORY_TAXONOMY;
 
 const CONDITIONS  = ['Novo','Excelente','Bom','Usado','Danificado','Destruído'];
 const UNITS       = ['un','SCU','cSCU','mSCU','kg','l','stack'];
@@ -536,7 +542,7 @@ const emptyItem = () => ({
 
 function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
 
-function ItemForm({ initial, onSave, onCancelar }) {
+function ItemForm({ initial, onSave, onCancelar, taxonomy = [] }) {
   const [data, setData] = useState(() => {
     const base = initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem();
     return { ...base, craft_status: normalizeCraftStatus(base.craft_status) };
@@ -625,7 +631,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
       if (category) {
         updates.category = category;
         // Só sobrescreve subcategoria se o mapeamento encontrou uma correspondente na lista local
-        if (subcategory && (CATEGORIES[category]||[]).includes(subcategory)) updates.subcategory = subcategory;
+        if (subcategory && getInventorySubcategoryOptions(category, '', taxonomy).some(option => option.name === subcategory)) updates.subcategory = subcategory;
       }
     }
     if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
@@ -656,7 +662,8 @@ function ItemForm({ initial, onSave, onCancelar }) {
     : locationTiposFromBase;
   const locationOptions = data.system && data.location_type && LOCATIONS[data.system]?.[data.location_type]
     ? LOCATIONS[data.system][data.location_type] : [];
-  const subcatOptions = CATEGORIES[data.category] || [];
+  const categoryOptions = getInventoryCategoryOptions(data.category, taxonomy);
+  const subcatOptions = getInventorySubcategoryOptions(data.category, data.subcategory || '', taxonomy);
 
   // Modo de digitação manual do local — estado próprio, independente de data.location_name,
   // pra não conflitar com o valor do <select> conforme o usuário digita.
@@ -838,14 +845,14 @@ function ItemForm({ initial, onSave, onCancelar }) {
         <div>
           <label style={LS}>Categoria</label>
           <select style={SS} value={data.category} onChange={e=>{set('category',e.target.value);set('subcategory','');}}>
-            {Object.keys(CATEGORIES).map(c=><option key={c} value={c}>{c}</option>)}
+            {categoryOptions.map(category=><option key={category.id} value={category.name}>{category.name}</option>)}
           </select>
         </div>
         <div>
           <label style={LS}>Subcategoria</label>
           <select style={SS} value={data.subcategory} onChange={e=>set('subcategory',e.target.value)}>
             <option value="">— selecione —</option>
-            {subcatOptions.map(s=><option key={s} value={s}>{s}</option>)}
+            {subcatOptions.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
         </div>
       </div>
@@ -1086,7 +1093,7 @@ function PafPanel({ item, allItems }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ItemCard — card visual com modal de detalhes
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer }) {
+const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer }) {
   const [showDetail, setShowDetail] = useState(false);
   const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
   const craftStatus = normalizeCraftStatus(item.craft_status);
@@ -1276,6 +1283,66 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
       )}
     </>
   );
+});
+
+// ── Baú Desconhecido ───────────────────────────────────────────────────────────
+function UnknownVaultPanel({ items, locationOptions, onDirect }) {
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [destination, setDestination] = useState({ system:'', location_type:'', location_name:'' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const systems = useMemo(() => [...new Set((locationOptions || []).map(option => option.system).filter(Boolean))].sort(), [locationOptions]);
+  const types = useMemo(() => [...new Set((locationOptions || []).filter(option => option.system === destination.system).map(option => option.location_type).filter(Boolean))].sort(), [locationOptions, destination.system]);
+  const names = useMemo(() => [...new Set((locationOptions || []).filter(option => option.system === destination.system && option.location_type === destination.location_type).map(option => option.location_name).filter(Boolean))].sort(), [locationOptions, destination.system, destination.location_type]);
+
+  function openDirection(item) {
+    const first = locationOptions?.[0] || {};
+    setSelectedItem(item);
+    setError('');
+    setDestination({ system:first.system || systems[0] || '', location_type:first.location_type || '', location_name:first.location_name || '' });
+  }
+  function changeSystem(system) {
+    const availableTypes = [...new Set((locationOptions || []).filter(option => option.system === system).map(option => option.location_type).filter(Boolean))].sort();
+    const nextType = availableTypes[0] || '';
+    const nextName = locationOptions.find(option => option.system === system && option.location_type === nextType)?.location_name || '';
+    setDestination({ system, location_type:nextType, location_name:nextName });
+  }
+  function changeType(location_type) {
+    const nextName = locationOptions.find(option => option.system === destination.system && option.location_type === location_type)?.location_name || '';
+    setDestination(prev => ({ ...prev, location_type, location_name:nextName }));
+  }
+  async function confirmDirection() {
+    if (!selectedItem || !destination.system || !destination.location_type || !destination.location_name) {
+      setError('Selecione sistema, tipo de local e localização.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const ok = await onDirect(selectedItem, destination);
+      if (ok) setSelectedItem(null);
+      else setError('Não foi possível gravar o scrip no local escolhido.');
+    } catch (err) {
+      setError(err.message || 'Não foi possível direcionar o item.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section style={{marginBottom:20,padding:'14px 16px',background:'linear-gradient(135deg,rgba(162,155,254,0.10),rgba(56,189,248,0.04))',border:'1px solid rgba(162,155,254,0.32)',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,0.12)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:30,height:30,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(162,155,254,0.16)',color:'#a29bfe'}}><Package size={16}/></div>
+          <div><div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:800,color:'#c4b5fd',letterSpacing:'0.08em'}}>BAÚ DESCONHECIDO</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>Scrip recebido em missão aguardando um local definitivo</div></div>
+        </div>
+        <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:800,color:items.length?'#c4b5fd':'var(--text-muted)'}}>{items.length} pendente{items.length === 1 ? '' : 's'}</span>
+      </div>
+      {items.length === 0 ? <div style={{padding:'10px 12px',border:'1px dashed rgba(162,155,254,0.22)',borderRadius:7,fontSize:11,color:'var(--text-muted)'}}>Nenhum MG Scrip ou Council Scrip aguardando direcionamento.</div> : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:8}}>{items.map(item => <div key={item.id} style={{padding:'10px 11px',background:'rgba(7,12,24,0.28)',border:'1px solid rgba(162,155,254,0.18)',borderRadius:7}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><strong style={{fontSize:12,color:'var(--text-primary)'}}>{item.name}</strong><span style={{fontFamily:'Share Tech Mono,monospace',fontSize:15,fontWeight:800,color:'#c4b5fd'}}>{item.quantity}</span></div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.source_mission_title || 'Origem não informada'}</div><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8}}><span style={{fontSize:9,color:'var(--text-muted)'}}>{item.received_at ? new Date(item.received_at).toLocaleDateString('pt-BR') : '—'}</span><button type="button" onClick={()=>openDirection(item)} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 8px',borderRadius:5,border:'1px solid rgba(162,155,254,0.35)',background:'rgba(162,155,254,0.10)',color:'#c4b5fd',cursor:'pointer',fontSize:10,fontWeight:700}}><MapPin size={11}/> Direcionar</button></div></div>)}</div>}
+      {selectedItem && <div style={{position:'fixed',inset:0,zIndex:1200,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onMouseDown={()=>!busy&&setSelectedItem(null)}><div style={{width:'100%',maxWidth:520,padding:18,background:'var(--bg-card)',border:'1px solid rgba(162,155,254,0.38)',borderRadius:10,boxShadow:'0 20px 60px rgba(0,0,0,0.55)'}} onMouseDown={event=>event.stopPropagation()}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}><div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color:'#c4b5fd'}}>DIRECIONAR PARA O INVENTÁRIO</div><button type="button" onClick={()=>setSelectedItem(null)} disabled={busy} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer'}}><X size={15}/></button></div><div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:14}}><strong style={{color:'var(--text-primary)'}}>{selectedItem.name} ×{selectedItem.quantity}</strong> será somado ao item existente no destino, se houver.</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><label style={{fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Sistema<select value={destination.system} onChange={event=>changeSystem(event.target.value)} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{systems.map(system=><option key={system} value={system}>{system}</option>)}</select></label><label style={{fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Tipo de local<select value={destination.location_type} onChange={event=>changeType(event.target.value)} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{types.map(type=><option key={type} value={type}>{type}</option>)}</select></label></div><label style={{display:'block',marginTop:9,fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Localização<select value={destination.location_name} onChange={event=>setDestination(prev=>({...prev,location_name:event.target.value}))} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{names.map(name=><option key={name} value={name}>{name}</option>)}</select></label>{error&&<div style={{marginTop:9,padding:'7px 9px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:5,color:'var(--accent-red)',fontSize:11}}>{error}</div>}<div style={{display:'flex',justifyContent:'flex-end',gap:7,marginTop:16}}><button type="button" onClick={()=>setSelectedItem(null)} disabled={busy} style={{padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer'}}>Cancelar</button><button type="button" onClick={confirmDirection} disabled={busy} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'7px 13px',background:'rgba(162,155,254,0.14)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:5,color:'#c4b5fd',cursor:'pointer',fontWeight:700}}>{busy?<RefreshCw size={12} className="spin"/>:<Check size={12}/>} {busy?'Salvando...':'Confirmar destino'}</button></div></div></div>}
+    </section>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1285,6 +1352,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
 export default function InventoryPage() {
   const [itens,        setItens]        = useState([]);
   const itensRef = useRef([]);
+  const [unknownVaultItems, setUnknownVaultItems] = useState(() => loadUnknownVault().items);
   const [loading,      setLoading]      = useState(true);
   const [showForm,     setShowForm]     = useState(false);
   const [editItem,     setEditItem]     = useState(null);
@@ -1295,6 +1363,17 @@ export default function InventoryPage() {
   const [filterCat,    setFilterCat]    = useState('all');
   const [sortBy,       setSortBy]       = useState('name');
   const [viewMode,     setViewMode]     = useState('grid'); // grid | list
+
+  const [taxonomy, setTaxonomy] = useState(() => loadInventoryTaxonomy());
+  useEffect(() => {
+    const refreshTaxonomy = event => setTaxonomy(Array.isArray(event?.detail) ? event.detail : loadInventoryTaxonomy());
+    window.addEventListener(INVENTORY_TAXONOMY_UPDATED_EVENT, refreshTaxonomy);
+    window.addEventListener('storage', refreshTaxonomy);
+    return () => {
+      window.removeEventListener(INVENTORY_TAXONOMY_UPDATED_EVENT, refreshTaxonomy);
+      window.removeEventListener('storage', refreshTaxonomy);
+    };
+  }, []);
 
   const [locationsVersion, setLocationsVersion] = useState(0);
   useEffect(() => {
@@ -1339,7 +1418,22 @@ export default function InventoryPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  async function handleSave(data) {
+  const refreshUnknownVault = useCallback(() => {
+    setUnknownVaultItems(loadUnknownVault().items);
+  }, []);
+
+  useEffect(() => {
+    refreshUnknownVault();
+    window.addEventListener(UNKNOWN_VAULT_UPDATED_EVENT, refreshUnknownVault);
+    return () => window.removeEventListener(UNKNOWN_VAULT_UPDATED_EVENT, refreshUnknownVault);
+  }, [refreshUnknownVault]);
+
+  const handleEditItem = useCallback((item) => {
+    setEditItem(item);
+    setShowForm(false);
+  }, []);
+
+  const handleSave = useCallback(async (data) => {
     const normalizedData = {
     ...data,
     name: normalizeUexItemName(data.name),
@@ -1350,14 +1444,14 @@ export default function InventoryPage() {
     setShowForm(false); setEditItem(null);
     const refreshed = await loadData();
     publishInventoryUpdate(refreshed);
-  }
-  async function handleDelete(id) {
+  }, [invAPI, loadData]);
+  const handleDelete = useCallback(async (id) => {
     await invAPI.delete(id);
     const refreshed = await loadData();
     publishInventoryUpdate(refreshed);
-  }
+  }, [invAPI, loadData]);
 
-  async function handleTransfer(item, { destination, quantity }) {
+  const handleTransfer = useCallback(async (item, { destination, quantity }) => {
     const sourceQuantity = Math.max(0, Number(item.quantity) || 0);
     const amount = Math.max(0, Number(quantity) || 0);
     if (!destination || amount <= 0 || amount > sourceQuantity) return;
@@ -1414,9 +1508,59 @@ export default function InventoryPage() {
       const refreshed = await loadData();
       publishInventoryUpdate(refreshed);
     }
-  }
+  }, [invAPI, loadData]);
 
-  async function handleScriptUpdate(id, newQty) {
+  const handleDirectUnknownItem = useCallback(async (unknownItem, destination) => {
+    const canonicalName = normalizeScriptName(unknownItem.name) || unknownItem.name;
+    const amount = Math.max(0, Number(unknownItem.quantity) || 0);
+    if (!canonicalName || amount <= 0) return false;
+
+    const target = itensRef.current.find(item => {
+      const itemName = normalizeScriptName(item.name) || item.name;
+      return !isUnknownVaultItem(item)
+        && String(itemName || '').trim().toLowerCase() === String(canonicalName || '').trim().toLowerCase()
+        && item.system === destination.system
+        && item.location_type === destination.location_type
+        && item.location_name === destination.location_name;
+    });
+
+    try {
+      if (target) {
+        await invAPI.update({ ...target, name: canonicalName, quantity: Math.max(0, Number(target.quantity) || 0) + amount, unit: target.unit || 'un' });
+      } else {
+        await invAPI.create({
+          name: canonicalName,
+          category: 'Miscellaneous',
+          subcategory: 'Outro',
+          system: destination.system,
+          location_type: destination.location_type,
+          location_name: destination.location_name,
+          container: '',
+          quantity: amount,
+          unit: 'un',
+          size: '',
+          grade: '',
+          manufacturer: '',
+          condition: 'Novo',
+          value_auec: 0,
+          is_contraband: 0,
+          notes: 'Recebido de missão e direcionado pelo Baú Desconhecido.',
+          is_crafted: 0,
+          craft_status: [],
+        });
+      }
+      removeFromUnknownVault(unknownItem.id);
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
+      refreshUnknownVault();
+      return true;
+    } catch (error) {
+      console.error('Erro ao direcionar scrip do Baú Desconhecido:', error);
+      return false;
+    }
+  }, [invAPI, loadData, refreshUnknownVault]);
+
+  const handleScriptUpdate = useCallback(async (id, newQty) => {
     const current = itensRef.current.find(i => i.id === id);
     if (!current) return;
 
@@ -1436,21 +1580,22 @@ export default function InventoryPage() {
       publishInventoryUpdate(refreshed);
       console.error('Erro ao atualizar quantidade de script:', e);
     }
-  }
+  }, [invAPI, loadData]);
 
   // ── Derivados para navegação ──
+  const regularItems = useMemo(() => itens.filter(item => !isUnknownVaultItem(item)), [itens]);
   // Sistemas que têm itens
   const systemsWithItems = useMemo(() => {
     const counts = {};
-    itens.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
+    regularItems.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
     const allSystems = [...new Set([...SYSTEMS, ...Object.keys(counts)])];
     return allSystems.map(s => ({ name:s, count:counts[s]||0 }));
-  }, [itens]);
+  }, [regularItems]);
 
   // Locais dentro do sistema selecionado que têm itens
   const locationsInSystem = useMemo(() => {
     if (!selSystem) return [];
-    const inSys = itens.filter(i => i.system === selSystem);
+    const inSys = regularItems.filter(i => i.system === selSystem);
     const map = {};
     inSys.forEach(i => {
       const loc = i.location_name || 'Desconhecido';
@@ -1460,11 +1605,11 @@ export default function InventoryPage() {
       map[loc].totalValue += (i.value_auec||0)*(i.quantity||1);
     });
     return Object.values(map).sort((a,b) => b.count - a.count);
-  }, [itens, selSystem]);
+  }, [regularItems, selSystem]);
 
   // Itens filtrados para exibição
   const displayItems = useMemo(() => {
-    let res = [...itens];
+    let res = [...regularItems];
     if (selSystem)   res = res.filter(i => i.system === selSystem);
     if (selLocation) res = res.filter(i => i.location_name === selLocation);
     if (search.trim()) {
@@ -1487,7 +1632,7 @@ export default function InventoryPage() {
       }
     });
     return res;
-  }, [itens, selSystem, selLocation, search, filterCat, sortBy]);
+  }, [regularItems, selSystem, selLocation, search, filterCat, sortBy]);
 
   const totalValor     = itens.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
@@ -1521,9 +1666,11 @@ export default function InventoryPage() {
       {/* Formulário */}
       {(showForm||editItem) && (
         <div style={{padding:'0 24px',overflow:'auto',maxHeight:'60vh',flexShrink:0}}>
-          <ItemForm initial={editItem||undefined} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
+          <ItemForm initial={editItem||undefined} taxonomy={taxonomy} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
         </div>
       )}
+
+      <div style={{padding:'0 24px',flexShrink:0}}><UnknownVaultPanel items={unknownVaultItems} locationOptions={transferDestinations} onDirect={handleDirectUnknownItem}/></div>
 
       {/* ── Breadcrumb de navegação ── */}
       <div style={{padding:'8px 24px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
@@ -1694,7 +1841,7 @@ export default function InventoryPage() {
               <div className="inventory-items-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
                 {displayItems.map(item=>(
                   <ItemCard key={item.id} item={item}
-                    onEdit={i=>{setEditItem(i);setShowForm(false);}}
+                    onEdit={handleEditItem}
                     onDelete={handleDelete}
                     onScriptUpdate={handleScriptUpdate}
                     allItems={itens}

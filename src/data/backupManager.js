@@ -14,14 +14,17 @@ export const BACKUP_CATEGORIES = [
   { id:'orevault',    label:'Baú de Minério',                 keys:['sc_ore_vault_v1'] },
   { id:'clanvault',   label:'Cofre do Clã',                    keys:['sc_clan_vault_v1'] },
   { id:'mininggroup', label:'Mineração em Grupo',              keys:['sc_mining_group_v1','sc_mining_builds_v1'] },
-  { id:'missions',    label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },
+    { id:'missions',   label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },
+  { id:'unknown-vault', label:'Baú Desconhecido',               keys:['sc_unknown_vault_v1'] },
+
   { id:'notes',       label:'Bloco de Notas / Textos UEX',      keys:['sc_notes_v1','sc_uex_texts_v1'] },
   { id:'wikelo',      label:'Acompanhamento Wikelo',           keys:['sc_wikelo_missions_v1'] },
   { id:'materials',   label:'Fila de Materiais',               keys:['sc_material_queue_v1'] },
   { id:'locations',   label:'Locais Administrados',              keys:['sc_locations_admin_v1'] },
   { id:'missionadmin', label:'Gerenciador de Missões',              keys:['sc_mission_admin_v1'] },
+  { id:'inventory-taxonomy', label:'Categorias e Subcategorias do Inventário', keys:['sc_inventory_taxonomy_v1'] },
   { id:'mission-auto-monitor', label:'Monitor Automático de Missões', keys:['sc_mission_auto_monitor_v1'] },
-  { id:'blueprints',  label:'Blueprints Customizadas',         electron:'blueprints' },
+  { id:'blueprints',  label:'Blueprints do Usuário / SCMDB', electron:'blueprints' },
   { id:'uexsales',    label:'Vendas UEX (Marketplace)',        keys:['sc_uex_sales_v1','sc_uex_catalog_v1'] },
   { id:'uexnegotiations', label:'Negociações UEX / Avaliações', keys:['sc_uex_negotiation_reviews_v1'] },
   { id:'uexconfig',   label:'Configuração e Sincronização UEX', keys:['sc_uex_token_v1','sc_uex_secretkey_v1','sc_uex_username_v1','sc_uex_notif_state_v1','sc_uex_items_db_v1','sc_uex_locations_db_v1','sc_uex_mining_db_v1'], sensitive:true },
@@ -153,8 +156,12 @@ export async function restoreBackup(backup, selectedIds) {
     if (cat.electron === 'blueprints') {
       if (window.electronAPI?.bpImportCustom && backup.electron?.blueprints) {
         const res = await window.electronAPI.bpImportCustom(backup.electron.blueprints);
-        restoredKeys += res.imported || 0;
-        labels.push(`${cat.label} (${res.imported} importada${res.imported!==1?'s':''}${res.skipped?`, ${res.skipped} já existente${res.skipped!==1?'s':''}`:''})`);
+        restoredKeys += (res.imported || 0) + (res.updated || 0);
+        const details = [];
+        if (res.imported) details.push(`${res.imported} nova${res.imported !== 1 ? 's' : ''}`);
+        if (res.updated) details.push(`${res.updated} atualizada${res.updated !== 1 ? 's' : ''}`);
+        if (res.skipped) details.push(`${res.skipped} sem alteração`);
+        labels.push(`${cat.label}${details.length ? ` (${details.join(', ')})` : ''}`);
       }
       continue;
     }
@@ -164,6 +171,9 @@ export async function restoreBackup(backup, selectedIds) {
     keysToRestore.forEach(k => {
       if (backup.data[k] !== undefined) {
         localStorage.setItem(k, backup.data[k]);
+        if (k === 'sc_unknown_vault_v1' && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('sc_unknown_vault_updated'));
+        }
         restoredKeys++;
       }
     });

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen } from 'lucide-react';
 import {
   loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages, sendNegotiationMessage,
+  getNegotiationMessageSender, isOwnNegotiationMessage,
   translatePortugueseToEnglish, translateEnglishToPortuguese,
 } from '../data/uexNegotiations';
 import {
@@ -9,6 +10,8 @@ import {
 } from '../data/uexSales';
 import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
+import { getNegotiationClosedAt, isNegotiationClosed } from '../data/uexNegotiationStatus';
+import { formatRelativeMessageTime } from '../data/uexMessageTime';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -132,6 +135,7 @@ function NegotiationThread({ negotiation, onBack }) {
   const [translationMessageError, setTranslationMessageError] = useState('');
   const [incomingPreview, setIncomingPreview] = useState(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
   const [polling, setPolling] = useState(false);
   const [buyerCopied, setBuyerCopied] = useState(false);
   const [buyerCopyError, setBuyerCopyError] = useState('');
@@ -141,14 +145,20 @@ function NegotiationThread({ negotiation, onBack }) {
   const [closure, setClosure] = useState(() => getNegotiationClosure(negotiation.hash));
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState('');
-  const myUsername = loadUsername().trim().toLowerCase();
-  const isClosed = !!negotiation.date_closed || !!closure;
+  const myUsername = loadUsername();
+  const apiClosedAt = getNegotiationClosedAt(negotiation);
+  const isClosed = isNegotiationClosed(negotiation) || !!closure;
   const messagesEndRef = React.useRef(null);
   const knownMessageIdsRef = React.useRef(new Set());
   const firstLoadRef = React.useRef(true);
   const pollingRef = React.useRef(false);
   const requestRef = React.useRef(false);
   const translationRequestRef = React.useRef(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRelativeNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     dispatchUexUiEvent(UEX_ACTIVE_NEGOTIATION_EVENT, {
@@ -181,7 +191,7 @@ function NegotiationThread({ negotiation, onBack }) {
       if (firstLoadRef.current) {
         firstLoadRef.current = false;
       } else {
-        const incoming = sorted.filter(m => !knownMessageIdsRef.current.has(messageKey(m)) && (m.user_username || '').trim().toLowerCase() !== myUsername);
+        const incoming = sorted.filter(m => !knownMessageIdsRef.current.has(messageKey(m)) && !isOwnNegotiationMessage(m, myUsername, negotiation));
         if (incoming.length) {
           const newestIncoming = incoming[incoming.length - 1];
           setNewMessagesCount(count => count + incoming.length);
@@ -340,6 +350,7 @@ function NegotiationThread({ negotiation, onBack }) {
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
         catalogCreated: result?.catalogCreated || false,
+        vaultConsumption: result?.vaultConsumption || null,
       });
       setClosure({ ...savedClosure, sale: result?.sale || null });
     } catch (e) {
@@ -402,7 +413,11 @@ function NegotiationThread({ negotiation, onBack }) {
       {closure ? (
         <div style={{ marginBottom:10, padding:'9px 11px', background:closure.status==='success'?'rgba(52,211,153,0.09)':'rgba(251,113,133,0.09)', border:`1px solid ${closure.status==='success'?'rgba(52,211,153,0.32)':'rgba(251,113,133,0.32)'}`, borderRadius:7, color:closure.status==='success'?'var(--accent-green)':'var(--accent-red)', fontSize:11, lineHeight:1.5, display:'flex', alignItems:'flex-start', gap:8 }}>
           {closure.status==='success' ? <CheckCircle2 size={14} style={{ flexShrink:0, marginTop:1 }}/> : <XCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>}
-          <span><strong>{closure.status==='success'?'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO':'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.') : 'Nenhuma venda foi criada para esta negociação.'}</span>
+          <span><strong>{closure.status==='success'?'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO':'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.') : 'Nenhuma venda foi criada para esta negociação.'}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Baú atualizado: {closure.vaultConsumption.boxes} caixa{closure.vaultConsumption.boxes === 1 ? '' : 's'} de {closure.vaultConsumption.boxQuantity} {closure.vaultConsumption.boxUnit} descontada{closure.vaultConsumption.boxes === 1 ? '' : 's'}{closure.vaultConsumption.quality ? ` · qualidade ${closure.vaultConsumption.quality}` : ''}.</span></>}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Baú não foi descontado: {closure.vaultConsumption.message}</span></>}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'not_linked' && <><br/><span style={{ color:'var(--text-muted)' }}>O anúncio não possui vínculo com o Baú; nenhuma quantidade foi descontada.</span></>}
+          </span>
         </div>
       ) : (
         <div style={{ marginBottom:10, padding:'9px 11px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
@@ -418,7 +433,7 @@ function NegotiationThread({ negotiation, onBack }) {
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 5 }}>
         {negotiation.advertiser_username} (vendedor) ↔ {negotiation.client_username} (comprador) ·{' '}
         {negotiation.price} {negotiation.unit} · {negotiation.currency}
-        {negotiation.date_closed ? <span style={{ color: 'var(--accent-red)' }}> · Encerrada em {fmtDate(negotiation.date_closed)}</span> : <span style={{ color: 'var(--accent-green)' }}> · Ativa</span>}
+        {apiClosedAt ? <span style={{ color: 'var(--accent-red)' }}> · Encerrada em {fmtDate(apiClosedAt)}</span> : <span style={{ color: 'var(--accent-green)' }}> · Ativa</span>}
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:10, color:'var(--text-muted)', fontSize:10 }}>
         <BellRing size={11} style={{ color:'var(--accent-primary)' }}/>
@@ -448,7 +463,7 @@ function NegotiationThread({ negotiation, onBack }) {
           <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma mensagem nesta negociação ainda.</div>
         )}
         {messages.map(m => {
-          const isMine = myUsername && (m.user_username || '').trim().toLowerCase() === myUsername;
+          const isMine = isOwnNegotiationMessage(m, myUsername, negotiation);
           const translationId = messageKey(m);
           const translatedMessage = messageTranslations[translationId];
           const isTranslating = translatingMessageId === translationId;
@@ -460,7 +475,7 @@ function NegotiationThread({ negotiation, onBack }) {
               borderRadius: 8, padding: '8px 12px',
             }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
-                {isMine ? 'Você' : m.user_username}
+                {isMine ? 'Você' : (getNegotiationMessageSender(m) || 'Usuário UEX')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-primary)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{m.message}</div>
               {!isMine && (
@@ -477,7 +492,7 @@ function NegotiationThread({ negotiation, onBack }) {
                 </>
               )}
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'Share Tech Mono,monospace' }}>
-                {fmtDate(m.date_added)}{!m.date_read && !isMine ? ' · não lida' : ''}
+                {formatRelativeMessageTime(m.date_added, relativeNow)}
               </div>
             </div>
           );
@@ -615,7 +630,8 @@ export default function UexNegotiationsPage() {
               const palette = negotiationColor(n);
               const counterparty = negotiationCounterparty(n);
               const localClosure = getNegotiationClosure(n.hash);
-              const isLocallyClosed = Boolean(n.date_closed || localClosure);
+              const apiClosedAt = getNegotiationClosedAt(n);
+              const isLocallyClosed = Boolean(apiClosedAt || localClosure);
               const initial = counterparty.name.replace(/^@/, '').charAt(0).toUpperCase() || '?';
               return (
                 <button key={n.id || n.hash} type="button" onClick={() => setSelected(n)} style={{
@@ -634,7 +650,7 @@ export default function UexNegotiationsPage() {
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5, minWidth:0 }}>
                       <div style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>{n.listing_title || 'Item sem título'}</div>
                       <span style={{ flexShrink:0, padding:'2px 7px', borderRadius:10, background:isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.12)':'rgba(251,113,133,0.1)'):'rgba(52,211,153,0.1)', border:`1px solid ${isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.25)'):'rgba(52,211,153,0.25)'}`, color:isLocallyClosed?(localClosure?.status==='success'?'var(--accent-green)':'var(--accent-red)'):'var(--accent-green)', fontSize:9, fontWeight:800, textTransform:'uppercase' }}>
-                        {localClosure?.status==='success' ? 'Concluída' : localClosure?.status==='failed' ? 'Sem sucesso' : n.date_closed ? 'Encerrada' : 'Ativa'}
+                        {localClosure?.status==='success' ? 'Concluída' : localClosure?.status==='failed' ? 'Sem sucesso' : apiClosedAt ? 'Encerrada' : 'Ativa'}
                       </span>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', fontSize:10, color:'var(--text-secondary)' }}>

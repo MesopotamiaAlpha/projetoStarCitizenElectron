@@ -19,8 +19,7 @@ import MarketAlertsPage   from './pages/MarketAlertsPage';
 import BackupPage         from './pages/BackupPage';
 import DataDirectoryPage  from './pages/DataDirectoryPage';
 import NotesPage          from './pages/NotesPage';
-import LocationsAdminPage from './pages/LocationsAdminPage';
-import { MissionAdminPage } from './pages/MissionAdminPage';
+import SystemAdminPage from './pages/SystemAdminPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
@@ -189,8 +188,7 @@ const NAV_GROUPS = [
     { id:'backup', label:'Backup & Restauração', icon:Save },
     { id:'data-directory', label:'Diretório de Dados', icon:FolderCog },
     { id:'notes',  label:'Bloco de Notas',          icon:Edit3 },
-    { id:'locations', label:'Adicionar Local',       icon:Globe  },
-    { id:'mission-admin', label:'Gerenciador de Missões', icon:ListChecks },
+    { id:'system-admin', label:'Administradores do Sistema', icon:FolderCog },
   ]},
 ];
 
@@ -336,7 +334,7 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-badge">v1.0</span>
+          <span className="version-badge">v1.3.2</span>
         </div>
       </aside>
 
@@ -364,8 +362,7 @@ export default function App() {
           {activePage==='backup'     && <BackupPage />}
           {activePage==='data-directory' && <DataDirectoryPage />}
           {activePage==='notes'      && <NotesPage />}
-          {activePage==='locations'   && <LocationsAdminPage />}
-          {activePage==='mission-admin' && <MissionAdminPage />}
+          {activePage==='system-admin' && <SystemAdminPage />}
         </div>
       </main>
 

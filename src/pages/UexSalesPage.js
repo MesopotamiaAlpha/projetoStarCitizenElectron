@@ -12,6 +12,8 @@ import { normalizeUexItemName } from '../data/uexItemsDB';
 import { buildUexListingUrl } from '../data/uexNegotiations';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
+import { loadVault, consumeVaultEntries } from '../data/oreVault';
+import { CARGO_UNITS, isCargoUnit, areCargoUnitsCompatible, normalizeCargoUnit, cargoEquivalentTotal, toCargoBase } from '../data/cargoUnits';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 const TOKEN_KEY    = 'sc_uex_token_v1';
@@ -109,11 +111,151 @@ function inventoryLocationKey(item) {
 }
 
 function getInventoryBinding(item) {
-  const raw = item?.inventory_binding;
-  const locationKeys = Array.isArray(raw?.locationKeys)
-    ? [...new Set(raw.locationKeys.map(key => String(key || '').trim()).filter(Boolean))]
+  const raw = item?.inventory_binding || {};
+  // Compatibilidade: versões antigas guardavam `locationKey` singular.
+  // A leitura converte automaticamente o formato antigo para a lista nova.
+  const candidates = [
+    ...(Array.isArray(raw.locationKeys) ? raw.locationKeys : []),
+    ...(Array.isArray(raw.location_keys) ? raw.location_keys : []),
+    ...(Array.isArray(raw.locations) ? raw.locations : []),
+    ...(raw.locationKey ? [raw.locationKey] : []),
+  ];
+  const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
+  return { locationKeys, linked: locationKeys.length > 0, updatedAt: raw.updatedAt || null };
+}
+
+function getVaultBinding(item) {
+  const raw = item?.vault_binding || {};
+  const entryIds = Array.isArray(raw.entryIds)
+    ? [...new Set(raw.entryIds.map(id => String(id || '').trim()).filter(Boolean))]
     : [];
-  return { locationKeys, linked: locationKeys.length > 0, updatedAt: raw?.updatedAt || null };
+  const boxUnit = normalizeCargoUnit(raw.boxUnit || 'un');
+  const boxQuantity = Number(raw.boxQuantity);
+  return {
+    entryIds,
+    boxUnit,
+    boxQuantity: Number.isFinite(boxQuantity) && boxQuantity > 0 ? boxQuantity : 1,
+    quality: raw.quality || '',
+    linked: entryIds.length > 0,
+    updatedAt: raw.updatedAt || null,
+  };
+}
+
+function vaultEntryLabel(entry) {
+  const quality = String(entry?.quality || '').trim() || 'Qualidade não informada';
+  const location = String(entry?.location || '').trim() || 'Local não informado';
+  return `${quality} · ${location}`;
+}
+
+function getVaultStockSummary(listing, vaultEntries = []) {
+  const name = normalizeInventoryName(listing?.title);
+  const matches = (Array.isArray(vaultEntries) ? vaultEntries : [])
+    .filter(entry => normalizeInventoryName(entry?.ore_name) === name);
+  const binding = getVaultBinding(listing);
+  const selected = matches.filter(entry => binding.entryIds.includes(String(entry.id)));
+  const unitsCompatible = selected.length > 0 && selected.every(entry => isCargoUnit(binding.boxUnit)
+    ? areCargoUnitsCompatible(entry.unit, binding.boxUnit)
+    : normalizeCargoUnit(entry.unit || 'un') === binding.boxUnit);
+  const total = selected.length && unitsCompatible
+    ? cargoEquivalentTotal(selected, binding.boxUnit).total
+    : selected.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0);
+  const boxBase = isCargoUnit(binding.boxUnit) ? toCargoBase(binding.boxQuantity, binding.boxUnit) : binding.boxQuantity;
+  const stockBase = isCargoUnit(binding.boxUnit) ? toCargoBase(total, binding.boxUnit) : total;
+  const boxesAvailable = boxBase > 0 && unitsCompatible ? Math.floor((stockBase + 1e-9) / boxBase) : 0;
+  return {
+    name,
+    matches,
+    selected,
+    binding,
+    hasMatch: matches.length > 0,
+    isLinked: binding.linked && selected.length > 0,
+    unitsCompatible,
+    total,
+    boxesAvailable,
+    boxesAfterListing: boxesAvailable - Math.max(0, Number(listing?.in_stock) || 0),
+  };
+}
+
+function VaultStockLinkModal({ listing, vaultEntries, onSave, onClose }) {
+  const summary = getVaultStockSummary(listing, vaultEntries);
+  const [selectedIds, setSelectedIds] = useState(() => summary.binding.entryIds);
+  const [boxQuantity, setBoxQuantity] = useState(String(summary.binding.boxQuantity || 1));
+  const [boxUnit, setBoxUnit] = useState(summary.binding.linked ? summary.binding.boxUnit : normalizeCargoUnit(summary.matches[0]?.unit || 'un'));
+  const selectedEntries = summary.matches.filter(entry => selectedIds.includes(String(entry.id)));
+  const selectedTotal = selectedEntries.length && (isCargoUnit(boxUnit) ? selectedEntries.every(entry => isCargoUnit(entry.unit)) : selectedEntries.every(entry => normalizeCargoUnit(entry.unit || 'un') === boxUnit))
+    ? cargoEquivalentTotal(selectedEntries, boxUnit).total
+    : selectedEntries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+  const numericBoxQuantity = Number(String(boxQuantity).replace(',', '.')) || 0;
+  const boxesAvailable = numericBoxQuantity > 0 && selectedEntries.length
+    ? (isCargoUnit(boxUnit) ? Math.floor((toCargoBase(selectedTotal, boxUnit) + 1e-9) / toCargoBase(numericBoxQuantity, boxUnit)) : Math.floor(selectedTotal / numericBoxQuantity))
+    : 0;
+
+  function toggleEntry(entry) {
+    const id = String(entry.id);
+    setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
+  }
+
+  function handleSave() {
+    if (!selectedIds.length || numericBoxQuantity <= 0) return;
+    const qualities = [...new Set(selectedEntries.map(entry => String(entry.quality || '').trim()).filter(Boolean))];
+    onSave({ entryIds: selectedIds, boxQuantity: numericBoxQuantity, boxUnit: normalizeCargoUnit(boxUnit), quality: qualities.length === 1 ? qualities[0] : qualities.join(' + '), updatedAt: new Date().toISOString() });
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1350, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div style={{ width:'min(650px,100%)', maxHeight:'92vh', overflowY:'auto', background:'var(--bg-card)', border:'1px solid rgba(52,211,153,0.36)', borderRadius:12, padding:18, boxShadow:'0 24px 80px rgba(0,0,0,0.7)' }} onMouseDown={event => event.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, color:'var(--accent-green)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Vínculo com o Baú de Minério</div>
+            <h3 style={{ margin:'5px 0 0', color:'var(--text-primary)', fontFamily:'Michroma,sans-serif', fontSize:15 }}>{listing.title}</h3>
+            <div style={{ marginTop:4, color:'var(--text-muted)', fontSize:11 }}>Selecione a qualidade e os locais exatos que fornecem cada caixa anunciada.</div>
+          </div>
+          <button onClick={onClose} title="Fechar" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-muted)', cursor:'pointer' }}><X size={14}/></button>
+        </div>
+
+        {!summary.hasMatch ? (
+          <div style={{ padding:12, border:'1px solid rgba(251,191,36,0.28)', background:'rgba(251,191,36,0.07)', borderRadius:7, color:'var(--accent-gold)', fontSize:11, lineHeight:1.55 }}>Este minério ainda não existe no Baú. Cadastre primeiro a quantidade, a unidade, a qualidade e o local no Baú de Minério.</div>
+        ) : (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+              <div>
+                <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', marginBottom:4 }}>Quantidade por caixa</label>
+                <input type="text" inputMode="decimal" value={boxQuantity} onChange={event => setBoxQuantity(event.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'7px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12, outline:'none' }}/>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', marginBottom:4 }}>Unidade da caixa</label>
+                <select value={boxUnit} onChange={event => setBoxUnit(event.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'7px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12, outline:'none' }}>
+                  <option value="un">un</option>
+                  {CARGO_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:7, marginBottom:10 }}>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(52,211,153,0.2)', background:'rgba(52,211,153,0.06)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Estoque selecionado</div><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{selectedTotal} {boxUnit}</strong></div>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(56,189,248,0.2)', background:'rgba(56,189,248,0.05)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Caixas possíveis</div><strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{boxesAvailable}</strong></div>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(251,191,36,0.2)', background:'rgba(251,191,36,0.05)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Qualidade</div><strong style={{ color:'var(--accent-gold)', fontSize:11 }}>{[...new Set(selectedEntries.map(entry => String(entry.quality || '').trim()).filter(Boolean))].join(' + ') || '—'}</strong></div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {summary.matches.map(entry => {
+                const selected = selectedIds.includes(String(entry.id));
+                return <label key={entry.id} style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 10px', border:`1px solid ${selected ? 'rgba(52,211,153,0.45)' : 'var(--border-subtle)'}`, background:selected ? 'rgba(52,211,153,0.09)' : 'rgba(255,255,255,0.02)', borderRadius:7, cursor:'pointer' }}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleEntry(entry)} />
+                  <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}><strong style={{ color:'var(--accent-gold)' }}>{entry.quality || 'Qualidade não informada'}</strong> · {entry.location || 'Local não informado'}</span>
+                  <strong style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{entry.quantity} {entry.unit || 'un'}</strong>
+                </label>;
+              })}
+            </div>
+            <div style={{ marginTop:9, color:'var(--text-muted)', fontSize:10, lineHeight:1.45 }}>Para minérios em SCU/cSCU/mSCU/μSCU, a quantidade acima representa uma caixa. Para Sadaryx e outros registros em `un`, cada caixa equivale a uma unidade.</div>
+          </>
+        )}
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:7, marginTop:15 }}>
+          <button onClick={onClose} style={{ padding:'7px 12px', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Cancelar</button>
+          {summary.binding.linked && <button onClick={() => onSave(null)} style={{ padding:'7px 12px', border:'1px solid rgba(251,113,133,0.28)', borderRadius:5, background:'rgba(251,113,133,0.07)', color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Remover vínculo</button>}
+          <button onClick={handleSave} disabled={!summary.hasMatch || !selectedIds.length || numericBoxQuantity <= 0} style={{ padding:'7px 12px', border:'1px solid rgba(52,211,153,0.35)', borderRadius:5, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', cursor:'pointer', opacity:summary.hasMatch && selectedIds.length && numericBoxQuantity > 0 ? 1 : 0.5, fontSize:11, fontWeight:700 }}><Save size={11}/> Salvar vínculo</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = []) {
@@ -287,9 +429,15 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, on
           </div>
         ) : (
           <>
-            <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap', marginBottom:9, padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
-              <span style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</span>
-              <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity} unidade{selectedQuantity === 1 ? '' : 's'}</strong>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
+              <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10 }}>Locais selecionados</div>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedKeys.length}</strong>
+              </div>
+              <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</div>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity} unidade{selectedQuantity === 1 ? '' : 's'}</strong>
+              </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {summary.locationRows.map(row => (
@@ -408,6 +556,7 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
 // ── Modal de venda manual ─────────────────────────────────────────────────────
 function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const [itemName,   setItemName]  = useState('');
+  const [listingId,  setListingId] = useState('');
   const [price,      setPrice]     = useState('');
   const [qty,        setQty]       = useState('1');
   const [quality,    setQuality]   = useState('');
@@ -422,13 +571,14 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
   const total = (parseFloat(price)||0) * (parseInt(qty)||1);
+  const matchingListings = (catalogItems || []).filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(itemName));
 
   function handleSave() {
     if (!itemName.trim()) { setError('Nome do item obrigatório.'); return; }
     if (!price || parseFloat(price) <= 0) { setError('Preço deve ser maior que zero.'); return; }
     onSave({
       id: Date.now(),
-      title: itemName.trim(), price: parseFloat(price), qty: parseInt(qty)||1,
+      title: itemName.trim(), listingId: listingId || null, price: parseFloat(price), qty: parseInt(qty)||1,
       total_revenue: type === 'sold' ? total : 0,
       quality, buyer, type,
       date: new Date(date).getTime() / 1000,
@@ -454,6 +604,12 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
             <datalist id="catalog-list">
               {[...new Set(catalogItems.map(c=>c.title))].map(t=><option key={t} value={t}/>)}
             </datalist>
+            {matchingListings.length > 0 && (
+              <select value={listingId} onChange={e=>setListingId(e.target.value)} style={{ width:'100%', marginTop:6, padding:'6px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-secondary)', fontSize:11, outline:'none' }}>
+                <option value="">Selecionar anúncio específico (opcional)</option>
+                {matchingListings.map(item => <option key={item.id} value={item.id}>{item.title} · {item.location || 'local não informado'}{item.vault_binding ? ' · Baú vinculado' : ''}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label style={LS}>Tipo</label>
@@ -511,13 +667,14 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 }
 
 // ── Card de item do catálogo com dados de mercado ─────────────────────────────
-function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendDataFetchedAt, inventoryItems, managedLocations, onOpenStockLink }) {
+function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendDataFetchedAt, inventoryItems, managedLocations, vaultEntries, onOpenStockLink, onOpenVaultStockLink }) {
   const [expanded, setExpanded]   = useState(false);
   const [editStock, setEditStock]     = useState(false);
   const [stockVal, setStockVal]       = useState(String(item.in_stock || 0));
   const [internalVal, setInternalVal] = useState(String(item.internal_stock || 0));
   const [delConf, setDelConf]     = useState(false);
   const inventorySummary = getInventoryStockSummary(item, inventoryItems, managedLocations);
+  const vaultSummary = getVaultStockSummary(item, vaultEntries);
   const displayedInternalStock = inventorySummary.isLinked ? inventorySummary.quantity : Number(item.internal_stock) || 0;
 
   const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
@@ -629,7 +786,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
               <div style={{ marginTop:10, padding:'10px 12px', background:inventorySummary.isLinked ? 'rgba(52,211,153,0.06)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.06)' : 'rgba(251,113,133,0.05)', border:`1px solid ${inventorySummary.isLinked ? 'rgba(52,211,153,0.2)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.24)' : 'rgba(251,113,133,0.22)'}`, borderRadius:7 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:7 }}>
                   <div style={{ fontSize:9, fontWeight:700, color:inventorySummary.isLinked ? 'var(--accent-green)' : inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)', textTransform:'uppercase', letterSpacing:'0.08em' }}>📦 Estoque Interno</div>
-                  {inventorySummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>VINCULADO AO INVENTÁRIO</span>}
+                  {inventorySummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>VINCULADO A {inventorySummary.binding.locationKeys.length} LOCAL{inventorySummary.binding.locationKeys.length === 1 ? '' : 'IS'}</span>}
                 </div>
                 {inventorySummary.isLinked ? (
                   <>
@@ -639,6 +796,9 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                     </div>
                     <div style={{ marginTop:5, fontSize:10, color:inventorySummary.surplus >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                       Após vender as {qtyListed} listadas: <strong>{inventorySummary.surplus >= 0 ? `${inventorySummary.surplus} sobrando` : `${Math.abs(inventorySummary.surplus)} em falta`}</strong>
+                    </div>
+                    <div style={{ marginTop:5, fontSize:10, color:'var(--text-muted)', lineHeight:1.45 }}>
+                      Locais: {inventorySummary.locationRows.filter(row => inventorySummary.binding.locationKeys.includes(row.key)).map(row => row.label).join(' · ') || '—'}
                     </div>
                   </>
                 ) : (
@@ -652,6 +812,21 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                   {!inventorySummary.isLinked && <button onClick={() => { setStockVal(String(item.internal_stock || 0)); setEditStock(true); }} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 9px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Edit3 size={9}/> Informar manualmente</button>}
                 </div>
                 {editStock && !inventorySummary.isLinked && <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:8 }}><input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)} style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/><button onClick={() => { onEditStock(item.id, parseInt(stockVal, 10) || 0); setEditStock(false); }} style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Save size={10}/> Salvar</button><button onClick={() => setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button></div>}
+
+                {/* Vínculo opcional com o Baú de Minério */}
+                <div style={{ marginTop:10, padding:'10px 12px', background:vaultSummary.isLinked ? 'rgba(52,211,153,0.06)' : vaultSummary.hasMatch ? 'rgba(251,191,36,0.05)' : 'rgba(255,255,255,0.025)', border:`1px solid ${vaultSummary.isLinked ? 'rgba(52,211,153,0.2)' : vaultSummary.hasMatch ? 'rgba(251,191,36,0.2)' : 'var(--border-subtle)'}`, borderRadius:7 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap' }}>
+                    <div style={{ fontSize:9, fontWeight:700, color:vaultSummary.isLinked ? 'var(--accent-green)' : vaultSummary.hasMatch ? 'var(--accent-gold)' : 'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>⛏ Baú de Minério</div>
+                    {vaultSummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>QUALIDADE: {vaultSummary.binding.quality || 'SELECIONADA'}</span>}
+                  </div>
+                  {vaultSummary.isLinked ? (
+                    <>
+                      <div style={{ marginTop:5, fontSize:11, color:'var(--text-secondary)' }}><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace' }}>{vaultSummary.binding.boxQuantity} {vaultSummary.binding.boxUnit}</strong> por caixa · <strong style={{ color:'var(--accent-primary)' }}>{vaultSummary.boxesAvailable}</strong> caixas disponíveis</div>
+                      <div style={{ marginTop:4, fontSize:10, color:vaultSummary.boxesAfterListing >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>Após vender as {qtyListed} caixas listadas: <strong>{vaultSummary.boxesAfterListing >= 0 ? `${vaultSummary.boxesAfterListing} caixas sobrando` : `${Math.abs(vaultSummary.boxesAfterListing)} caixas em falta`}</strong></div>
+                    </>
+                  ) : <div style={{ marginTop:5, fontSize:10, color:vaultSummary.hasMatch ? 'var(--accent-gold)' : 'var(--text-muted)' }}>{vaultSummary.hasMatch ? 'Escolha a qualidade e a entrada no Baú para vincular.' : 'Nenhuma entrada deste item foi encontrada no Baú.'}</div>}
+                  <button onClick={() => onOpenVaultStockLink(item)} style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:7, padding:'5px 9px', background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.25)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}><MapPin size={10}/> {vaultSummary.isLinked ? 'Editar vínculo do Baú' : 'Vincular ao Baú'}</button>
+                </div>
               </div>
             </div>
 
@@ -742,7 +917,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
 }
 
 // ── Tab: Meus Itens (catálogo) ────────────────────────────────────────────────
-function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryItems = [], managedLocations = [], onEditStock, onDeleteItem, onAddEsgotado, onOpenStockLink }) {
+function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryItems = [], managedLocations = [], vaultEntries = [], onEditStock, onDeleteItem, onAddEsgotado, onOpenStockLink, onOpenVaultStockLink }) {
   const [search, setSearch] = useState('');
   const displayedStock = item => {
     const summary = getInventoryStockSummary(item, inventoryItems, managedLocations);
@@ -840,7 +1015,9 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
             trendDataFetchedAt={trendDataFetchedAt}
             inventoryItems={inventoryItems}
             managedLocations={managedLocations}
+            vaultEntries={vaultEntries}
             onOpenStockLink={onOpenStockLink}
+            onOpenVaultStockLink={onOpenVaultStockLink}
             onEditStock={onEditStock}
             onDelete={onDeleteItem}
           />
@@ -1434,8 +1611,10 @@ export default function UexSalesPage() {
   const [showEsgotadoForm, setShowEsgotadoForm] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username);
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [vaultEntries, setVaultEntries] = useState(() => loadVault().entries);
   const [managedLocations, setManagedLocations] = useState(() => buildManagedLocationOptions());
   const [stockLinkItem, setStockLinkItem] = useState(null);
+  const [vaultLinkItem, setVaultLinkItem] = useState(null);
   // Refs para evitar closure stale no fluxo de importação
   const catalogRef    = React.useRef(catalog);
   const importQueueRef = React.useRef([]);
@@ -1461,15 +1640,22 @@ export default function UexSalesPage() {
 
   useEffect(() => {
     loadInventoryForStock();
+    setVaultEntries(loadVault().entries);
     const refreshInventory = event => {
       if (Array.isArray(event.detail?.items)) setInventoryItems(event.detail.items.map(item => ({ ...item, name: normalizeUexItemName(item.name) })));
       else loadInventoryForStock();
     };
+    const refreshVault = event => {
+      if (Array.isArray(event.detail?.vault?.entries)) setVaultEntries(event.detail.vault.entries);
+      else setVaultEntries(loadVault().entries);
+    };
     const refreshLocations = () => setManagedLocations(buildManagedLocationOptions());
     window.addEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+    window.addEventListener('sc_ore_vault_updated', refreshVault);
     window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
     return () => {
       window.removeEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+      window.removeEventListener('sc_ore_vault_updated', refreshVault);
       window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
     };
   }, [loadInventoryForStock]);
@@ -1619,19 +1805,58 @@ export default function UexSalesPage() {
     });
     refreshCatalog(updated);
   }
-  function handleSaveStockLink(itemId, binding) {
+  function handleSaveVaultStockLink(itemId, binding) {
+    const entryIds = [...new Set((Array.isArray(binding?.entryIds) ? binding.entryIds : []).map(id => String(id || '').trim()).filter(Boolean))];
+    const boxQuantity = Number(String(binding?.boxQuantity ?? '').replace(',', '.')) || 0;
+    const boxUnit = normalizeCargoUnit(binding?.boxUnit || 'un');
+    const normalizedBinding = entryIds.length && boxQuantity > 0
+      ? { entryIds, boxQuantity, boxUnit, quality: String(binding?.quality || '').trim(), updatedAt: binding?.updatedAt || new Date().toISOString() }
+      : null;
     const updated = catalogRef.current.map(item => item.id === itemId
-      ? { ...item, inventory_binding: binding }
+      ? { ...item, vault_binding: normalizedBinding }
+      : item);
+    refreshCatalog(updated);
+    setVaultLinkItem(null);
+    setSyncMsg(normalizedBinding ? `✓ Baú vinculado: ${boxQuantity} ${boxUnit} por caixa.` : '✓ Vínculo com o Baú removido.');
+  }
+
+  function handleSaveStockLink(itemId, binding) {
+    const candidates = [
+      ...(Array.isArray(binding?.locationKeys) ? binding.locationKeys : []),
+      ...(binding?.locationKey ? [binding.locationKey] : []),
+    ];
+    const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
+    const normalizedBinding = locationKeys.length
+      ? { locationKeys, updatedAt: binding?.updatedAt || new Date().toISOString() }
+      : null;
+    const updated = catalogRef.current.map(item => item.id === itemId
+      ? { ...item, inventory_binding: normalizedBinding }
       : item);
     refreshCatalog(updated);
     setStockLinkItem(null);
-    setSyncMsg(binding ? '✓ Estoque do anúncio vinculado ao Inventário de Itens.' : '✓ Vínculo removido; o estoque manual foi preservado.');
+    setSyncMsg(normalizedBinding ? `✓ Estoque vinculado a ${locationKeys.length} local${locationKeys.length === 1 ? '' : 'is'} do Inventário de Itens.` : '✓ Vínculo removido; o estoque manual foi preservado.');
   }
   function handleDeleteItem(itemId) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
   }
   function handleManualSale(sale) {
-    refreshSales([sale, ...sales]);
+    let nextSale = sale;
+    let updatedCatalog = catalogRef.current;
+    const boundCandidates = updatedCatalog.filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(sale.title) && item.vault_binding?.entryIds?.length);
+    const target = sale.listingId
+      ? updatedCatalog.find(item => String(item.id) === String(sale.listingId))
+      : boundCandidates.length === 1 ? boundCandidates[0] : null;
+    if (sale.type === 'sold' && target?.vault_binding?.entryIds?.length) {
+      const binding = target.vault_binding;
+      const boxQuantity = Number(binding.boxQuantity) || 1;
+      const boxUnit = normalizeCargoUnit(binding.boxUnit || 'un');
+      const consumption = consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit);
+      nextSale = { ...sale, vault_consumption_status: consumption.success ? 'consumed' : 'failed', vault_consumed_at: consumption.success ? new Date().toISOString() : null, vault_consumption_message: consumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding.quality || '' };
+      const nextStock = Math.max(0, (Number(target.in_stock) || 0) - sale.qty);
+      updatedCatalog = updatedCatalog.map(item => String(item.id) === String(target.id) ? { ...item, in_stock:nextStock, is_sold_out:nextStock <= 0 ? 1 : 0, last_sale_at:new Date().toISOString() } : item);
+      refreshCatalog(updatedCatalog);
+    }
+    refreshSales([nextSale, ...sales]);
     setShowManualSale(false);
   }
   function handleDeleteSale(saleId) {
@@ -1694,6 +1919,14 @@ export default function UexSalesPage() {
           managedLocations={managedLocations}
           onSave={binding => handleSaveStockLink(stockLinkItem.id, binding)}
           onClose={() => setStockLinkItem(null)}
+        />
+      )}
+      {vaultLinkItem && (
+        <VaultStockLinkModal
+          listing={vaultLinkItem}
+          vaultEntries={vaultEntries}
+          onSave={binding => handleSaveVaultStockLink(vaultLinkItem.id, binding)}
+          onClose={() => setVaultLinkItem(null)}
         />
       )}
       {showEsgotadoForm && (
@@ -1761,8 +1994,8 @@ export default function UexSalesPage() {
       <div className="page-body">
         {activeTab==='items' && (
           <MyItemsTab catalog={catalog} sales={sales} trendData={trendData} trendDataFetchedAt={trendDataFetchedAt}
-            inventoryItems={inventoryItems} managedLocations={managedLocations}
-            onOpenStockLink={setStockLinkItem}
+            inventoryItems={inventoryItems} managedLocations={managedLocations} vaultEntries={vaultEntries}
+            onOpenStockLink={setStockLinkItem} onOpenVaultStockLink={setVaultLinkItem}
             onEditStock={handleEditStock} onDeleteItem={handleDeleteItem} onAddEsgotado={handleAddEsgotado}/>
         )}
         {activeTab==='sales' && (

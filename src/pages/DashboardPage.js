@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 
 // ── Leitura do inventário ──────────────────────────────────────────────────
 // IMPORTANTE: no app Electron (uso real), o inventário é salvo via IPC
@@ -61,6 +61,27 @@ function calcWikeloLocal(items) {
   return calcWikeloFavors(items);
 }
 
+function calcScriptSummary(items, unknownItems = []) {
+  const all = [...(items || []), ...(unknownItems || [])];
+  const totals = all.reduce((result, item) => {
+    const name = normalizeScriptName(item?.name);
+    if (!name) return result;
+    result[name] = (result[name] || 0) + Math.max(0, Number(item?.quantity) || 0);
+    return result;
+  }, {});
+  const pending = (unknownItems || []).reduce((result, item) => {
+    const name = normalizeScriptName(item?.name);
+    if (name) result[name] = (result[name] || 0) + Math.max(0, Number(item?.quantity) || 0);
+    return result;
+  }, {});
+  return {
+    mg: totals['Mg Scrip'] || 0,
+    council: totals['Council Scrip'] || 0,
+    pendingMg: pending['Mg Scrip'] || 0,
+    pendingCouncil: pending['Council Scrip'] || 0,
+  };
+}
+
 // ── Leitura das demais seções do app (todas em localStorage puro, sem IPC) ────
 function readMiningGroupSessions() {
   try { return JSON.parse(localStorage.getItem('sc_mining_group_v1')) || []; } catch { return []; }
@@ -75,13 +96,14 @@ function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
 
-function readDashboardOverview(inventoryItems = []) {
+function readDashboardOverview(inventoryItems = [], unknownItems = []) {
   const inventoryQuantity = inventoryItems.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0);
   const inventoryValue = inventoryItems.reduce((total, item) => {
     const unitValue = Number(item.value_auec ?? item.value ?? item.price_auec ?? item.price ?? 0) || 0;
     return total + Math.max(0, Number(item.quantity) || 0) * Math.max(0, unitValue);
   }, 0);
   const inventoryLocations = new Set(inventoryItems.map(item => String(item.location_name || item.location || '').trim()).filter(Boolean)).size;
+  const scriptSummary = calcScriptSummary(inventoryItems, unknownItems);
 
   const queue = loadQueue();
   const shopping = calcShoppingList(queue);
@@ -113,7 +135,12 @@ function readDashboardOverview(inventoryItems = []) {
     map[name].quantity += Math.max(0, Number(sale.qty) || 0);
     return map;
   }, {})).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  const latestSale = sales.slice().sort((a, b) => (Number(b.date) || 0) - (Number(a.date) || 0))[0] || null;
+  const latestSale = sales.reduce((latest, sale) => {
+    if (!latest) return sale;
+    const latestTimestamp = Number(latest.date) || Date.parse(latest.created_at || '') || 0;
+    const saleTimestamp = Number(sale.date) || Date.parse(sale.created_at || '') || 0;
+    return saleTimestamp > latestTimestamp ? sale : latest;
+  }, null);
 
   const marketAlerts = loadMarketAlerts().filter(alert => alert.enabled);
   const marketEvents = loadMarketAlertEvents();
@@ -123,8 +150,15 @@ function readDashboardOverview(inventoryItems = []) {
   return {
     inventoryQuantity,
     inventoryValue,
-    inventoryLocations,
-    queueBlueprints: (queue.queuedBlueprints || []).length,
+        inventoryLocations,
+    unknownVaultPending: (unknownItems || []).length,
+    unknownVaultQuantity: (unknownItems || []).reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0),
+    mgScrip: scriptSummary.mg,
+    councilScrip: scriptSummary.council,
+    pendingMgScrip: scriptSummary.pendingMg,
+    pendingCouncilScrip: scriptSummary.pendingCouncil,
+    queueBlueprints:
+ (queue.queuedBlueprints || []).length,
     manualMaterials: (queue.manualMaterials || []).length,
     pendingMaterials: pendingMaterials.length,
     completeMaterials: completeMaterials.length,
@@ -163,7 +197,8 @@ function dashboardCountdown(nextCheckAt) {
   return minutes > 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}min` : `${minutes}min`;
 }
 import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2, Rocket, BarChart3, Bell, Boxes, CircleDollarSign, Clock3, Database, Gauge, TrendingUp, CheckCircle2 } from 'lucide-react';
-import { isScriptItem, isWikeloFavorItem, calcWikeloFavors } from '../data/wikelo';
+import { isScriptItem, isWikeloFavorItem, normalizeScriptName, calcWikeloFavors } from '../data/wikelo';
+import { loadUnknownVault, UNKNOWN_VAULT_UPDATED_EVENT } from '../data/unknownVault';
 import { calcDchsExecutiveHangars } from '../data/dchsCards';
 import { loadMyHangar, MY_HANGAR_UPDATED_EVENT, UEX_VEHICLES_UPDATED_EVENT } from '../data/uexVehicles';
 import { loadQueue, calcShoppingList } from '../data/materialQueue';
@@ -228,16 +263,43 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
 
   // Busca o inventário real e mantém os novos indicadores sincronizados com os dados locais.
   const [inventoryItems, setInventoryItems] = useState([]);
-  const [overview, setOverview] = useState(() => readDashboardOverview([]));
+  const [unknownVaultItems, setUnknownVaultItems] = useState(() => loadUnknownVault().items);
+  const [overview, setOverview] = useState(() => readDashboardOverview([], loadUnknownVault().items));
+  const refreshInFlightRef = useRef(false);
+  const refreshTimerRef = useRef(null);
+  const refreshQueuedRef = useRef(false);
   const refreshOverview = useCallback(async () => {
-    const items = await fetchInventoryItems();
-    setInventoryItems(items);
-    setOverview(readDashboardOverview(items));
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true;
+      return;
+    }
+    refreshInFlightRef.current = true;
+    try {
+      const items = await fetchInventoryItems();
+      const unknownItems = loadUnknownVault().items;
+      setInventoryItems(items);
+      setUnknownVaultItems(unknownItems);
+      setOverview(readDashboardOverview(items, unknownItems));
+    } finally {
+      refreshInFlightRef.current = false;
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false;
+        requestAnimationFrame(() => refreshOverview());
+      }
+    }
   }, []);
+  const requestRefresh = useCallback(() => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      refreshOverview();
+    }, 80);
+  }, [refreshOverview]);
   useEffect(() => {
-    refreshOverview();
+    requestRefresh();
     const eventNames = [
       'sc_inventory_updated',
+      UNKNOWN_VAULT_UPDATED_EVENT,
       'sc_ore_vault_updated',
       'sc_material_queue_updated',
       'sc_missions_updated',
@@ -248,20 +310,24 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
       MY_HANGAR_UPDATED_EVENT,
       UEX_VEHICLES_UPDATED_EVENT,
     ];
-    eventNames.forEach(name => window.addEventListener(name, refreshOverview));
-    const timer = window.setInterval(refreshOverview, 15000);
+    eventNames.forEach(name => window.addEventListener(name, requestRefresh));
+    const timer = window.setInterval(requestRefresh, 15000);
     return () => {
-      eventNames.forEach(name => window.removeEventListener(name, refreshOverview));
+      eventNames.forEach(name => window.removeEventListener(name, requestRefresh));
       window.clearInterval(timer);
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
     };
-  }, [refreshOverview]);
+  }, [requestRefresh]);
+  const allInventoryForCounters = useMemo(() => [...inventoryItems, ...unknownVaultItems], [inventoryItems, unknownVaultItems]);
+  const scriptSummary  = useMemo(() => calcScriptSummary(inventoryItems, unknownVaultItems), [inventoryItems, unknownVaultItems]);
   const pafSummary     = useMemo(() => calcPafLocal(inventoryItems),  [inventoryItems]);
-  const wfTotal        = useMemo(() => calcWikeloLocal(inventoryItems), [inventoryItems]);
+  const wfTotal        = useMemo(() => calcWikeloLocal(allInventoryForCounters), [allInventoryForCounters]);
   const dchsSummary    = useMemo(() => calcDchsExecutiveHangars(inventoryItems), [inventoryItems]);
   // Mostrar widgets mesmo com valores zero — se o item existe, mostra
   const hasPafItems    = inventoryItems.some(i => isPafItemDash(i.name));
-    const hasScriptItems = inventoryItems.some(i => isScriptItemDash(i.name));
-  const hasDirectFavors = inventoryItems.some(i => isWikeloFavorItem(i.name));
+    const hasScriptItems = allInventoryForCounters.some(i => isScriptItemDash(i.name));
+  const hasDirectFavors = allInventoryForCounters.some(i => isWikeloFavorItem(i.name));
   const hasPafData      = hasPafItems;
   const hasWfData       = hasScriptItems || hasDirectFavors;
   const hasDchsData     = dchsSummary.hasAnyCard;
@@ -341,6 +407,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
           <div className="dashboard-section-heading"><div><BarChart3 size={16} /><span>VISÃO GERAL OPERACIONAL</span></div><small>Indicadores cruzados das funções do projeto</small></div>
           <div className="dashboard-mini-grid">
             <DashboardMiniMetric icon={Boxes} label="Itens no inventário" value={overview.inventoryQuantity.toLocaleString('pt-BR')} sub={`${inventoryItems.length} registros · ${overview.inventoryLocations} locais`} color="var(--accent-primary)" onClick={() => onNavigate('inventory')} />
+            <DashboardMiniMetric icon={Package} label="Baú desconhecido" value={overview.unknownVaultQuantity.toLocaleString('pt-BR')} sub={`${overview.unknownVaultPending} recompensa${overview.unknownVaultPending !== 1 ? 's' : ''} pendente${overview.unknownVaultPending !== 1 ? 's' : ''}`} color="#a29bfe" onClick={() => onNavigate('inventory')} />
             <DashboardMiniMetric icon={CircleDollarSign} label="Valor estimado" value={`${Math.round(overview.inventoryValue).toLocaleString('pt-BR')} aUEC`} sub="quantidade × valor aUEC" color="var(--accent-green)" onClick={() => onNavigate('inventory')} />
             <DashboardMiniMetric icon={Pickaxe} label="Baú de minério" value={`${Number(overview.oreScu || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} SCU`} sub={`${overview.oreTypes} entradas · ${overview.qualityOre} com qualidade`} color="var(--accent-gold)" onClick={() => onNavigate('orevault')} />
             <DashboardMiniMetric icon={Database} label="Fila de craft" value={overview.queueBlueprints} sub={`${overview.pendingMaterials} materiais pendentes`} color="#a29bfe" onClick={() => onNavigate('materials')} />
@@ -602,7 +669,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
                   <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Wikelo Favor{wfTotal!==1?'s':''} totais</div>
                 </div>
                 <div style={{ fontSize:10, color:'var(--text-muted)', textAlign:'center', lineHeight:1.5 }}>
-                  Scrip convertível + Favors já prontos<br/>50 Scrip = 1 favor; cada Wikelo Favor = 1
+                  MG Scrip: {scriptSummary.mg.toLocaleString('pt-BR')} · Council Scrip: {scriptSummary.council.toLocaleString('pt-BR')}<br/>{scriptSummary.pendingMg + scriptSummary.pendingCouncil > 0 ? `${scriptSummary.pendingMg + scriptSummary.pendingCouncil} scrip pendente no Baú Desconhecido · ` : ''}50 Scrip = 1 favor; cada Wikelo Favor = 1
                 </div>
               </div>
             )}

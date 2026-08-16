@@ -1,0 +1,65 @@
+import {
+  applyWikeloDeliveryPlan,
+  buildWikeloDeliveryPlan,
+  getInventoryItemQuantity,
+  getWikeloMissionProgress,
+  scanWikeloItem,
+} from './wikeloInventory';
+
+describe('escaneamento e entrega de itens do Wikelo', () => {
+  const inventory = [
+    { id: 1, name: 'Iron', quantity: 10, location_name: 'New Babbage' },
+    { id: 2, name: 'iron', quantity: 5, location_name: 'Levski' },
+    { id: 3, name: 'Gold', quantity: 2, location_name: 'Area18' },
+  ];
+
+  test('soma itens iguais no escaneamento sem alterar o Inventário', () => {
+    const original = JSON.stringify(inventory);
+    const item = scanWikeloItem({ id: 'iron-1', name: 'Iron', needed: 12, collected: 0 }, inventory);
+
+    expect(getInventoryItemQuantity('IRON', inventory)).toBe(15);
+    expect(item.collected).toBe(12);
+    expect(item.from_inventory).toBe(12);
+    expect(JSON.stringify(inventory)).toBe(original);
+  });
+
+  test('preserva coleta manual e usa apenas o que falta do Inventário', () => {
+    const item = scanWikeloItem({ id: 'gold-1', name: 'Gold', needed: 5, collected: 3, from_inventory: 0 }, inventory);
+
+    expect(item.collected).toBe(5);
+    expect(item.from_inventory).toBe(2);
+    expect(item.inventory_available).toBe(2);
+  });
+
+  test('calcula progresso e libera completude somente quando todos os itens estão completos', () => {
+    const pending = { items: [{ needed: 2, collected: 2 }, { needed: 5, collected: 4 }] };
+    const complete = { items: [{ needed: 2, collected: 2 }, { needed: 5, collected: 5 }] };
+
+    expect(getWikeloMissionProgress(pending)).toEqual({ total: 2, completed: 1, percent: 50, complete: false });
+    expect(getWikeloMissionProgress(complete)).toEqual({ total: 2, completed: 2, percent: 100, complete: true });
+  });
+
+  test('monta plano distribuído entre locais e aplica consumo somente ao confirmar', () => {
+    const mission = { id: 'm1', items: [{ id: 'i1', name: 'Iron', needed: 12, collected: 12 }] };
+    const plan = buildWikeloDeliveryPlan(mission, inventory);
+    expect(plan.ok).toBe(true);
+    expect(plan.allocations.map(row => row.amount)).toEqual([10, 2]);
+
+    const next = applyWikeloDeliveryPlan(inventory, plan);
+    expect(next.find(row => row.id === 1)).toBeUndefined();
+    expect(next.find(row => row.id === 2).quantity).toBe(3);
+    expect(inventory.find(row => row.id === 1).quantity).toBe(10);
+  });
+
+  test('recusa entrega quando falta estoque e bloqueia missão já entregue', () => {
+    const missing = buildWikeloDeliveryPlan({ items: [{ name: 'Iron', needed: 20, collected: 20 }] }, inventory);
+    expect(missing.ok).toBe(false);
+    expect(missing.missing[0].name).toBe('Iron');
+
+    const delivered = buildWikeloDeliveryPlan({ wikelo_delivery_status: 'delivered', items: [{ name: 'Iron', needed: 1, collected: 1 }] }, inventory);
+    expect(delivered.alreadyDelivered).toBe(true);
+    expect(delivered.allocations).toEqual([]);
+  });
+});
+
+export {};

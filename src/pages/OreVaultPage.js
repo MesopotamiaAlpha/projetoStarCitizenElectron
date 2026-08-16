@@ -22,6 +22,7 @@ import {
   cargoInputStep,
   parseCargoInput,
   cargoEquivalentTotal,
+  analyzeCargoQuantityInput,
 } from '../data/cargoUnits';
 
 // ── Lista completa de minérios do Star Citizen (atualizada SCMDB/SCMINER 2026) ──
@@ -215,6 +216,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
 
   const oreInfo = getOreInfo(d.ore_name);
   const oreCat  = getOreCategory(d.ore_name);
+  const quantityAnalysis = useMemo(() => analyzeCargoQuantityInput(d.quantity, d.unit), [d.quantity, d.unit]);
   const LOCATIONS = useMemo(() => buildManagedLocationOptions(), [locationsVersion]);
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
@@ -268,6 +270,26 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
           </select>
         </div>
       </div>
+
+      {quantityAnalysis.applicable && quantityAnalysis.valid && (
+        <div style={{marginTop:-2,marginBottom:10,padding:'9px 11px',borderRadius:6,border:`1px solid ${quantityAnalysis.severity==='warning'?'rgba(251,191,36,0.42)':'rgba(56,189,248,0.22)'}`,background:quantityAnalysis.severity==='warning'?'rgba(251,191,36,0.07)':'rgba(56,189,248,0.05)',color:'var(--text-secondary)',fontSize:11,lineHeight:1.5}}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:7}}>
+            {quantityAnalysis.severity==='warning' ? <AlertTriangle size={14} style={{color:'var(--accent-gold)',flexShrink:0,marginTop:2}}/> : <CheckCircle2 size={14} style={{color:'var(--accent-primary)',flexShrink:0,marginTop:2}}/>}
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontWeight:700,color:quantityAnalysis.severity==='warning'?'var(--accent-gold)':'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.05em',fontSize:10}}>
+                Análise da quantidade
+              </div>
+              <div style={{fontFamily:'Share Tech Mono,monospace',color:'var(--text-primary)',wordBreak:'break-word'}}>{quantityAnalysis.formula}</div>
+              {quantityAnalysis.warning && <div style={{marginTop:3,color:'var(--text-secondary)'}}>{quantityAnalysis.warning}</div>}
+              {quantityAnalysis.suggestedUnit && (
+                <button type="button" onClick={()=>{set('unit',quantityAnalysis.suggestedUnit);set('quantity',quantityAnalysis.suggestedValue);}} style={{marginTop:7,padding:'5px 8px',background:'rgba(251,191,36,0.11)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:4,color:'var(--accent-gold)',cursor:'pointer',fontFamily:'"Exo 2",sans-serif',fontSize:10,fontWeight:700}}>
+                  Usar {formatCargoNumber(quantityAnalysis.suggestedValue, 9)} {quantityAnalysis.suggestedUnit}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:9,marginBottom:9,alignItems:'end'}}>
         <div>

@@ -69,7 +69,7 @@ function MissionOptionRow({ option, kind, selected, onEdit, onToggle, onDelete }
   );
 }
 
-function MissionAdminPage() {
+function MissionAdminPage({ embedded = false } = {}) {
   const [catalog, setCatalog] = useState(() => loadMissionAdmin());
   const [kind, setKind] = useState('factions');
   const [editing, setEditing] = useState(null);
@@ -152,16 +152,17 @@ function MissionAdminPage() {
   const kindStats = stats[kind] || { total: 0, active: 0, inactive: 0 };
 
   return (
-    <div className="mission-catalog-page">
-      <div className="page-header">
+    <div className={`mission-catalog-page${embedded ? ' mission-catalog-page-embedded' : ''}`}>
+      {!embedded && <div className="page-header">
         <div>
           <div className="page-title mission-catalog-page-title"><ListChecks size={18} /> GERENCIADOR DE MISSÕES</div>
           <div className="page-subtitle">Administre as facções, tipos de missão e sistemas disponíveis no Rastreador de Missões</div>
         </div>
         <button type="button" onClick={beginCreate} className="mission-catalog-add-button"><Plus size={13} /> Adicionar opção</button>
-      </div>
+      </div>}
 
       <div className="mission-catalog-scroll">
+        {embedded && <div className="system-mission-inline-header"><div><strong>Gerenciador de Missões</strong><span>Facções, tipos e sistemas usados pelo Rastreador de Missões</span></div><button type="button" onClick={beginCreate} className="mission-catalog-add-button"><Plus size={13} /> Adicionar opção</button></div>}
         <div className="mission-catalog-stat-grid">
           {Object.keys(MISSION_ADMIN_LABELS).map(key => <button type="button" key={key} className={`mission-catalog-stat ${kind === key ? 'active' : ''}`} style={{ '--mission-catalog-color': KIND_COLORS[key] }} onClick={() => { setKind(key); setEditing(null); setDeleteConfirm(null); }}><span>{formatKind(key)}</span><strong>{stats[key].active}</strong><small>{stats[key].total} cadastradas · {stats[key].inactive} inativas</small></button>)}
         </div>

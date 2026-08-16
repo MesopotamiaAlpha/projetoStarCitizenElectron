@@ -2,6 +2,8 @@
 // O módulo é usado pela tela de Vendas e pelo chat de Negociações para que uma
 // negociação concluída possa criar/atualizar o mesmo catálogo local sem duplicar.
 import { readJson, writeJson, dispatchStorageEvent } from '../utils/storage';
+import { consumeVaultEntries } from './oreVault';
+import { getNegotiationClosedAt } from './uexNegotiationStatus';
 
 const SALES_KEY = 'sc_uex_sales_v1';
 const CATALOG_KEY = 'sc_uex_catalog_v1';
@@ -118,7 +120,7 @@ export function buildNegotiationSale(negotiation) {
     buyer,
     type: 'sold',
     date: Date.now() / 1000,
-    date_closed: negotiation?.date_closed || null,
+    date_closed: getNegotiationClosedAt(negotiation),
     location,
     currency: textValue(negotiation?.currency, negotiation?.deal_value_currency) || 'aUEC',
     notes: `Venda concluída pelo chat de Negociações UEX${hash ? ` · negociação ${hash}` : ''}.`,
@@ -189,7 +191,42 @@ export function registerNegotiationSale(negotiation) {
 
   const catalog = loadUexCatalog();
   const existingCatalog = findCatalogEntry(catalog, sale);
-  const catalogEntry = buildCatalogEntry(existingCatalog, sale);
+  let vaultConsumption = previousSale?.vault_consumption_status === 'consumed'
+    ? { success:true, status:'consumed', message:'A caixa desta negociação já foi descontada do Baú.', boxes:previousSale.vault_boxes || sale.qty, boxQuantity:previousSale.vault_box_quantity || 0, boxUnit:previousSale.vault_box_unit || 'un', quality:previousSale.vault_quality || '' }
+    : { success:false, status:'not_linked', message:'Nenhum vínculo com o Baú foi configurado para este anúncio.' };
+  if (existingCatalog?.vault_binding?.entryIds?.length && previousSale?.vault_consumption_status !== 'consumed') {
+    const binding = existingCatalog.vault_binding;
+    const boxQuantity = numericValue(binding.boxQuantity);
+    const boxUnit = textValue(binding.boxUnit) || 'un';
+    const totalToConsume = boxQuantity * sale.qty;
+    vaultConsumption = consumeVaultEntries(binding.entryIds, totalToConsume, boxUnit);
+    vaultConsumption = {
+      ...vaultConsumption,
+      status: vaultConsumption.success ? 'consumed' : 'failed',
+      boxes: sale.qty,
+      boxQuantity,
+      boxUnit,
+      quality: binding.quality || '',
+      vault_boxes: sale.qty,
+      vault_box_quantity: boxQuantity,
+      vault_box_unit: boxUnit,
+      vault_quality: binding.quality || '',
+    };
+  }
+  savedSale.vault_consumption_status = vaultConsumption.status;
+  savedSale.vault_consumed_at = vaultConsumption.success ? (previousSale?.vault_consumed_at || new Date().toISOString()) : (previousSale?.vault_consumed_at || null);
+  savedSale.vault_boxes = vaultConsumption.boxes || previousSale?.vault_boxes || null;
+  savedSale.vault_box_quantity = vaultConsumption.boxQuantity || previousSale?.vault_box_quantity || null;
+  savedSale.vault_box_unit = vaultConsumption.boxUnit || previousSale?.vault_box_unit || null;
+  savedSale.vault_quality = vaultConsumption.quality || previousSale?.vault_quality || '';
+  const savedSaleIndex = sales.findIndex(item => item.id === savedSale.id);
+  if (savedSaleIndex >= 0) sales[savedSaleIndex] = savedSale;
+  else sales.unshift(savedSale);
+  saveUexSales(sales);
+
+  const catalogEntry = previousSale
+    ? { ...existingCatalog, price:sale.price, quality:sale.quality || existingCatalog?.quality || '', last_sale_at:new Date().toISOString() }
+    : buildCatalogEntry(existingCatalog, sale);
   const catalogIndex = existingCatalog ? catalog.indexOf(existingCatalog) : -1;
   if (catalogIndex >= 0) catalog[catalogIndex] = catalogEntry;
   else catalog.unshift(catalogEntry);
@@ -201,6 +238,7 @@ export function registerNegotiationSale(negotiation) {
     catalogEntry,
     saleCreated: !previousSale,
     catalogCreated: !existingCatalog,
+    vaultConsumption,
   };
 }
 

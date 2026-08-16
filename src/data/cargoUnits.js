@@ -98,6 +98,13 @@ export function parseCargoInput(value, unit = '') {
   return Number(raw.replace(',', '.')) || 0;
 }
 
+export function normalizeCargoQuantity(value, unit) {
+  const normalized = normalizeCargoUnit(unit);
+  if (isCargoUnit(normalized)) return roundCargo(parseCargoInput(value, normalized));
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
 export function cargoInputStep(unit) {
   const normalized = normalizeCargoUnit(unit);
   if (normalized === 'SCU') return '0.000001';
@@ -127,4 +134,58 @@ export function cargoEquivalentTotal(entries = [], preferredUnit = '') {
   }
   const base = entries.reduce((sum, entry) => sum + toCargoBase(entry.quantity, entry.unit), 0);
   return { total: fromCargoBase(base, unit), unit };
+}
+
+/**
+ * Analisa uma quantidade digitada no Baú sem bloquear o usuário.
+ * A intenção é detectar o erro comum de informar uma fração de SCU em SCU
+ * ou uma quantidade grande de cSCU/mSCU que provavelmente foi pensada em SCU.
+ */
+export function analyzeCargoQuantityInput(value, unit) {
+  const normalizedUnit = normalizeCargoUnit(unit);
+  if (!isCargoUnit(normalizedUnit)) return { applicable: false };
+  const parsed = parseCargoInput(value, normalizedUnit);
+  if (!Number.isFinite(parsed) || parsed <= 0) return { applicable: true, valid: false };
+
+  const scu = cargoToScu(parsed, normalizedUnit);
+  const cscu = cargoToCscu(parsed, normalizedUnit);
+  const units = cscu;
+  const result = {
+    applicable: true,
+    valid: true,
+    unit: normalizedUnit,
+    input: roundCargo(parsed),
+    scu: roundCargo(scu),
+    cscu: roundCargo(cscu),
+    units: roundCargo(units),
+    formula: `${formatCargoNumber(parsed, 9)} ${normalizedUnit} = ${formatCargoNumber(cscu, 9)} cSCU = ${formatCargoNumber(scu, 9)} SCU = ${formatCargoNumber(units, 9)} Units`,
+    severity: 'info',
+    warning: '',
+    suggestedUnit: '',
+    suggestedValue: '',
+  };
+
+  if (normalizedUnit === 'SCU' && !Number.isInteger(parsed)) {
+    result.severity = 'warning';
+    result.warning = `A quantidade é menor que 1 SCU e parece mais clara em cSCU. ${formatCargoNumber(parsed, 9)} SCU correspondem a ${formatCargoNumber(cscu, 9)} cSCU.`;
+    result.suggestedUnit = 'cSCU';
+    result.suggestedValue = String(roundCargo(cscu));
+  } else if (normalizedUnit === 'cSCU' && parsed >= 100) {
+    result.severity = 'warning';
+    result.warning = `${formatCargoNumber(parsed, 9)} cSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira se você não pretendia informar a quantidade diretamente em SCU.`;
+    result.suggestedUnit = 'SCU';
+    result.suggestedValue = String(roundCargo(scu));
+  } else if (normalizedUnit === 'mSCU' && parsed >= 1000) {
+    result.severity = 'warning';
+    result.warning = `${formatCargoNumber(parsed, 9)} mSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira a unidade escolhida.`;
+    result.suggestedUnit = 'SCU';
+    result.suggestedValue = String(roundCargo(scu));
+  } else if (normalizedUnit === 'μSCU' && parsed >= 1000000) {
+    result.severity = 'warning';
+    result.warning = `${formatCargoNumber(parsed, 9)} μSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira a unidade escolhida.`;
+    result.suggestedUnit = 'SCU';
+    result.suggestedValue = String(roundCargo(scu));
+  }
+
+  return result;
 }
