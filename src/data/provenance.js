@@ -6,7 +6,7 @@
 //   import { setProvenance, getProvenance, SOURCES } from '../data/provenance';
 //   setProvenance('commodity', 'Quantainium', SOURCES.UEX_API);
 //   const p = getProvenance('commodity', 'Quantainium');
-//   // { source: 'uex_api', label: 'UEX Corp API', color: '#ffc436', importedAt: '2026-06-14T...', version: '4.8.1' }
+//   // { source: 'uex_api', label: 'UEX Corp API', color: '#fbbf24', importedAt: '2026-06-14T...', version: '4.8.1' }
 
 const KEY = 'sc_provenance_v1';
 
@@ -21,9 +21,9 @@ export const SOURCE_META = {
   uex_api: {
     label:     'UEX Corp API',
     shortLabel:'UEX',
-    color:     '#ffc436',
-    bgColor:   'rgba(255,196,54,0.12)',
-    border:    'rgba(255,196,54,0.35)',
+    color:     '#fbbf24',
+    bgColor:   'rgba(251,191,36,0.12)',
+    border:    'rgba(251,191,36,0.35)',
     icon:      'globe',
     url:       'https://uexcorp.space',
     desc:      'Dados importados da UEX Corp API 2.0 — comunidade Star Citizen',
@@ -31,19 +31,19 @@ export const SOURCE_META = {
   seed: {
     label:     'Banco de Dados Local',
     shortLabel:'DB',
-    color:     '#00d4ff',
-    bgColor:   'rgba(0,212,255,0.10)',
-    border:    'rgba(0,212,255,0.30)',
+    color:     '#38bdf8',
+    bgColor:   'rgba(56,189,248,0.10)',
+    border:    'rgba(56,189,248,0.30)',
     icon:      'database',
     url:       null,
-    desc:      'Dados do banco de dados local do SC Armor Tracker',
+    desc:      'Dados do banco de dados local do Companheiro Emoto',
   },
   manual: {
     label:     'Inserido Manualmente',
     shortLabel:'Manual',
-    color:     '#00e5a0',
-    bgColor:   'rgba(0,229,160,0.10)',
-    border:    'rgba(0,229,160,0.30)',
+    color:     '#34d399',
+    bgColor:   'rgba(52,211,153,0.10)',
+    border:    'rgba(52,211,153,0.30)',
     icon:      'edit',
     url:       null,
     desc:      'Dado inserido manualmente pelo usuário',
@@ -51,9 +51,9 @@ export const SOURCE_META = {
   custom: {
     label:     'Personalizado pelo Usuário',
     shortLabel:'Custom',
-    color:     '#b44cff',
-    bgColor:   'rgba(180,76,255,0.10)',
-    border:    'rgba(180,76,255,0.30)',
+    color:     '#a78bfa',
+    bgColor:   'rgba(167,139,250,0.10)',
+    border:    'rgba(167,139,250,0.30)',
     icon:      'star',
     url:       null,
     desc:      'Dado personalizado ou sobrescrito pelo usuário',

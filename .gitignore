@@ -1,14 +1,21 @@
 # Dependências
 node_modules/
 
-# Builds
+# Builds e artefatos de distribuição
 build/
 dist/
 out/
 release/
-
-# Electron
 *.asar
+
+# Dados locais do usuário e bancos SQLite
+*.db
+*.db-shm
+*.db-wal
+dados/
+backup/
+exportados/
+CompanheiroEmoto/
 
 # Logs
 logs/
@@ -17,10 +24,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Variáveis de ambiente
+# Variáveis de ambiente e credenciais
 .env
 .env.local
 .env.*
+!.env.example
+*.pem
+*.key
+*.secret
 
 # Cache
 .cache/
@@ -40,10 +51,5 @@ Thumbs.db
 *.tmp
 *.swp
 
-# ===== Adicione suas pastas abaixo =====
-
-# exemplo
-electron/
-node_modules/
-# exports/
-# downloads/
+# Relatórios temporários locais
+*.local.md

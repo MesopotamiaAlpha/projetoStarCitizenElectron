@@ -42,9 +42,9 @@ export default function ArmorSetCard({ set, onClick }) {
         {isComplete && (
           <div style={{
             position: 'absolute', top: 8, right: 8,
-            background: 'rgba(0,229,160,0.2)', border: '1px solid rgba(0,229,160,0.5)',
+            background: 'rgba(52,211,153,0.2)', border: '1px solid rgba(52,211,153,0.5)',
             borderRadius: 4, padding: '2px 7px',
-            fontFamily: 'Orbitron, monospace', fontSize: 9, fontWeight: 700,
+            fontFamily: 'Michroma, sans-serif', fontSize: 9, fontWeight: 700,
             color: 'var(--type-light)', letterSpacing: '0.12em',
           }}>COMPLETO</div>
         )}
@@ -81,8 +81,8 @@ export default function ArmorSetCard({ set, onClick }) {
                 <div key={p.id} title={p.piece_name} style={{
                   display: 'flex', alignItems: 'center', gap: 3,
                   padding: '3px 7px', borderRadius: 4,
-                  background: p.owned ? 'rgba(0,229,160,0.12)' : p.wishlist ? 'rgba(255,196,54,0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${p.owned ? 'rgba(0,229,160,0.35)' : p.wishlist ? 'rgba(255,196,54,0.25)' : 'var(--border-subtle)'}`,
+                  background: p.owned ? 'rgba(52,211,153,0.12)' : p.wishlist ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${p.owned ? 'rgba(52,211,153,0.35)' : p.wishlist ? 'rgba(251,191,36,0.25)' : 'var(--border-subtle)'}`,
                   fontSize: 10, fontWeight: 700,
                   color: p.owned ? 'var(--accent-green)' : p.wishlist ? 'var(--accent-gold)' : 'var(--text-muted)',
                   letterSpacing: '0.05em',
@@ -101,7 +101,7 @@ export default function ArmorSetCard({ set, onClick }) {
               background: isComplete
                 ? 'linear-gradient(to right, #00b37d, var(--type-light))'
                 : `linear-gradient(to right, var(--accent-secondary), var(--accent-primary))`,
-              boxShadow: isComplete ? '0 0 6px rgba(0,229,160,0.5)' : 'none',
+              boxShadow: isComplete ? '0 0 6px rgba(52,211,153,0.5)' : 'none',
               transition: 'width 0.5s ease',
             }} />
           </div>

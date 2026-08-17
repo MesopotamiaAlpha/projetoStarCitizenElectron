@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
+import EmotoIcon          from './components/EmotoIcon';
 import TodosArmorsPage    from './pages/AllArmorsPage';
 import MyCollectionPage from './pages/MyCollectionPage';
 import DashboardPage    from './pages/DashboardPage';
@@ -9,16 +10,34 @@ import BlueprintPage       from './pages/BlueprintPage';
 import MaterialTrackerPage from './pages/MaterialTrackerPage';
 import MiningPage         from './pages/MiningPage';
 import MiningGrupoPage    from './pages/MiningGroupPage';
+import ClanVaultPage      from './pages/ClanVaultPage';
 import MissionTrackerPage from './pages/MissionTrackerPage';
 import OreVaultPage      from './pages/OreVaultPage';
 import UexApiPage         from './pages/UexApiPage';
+import UexInsightsPage    from './pages/UexInsightsPage';
+import MarketAlertsPage   from './pages/MarketAlertsPage';
+import BackupPage         from './pages/BackupPage';
+import DataDirectoryPage  from './pages/DataDirectoryPage';
+import NotesPage          from './pages/NotesPage';
+import SystemAdminPage from './pages/SystemAdminPage';
+import UsefulLinksPage from './pages/UsefulLinksPage';
 import UexSalesPage       from './pages/UexSalesPage';
-import { Shield, Package, BarChart3, Crosshair, ChevronRight, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag } from 'lucide-react';
+import UexNegotiationsPage from './pages/UexNegotiationsPage';
+import WikeloTrackerPage  from './pages/WikeloTrackerPage';
+import ShipHangarPage     from './pages/ShipHangarPage';
+import UexNotificationBell from './components/UexNotificationBell';
+import CalculatorWidget from './components/CalculatorWidget';
+import ContextHelpOverlay from './components/ContextHelpOverlay';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
+import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
+import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
+import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
+import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
-  const KEY = 'sc_armor_v3';
+  const KEY = 'companheiro_emoto_mock_v1';
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY))||{}; } catch { return {}; } };
   const save = d => localStorage.setItem(KEY, JSON.stringify(d));
 
@@ -41,6 +60,7 @@ function buildMockAPI() {
       pieces:(s.pieces||[]).map(p=>({
         ...p,
         owned:state[`p${p.id}o`]||0,
+        quantity: state[`p${p.id}q`] !== undefined ? Math.max(0, Number(state[`p${p.id}q`]) || 0) : (state[`p${p.id}o`] ? 1 : 0),
         wishlist:state[`p${p.id}w`]||0,
         notes:state[`p${p.id}n`]||'',
         obtained_date:state[`p${p.id}d`]||null,
@@ -56,8 +76,8 @@ function buildMockAPI() {
     togglePiece: async (id) => {
       const state=load();
       const n=(state[`p${id}o`]||0)?0:1;
-      state[`p${id}o`]=n; state[`p${id}d`]=n?new Date().toISOString():null;
-      save(state); return {owned:n};
+      state[`p${id}o`]=n; state[`p${id}q`]=n ? Math.max(1, Number(state[`p${id}q`]) || 1) : 0; state[`p${id}d`]=n?new Date().toISOString():null;
+      save(state); return {owned:n, quantity:state[`p${id}q`]};
     },
     togglePieceWishlist: async (id) => {
       const state=load();
@@ -66,6 +86,14 @@ function buildMockAPI() {
     },
     updatePieceNotes: async (id,notes) => {
       const state=load(); state[`p${id}n`]=notes; save(state); return {success:true};
+    },
+    updatePieceQuantity: async (id, quantity) => {
+      const state=load();
+      const nextQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
+      state[`p${id}q`] = nextQuantity;
+      state[`p${id}o`] = nextQuantity > 0 ? 1 : 0;
+      state[`p${id}d`] = nextQuantity > 0 ? (state[`p${id}d`] || new Date().toISOString()) : null;
+      save(state); return {success:true, quantity:nextQuantity, owned:state[`p${id}o`]};
     },
     getStats: async () => {
       const state=load();
@@ -85,6 +113,8 @@ function buildMockAPI() {
     },
     createCustomSet: async ({set,pieces}) => {
       const state=load();
+      const all=[...MOCK,...(state._custom||[])];
+      if (all.some(existing => getArmorIdentity(existing) === getArmorIdentity(set))) return {success:false,duplicate:true,error:'Esta armadura já está cadastrada.'};
       const id=Date.now();
       const newPieces=(pieces||[]).map((p,i)=>({...p,id:id*100+i+1,set_id:id,is_lootable:p.is_lootable?1:0,is_purchasable:p.is_purchasable?1:0,owned:0,wishlist:0,notes:'',obtained_date:null}));
       const ns={...set,id,is_custom:1,set_name:set.variant_name&&set.variant_name!=='Base'?`${set.base_name||set.set_name} — ${set.variant_name}`:set.base_name||set.set_name,pieces:newPieces};
@@ -109,6 +139,16 @@ function buildMockAPI() {
     deleteCustomSet: async (setId) => {
       const state=load(); state._custom=(state._custom||[]).filter(s=>s.id!==setId); save(state); return {success:true};
     },
+    getDuplicateCustomSets: async () => {
+      const state=load();
+      return getDuplicateArmorGroups(state._custom||[]);
+    },
+    deleteCustomSets: async (ids) => {
+      const state=load();
+      const selected=new Set((Array.isArray(ids)?ids:[]).map(Number));
+      state._custom=(state._custom||[]).filter(set => !selected.has(Number(set.id)));
+      save(state); return {success:true,deleted:[...selected]};
+    },
     deleteCustomPiece: async (pieceId) => {
       const state=load();
       state._custom=(state._custom||[]).map(s=>({...s,pieces:(s.pieces||[]).filter(p=>p.id!==pieceId)}));
@@ -117,29 +157,140 @@ function buildMockAPI() {
   };
 }
 
-export const api = window.electronAPI || buildMockAPI();
+function buildUnavailableAPI() {
+  const message = 'A ponte Electron não foi carregada. Feche e reinstale o Companheiro Emoto; dados de demonstração não serão usados no aplicativo instalado.';
+  return new Proxy({}, {
+    get: () => async () => { throw new Error(message); },
+  });
+}
 
-const PAGES = [
-  { id:'dashboard',  label:'Dashboard',          icon:BarChart3  },
-  { id:'all',        label:'Todas as Armaduras',  icon:Shield     },
-  { id:'collection', label:'Minha Coleção',       icon:Package    },
-  { id:'inventory',  label:'Inventário de Itens', icon:Archive    },
-  { id:'blueprints',    label:'Blueprints',          icon:Cpu        },
-  { id:'materials',    label:'Tracking Materiais',  icon:Hammer     },
-  { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
-  { id:'mining',     label:'Guia de Mineração',   icon:Pickaxe    },
-  { id:'mininggroup',  label:'Mineração em Grupo',  icon:Users      },
-  { id:'missions',   label:'Missões',             icon:ListChecks },
-  { id:'orevault',   label:'Baú de Minério',      icon:Archive    },
-  { id:'uexsales',   label:'Acompanhamento UEX',  icon:ShoppingBag},
-  { id:'uexapi',     label:'UEX API (Live)',       icon:Globe      },
+const hasElectronBridge = Boolean(window.electronAPI?.isCompanheiroEmotoElectron);
+const isPackagedElectron = typeof window !== 'undefined' && window.location?.protocol === 'file:';
+if (isPackagedElectron && !hasElectronBridge) {
+  // Diagnóstico deliberado: uma instalação empacotada nunca deve cair no mock.
+  // No navegador de desenvolvimento/prévia o mock continua permitido.
+  console.error('Companheiro Emoto: preload.js não carregado; API mock bloqueada no aplicativo empacotado.');
+}
+
+export const api = hasElectronBridge
+  ? window.electronAPI
+  : (isPackagedElectron ? buildUnavailableAPI() : buildMockAPI());
+
+const NAV_GROUPS = [
+  { id:'inicio', label:'Início', hint:'Visão geral', accent:'#38bdf8', groupIcon:BarChart3, pages:[
+    { id:'dashboard',  label:'Dashboard',          icon:BarChart3  },
+  ]},
+  { id:'armaduras', label:'Armaduras', hint:'Coleção e proteção', accent:'#a78bfa', groupIcon:Shield, pages:[
+    { id:'all',        label:'Todas as Armaduras',  icon:Shield     },
+    { id:'collection', label:'Minha Coleção',       icon:Package    },
+    { id:'custom',     label:'Cadastrar Armadura',  icon:PlusCircle },
+  ]},
+  { id:'itens', label:'Itens & Crafting', hint:'Inventário e projetos', accent:'#22d3ee', groupIcon:Package, pages:[
+    { id:'inventory',  label:'Inventário de Itens', icon:Archive    },
+    { id:'blueprints', label:'Blueprints',          icon:Cpu        },
+    { id:'materials',  label:'Tracking Materiais',  icon:Hammer     },
+  ]},
+  { id:'mineracao', label:'Mineração', hint:'Extração e armazenamento', accent:'#34d399', groupIcon:Pickaxe, pages:[
+    { id:'mining',       label:'Guia de Mineração',  icon:Pickaxe },
+    { id:'mininggroup', label:'Mineração em Grupo', icon:Users   },
+    { id:'orevault',     label:'Baú de Minério',     icon:Archive },
+  ]},
+  { id:'cla', label:'Clã & Missões', hint:'Operações compartilhadas', accent:'#fb923c', groupIcon:Users, pages:[
+    { id:'clanvault',  label:'Cofre do Clã', icon:Lock       },
+    { id:'missions',   label:'Missões',      icon:ListChecks },
+  ]},
+  { id:'uex', label:'UEX', hint:'Mercado e negociações', accent:'#fbbf24', groupIcon:TrendingUp, pages:[
+    { id:'uexsales',        label:'Acompanhamento UEX',   icon:ShoppingBag   },
+    { id:'uexnegotiations', label:'Negociações UEX',      icon:MessageSquare },
+    { id:'wikelo',          label:'Acompanhamento Wikelo',icon:Star          },
+    { id:'uexapi',          label:'UEX API (Live)',       icon:Globe         },
+    { id:'uexinsights',     label:'Inteligência UEX',     icon:TrendingUp    },
+    { id:'uexalerts',       label:'Alertas de Compra',     icon:Bell           },
+    { id:'shiphangar',      label:'Hangar de Naves',      icon:Rocket         },
+  ]},
+  { id:'sistema', label:'Sistema', hint:'Dados e configurações', accent:'#94a3b8', groupIcon:FolderCog, pages:[
+    { id:'backup', label:'Backup & Restauração', icon:Save },
+    { id:'data-directory', label:'Diretório de Dados', icon:FolderCog },
+    { id:'notes',  label:'Bloco de Notas',          icon:Edit3 },
+    { id:'system-admin', label:'Administradores do Sistema', icon:FolderCog },
+    { id:'useful-links', label:'Links Úteis', icon:Link2 },
+  ]},
 ];
+
+const PAGES = NAV_GROUPS.flatMap(g => g.pages);
+const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
+const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [pendingNegotiationHash, setPendingNegotiationHash] = useState('');
   const [sets,       setSets]       = useState([]);
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (saved !== null) return saved === '1';
+    } catch {}
+    return typeof window !== 'undefined' && window.innerWidth <= 560;
+  });
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
+  });
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.onMissionMonitorEvent || !api?.onMissionMonitorStatus) return undefined;
+    const cleanEvent = api.onMissionMonitorEvent(async event => {
+      const catalog = loadMissionAdmin();
+      const typeNames = getMissionAdminOptions('types', '', catalog).map(option => option.name);
+      const mission = upsertAutomaticMissionRecord(event, typeNames);
+      if (event?.type === 'mission_complete' && mission) {
+        const rewardResult = await dispatchMissionRewardsToDefaultInventory(mission);
+        updateStoredMissionRecord(rewardResult.mission || mission);
+      }
+      appendMissionAutoMonitorEvent(event);
+    });
+    const cleanStatus = api.onMissionMonitorStatus(status => setMissionAutoMonitorStatus(status));
+    return () => {
+      if (typeof cleanEvent === 'function') cleanEvent();
+      if (typeof cleanStatus === 'function') cleanStatus();
+    };
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
+
+  function toggleGroup(groupId) {
+    setCollapsedGroups(prev => {
+      const next = prev.includes(groupId) ? prev.filter(g => g !== groupId) : [...prev, groupId];
+      localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function goToPage(pageId, options = {}) {
+    if (pageId === 'uexnegotiations') {
+      setPendingNegotiationHash(String(options?.negotiationHash || '').trim());
+    } else {
+      setPendingNegotiationHash('');
+    }
+    setActivePage(pageId);
+    // Garante que a seção da página escolhida esteja aberta
+    const group = NAV_GROUPS.find(g => g.pages.some(p => p.id === pageId));
+    if (group && collapsedGroups.includes(group.id)) {
+      setCollapsedGroups(prev => {
+        const next = prev.filter(g => g !== group.id);
+        localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -164,79 +315,101 @@ export default function App() {
   const handleTogglePiece         = async id     => { await api.togglePiece(id);         await loadData(); };
   const handleTogglePieceWishlist = async id     => { await api.togglePieceWishlist(id);  await loadData(); };
   const handleupdatePieceNotes    = async (id,n) => { await api.updatePieceNotes(id,n);   await loadData(); };
+  const handleUpdatePieceQuantity = async (id,qty) => { await api.updatePieceQuantity(id,qty); await loadData(); };
 
   if (loading) return (
     <div className="app-loading">
       <div className="loading-inner">
-        <Crosshair size={48} className="loading-icon" />
-        <div className="loading-text">INICIALIZANDO SC ARMOR TRACKER</div>
+        <EmotoIcon size={48} className="loading-icon" />
+        <div className="loading-text">INICIALIZANDO COMPANHEIRO EMOTO</div>
         <div className="loading-bar"><div className="loading-bar-fill" /></div>
       </div>
     </div>
   );
 
-  const ownedPct    = stats&&stats.totalPieces>0 ? Math.round((stats.ownedPieces/stats.totalPieces)*100) : 0;
   const customCount = sets.filter(s=>s.is_custom).length;
 
   return (
-    <div className="app">
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <Crosshair size={28} className="logo-icon" />
+          <EmotoIcon size={30} className="logo-icon" />
           <div className="logo-text">
-            <span className="logo-main">SC</span>
-            <span className="logo-sub">ARMOR TRACKER</span>
+            <span className="logo-main">EMOTO</span>
+            <span className="logo-sub">COMPANHEIRO</span>
           </div>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'} aria-label={sidebarCollapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'}>
+            {sidebarCollapsed ? <Menu size={18}/> : <PanelLeftClose size={17}/>}
+          </button>
         </div>
         <nav className="sidebar-nav">
-          {PAGES.map(({id,label,icon:Icon})=>(
-            <button key={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>setActivePage(id)}>
-              <Icon size={18} />
-              <span>{label}</span>
-              {id==='custom'&&customCount>0 ? (
-                <span style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:10,background:'rgba(0,212,255,0.15)',border:'1px solid var(--border-subtle)',borderRadius:10,padding:'1px 6px',color:'var(--accent-primary)' }}>{customCount}</span>
-              ) : activePage===id ? (
-                <ChevronRight size={14} className="nav-arrow" />
-              ) : null}
-            </button>
-          ))}
+          {NAV_GROUPS.map(group => {
+            const isCollapsed = collapsedGroups.includes(group.id);
+            const hasActivePage = group.pages.some(page => page.id === activePage);
+            const GroupIcon = group.groupIcon || FolderCog;
+            return (
+              <div key={group.id} className={`nav-group ${hasActivePage ? 'has-active' : ''}`} style={{ '--group-accent': group.accent }}>
+                <button className="nav-group-header" onClick={()=>toggleGroup(group.id)} aria-expanded={!isCollapsed} aria-controls={`nav-group-${group.id}`}>
+                  <span className="nav-group-heading"><span className="nav-group-icon"><GroupIcon size={13} /></span><span className="nav-group-copy"><strong>{group.label}</strong><small>{group.hint}</small></span></span>
+                  <span className="nav-group-meta"><span className="nav-group-count">{group.pages.length}</span><ChevronDown size={13} className={`nav-group-chevron ${isCollapsed?'collapsed':''}`}/></span>
+                </button>
+                {!isCollapsed && <div id={`nav-group-${group.id}`} className="nav-group-items">{group.pages.map(({id,label,icon:Icon})=>(
+                  <button key={id} data-page-id={id} className={`nav-item ${activePage===id?'active':''}`} onClick={()=>goToPage(id)} title={sidebarCollapsed ? label : undefined} style={{ '--item-accent': group.accent }}>
+                    <span className="nav-item-icon"><Icon size={16} /></span>
+                    <span className="nav-item-label">{label}</span>
+                    {id==='custom'&&customCount>0 ? (
+                      <span className="nav-item-badge">{customCount}</span>
+                    ) : activePage===id ? (
+                      <ChevronRight size={13} className="nav-arrow" />
+                    ) : null}
+                  </button>
+                ))}</div>}
+              </div>
+            );
+          })}
         </nav>
-        {stats && (
-          <div className="sidebar-stats">
-            <div className="stat-mini">
-              <span className="stat-mini-label">Peças Armadura</span>
-              <span className="stat-mini-value owned">{stats.ownedPieces}/{stats.totalPieces}</span>
-            </div>
-            <div className="stat-mini">
-              <span className="stat-mini-label">Sets Completos</span>
-              <span className="stat-mini-value">{stats.completeSets}/{stats.totalSets}</span>
-            </div>
-            <div className="progress-mini">
-              <div className="progress-mini-fill" style={{ width:`${ownedPct}%` }} />
-            </div>
-          </div>
-        )}
         <div className="sidebar-footer">
-          <span className="version-badge">v1.0</span>
-          <span className="game-version">SC 4.8.2</span>
+          <span className="version-badge">v1.6.5</span>
         </div>
       </aside>
 
       <main className="main-content">
-        {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={setActivePage} />}
-        {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
-        {activePage==='inventory'  && <InventoryPage />}
-        {activePage==='blueprints' && <BlueprintPage />}
-        {activePage==='materials'  && <MaterialTrackerPage />}
-        {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
-        {activePage==='mining'     && <MiningPage />}
-        {activePage==='mininggroup' && <MiningGrupoPage />}
-        {activePage==='missions'   && <MissionTrackerPage />}
-        {activePage==='orevault'   && <OreVaultPage />}
-        {activePage==='uexsales'   && <UexSalesPage />}
-        {activePage==='uexapi'     && <UexApiPage />}
+        <div key={activePage} className="page-transition-shell" data-active-page={activePage}>
+          {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
+          {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
+          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
+          {activePage==='inventory'  && <InventoryPage />}
+          {activePage==='blueprints' && <BlueprintPage />}
+          {activePage==='materials'  && <MaterialTrackerPage />}
+          {activePage==='custom'     && <CustomArmorPage  sets={sets} onAtualizar={loadData} />}
+          {activePage==='mining'     && <MiningPage />}
+          {activePage==='mininggroup' && <MiningGrupoPage />}
+          {activePage==='clanvault' && <ClanVaultPage />}
+          {activePage==='missions'   && <MissionTrackerPage />}
+          {activePage==='orevault'   && <OreVaultPage />}
+          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} />}
+          {activePage==='uexnegotiations' && (
+            <UexNegotiationsPage
+              targetNegotiationHash={pendingNegotiationHash}
+              onTargetNegotiationConsumed={() => setPendingNegotiationHash('')}
+            />
+          )}
+          {activePage==='wikelo'     && <WikeloTrackerPage />}
+          {activePage==='uexapi'     && <UexApiPage />}
+          {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
+          {activePage==='uexalerts' && <MarketAlertsPage onNavigate={goToPage} />}
+          {activePage==='shiphangar' && <ShipHangarPage onNavigate={goToPage} />}
+          {activePage==='backup'     && <BackupPage />}
+          {activePage==='data-directory' && <DataDirectoryPage />}
+          {activePage==='notes'      && <NotesPage />}
+          {activePage==='system-admin' && <SystemAdminPage />}
+          {activePage==='useful-links' && <UsefulLinksPage />}
+        </div>
       </main>
+
+      <UexNotificationBell onNavigate={goToPage} />
+      <CalculatorWidget />
+      <ContextHelpOverlay />
     </div>
   );
 }

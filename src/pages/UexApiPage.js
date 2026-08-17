@@ -6,22 +6,32 @@ import {
   Download, Info , Star, Filter, Key, Eye, EyeOff, Save, Lock, X
 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from '../data/provenance';
+import { saveUexItemsDB, loadUexItemsDB, normalizeUexNumber, normalizeUexItemName, getUexItemAveragePrice } from '../data/uexItemsDB';
+import { saveUexLocationsDB, getUexLocationsStats } from '../data/uexLocationsDB';
+import { saveUexMiningDB, getUexMiningStats } from '../data/uexMiningDB';
+import { ensureVehicleCatalog, loadVehicleCatalog } from '../data/uexVehicles';
 import { ProvenanceBadge, ProvenanceSummaryWidget } from '../components/ProvenanceBadge';
+import { loadMarketPrices, syncMarketPrices } from '../data/uexMarketDB';
 
 // ── UEX Corp API 2.0 ──────────────────────────────────────────────────────────
 const UEX_BASE = 'https://api.uexcorp.uk/2.0';
 const TOKEN_KEY = 'sc_uex_token_v1';
+const SECRET_KEY = 'sc_uex_secretkey_v1';
 function loadToken()    { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function saveToken(t)   { localStorage.setItem(TOKEN_KEY, t); }
 function clearToken()   { localStorage.removeItem(TOKEN_KEY); }
+function loadSecretKey()  { try { return localStorage.getItem(SECRET_KEY) || ''; } catch { return ''; } }
+function saveSecretKey(t) { localStorage.setItem(SECRET_KEY, t); }
+function clearSecretKey() { localStorage.removeItem(SECRET_KEY); }
 
 // No auth required for public endpoints
 async function uexFetch(endpoint, params = {}, token = '') {
   const t = token || loadToken();
+  const sk = loadSecretKey();
 
   // In Electron: use IPC proxy to avoid CORS
   if (window.electronAPI?.uexFetch) {
-    const result = await window.electronAPI.uexFetch({ endpoint, token: t });
+    const result = await window.electronAPI.uexFetch({ endpoint, token: t, secretKey: sk });
     if (result.success) return result.data;
     throw new Error(result.message || 'Erro na API');
   }
@@ -42,11 +52,11 @@ async function uexFetch(endpoint, params = {}, token = '') {
 
 // ── Tabs config ───────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'commodities', label: 'Commodities', icon: TrendingUp,  color: '#ffc436', desc: 'Preços de commodities em tempo real — minérios, combustíveis, mercadorias' },
-  { id: 'itens',       label: 'Itens',       icon: Package,     color: '#00d4ff', desc: 'Armaduras, armas, componentes, gadgets e todos os itens do jogo' },
-  { id: 'veículos',    label: 'Veículos',    icon: Zap,         color: '#ff8c00', desc: 'Todas as naves e veículos com especificações completas' },
-  { id: 'mining',      label: 'Mining',   icon: Pickaxe,     color: '#00e5a0', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
-  { id: 'locations',   label: 'Locais',      icon: Globe,       color: '#b44cff', desc: 'Sistemas, planetas, luas, estações e terminais de comércio' },
+  { id: 'commodities', label: 'Commodities', icon: TrendingUp,  color: '#fbbf24', desc: 'Preços de commodities em tempo real — minérios, combustíveis, mercadorias' },
+  { id: 'itens',       label: 'Itens',       icon: Package,     color: '#38bdf8', desc: 'Armaduras, armas, componentes, gadgets e todos os itens do jogo' },
+  { id: 'veículos',    label: 'Veículos',    icon: Zap,         color: '#fb923c', desc: 'Todas as naves e veículos com especificações completas' },
+  { id: 'mining',      label: 'Mining',   icon: Pickaxe,     color: '#34d399', desc: 'Minérios brutos, preços de refinamento e locais de mineração' },
+  { id: 'locations',   label: 'Locais',      icon: Globe,       color: '#a78bfa', desc: 'Sistemas, planetas, luas, estações e terminais de comércio' },
   { id: 'terminais',   label: 'Terminais',   icon: Database,    color: '#74b9ff', desc: 'Terminais de trade com preços de compra/venda por localização' },
 ];
 
@@ -54,6 +64,7 @@ const TABS = [
 // ── Token Configuration Panel ─────────────────────────────────────────────────
 function TokenConfigPanel({ onTokenChange }) {
   const [token,      setToken]     = React.useState(loadToken);
+  const [secretKey,  setSecretKey] = React.useState(loadSecretKey);
   const [showToken,  setShowToken] = React.useState(false);
   const [testStatus, setTestStatus]= React.useState(null); // null | 'testing' | 'ok' | 'error'
   const [testMsg,    setTestMsg]   = React.useState('');
@@ -63,6 +74,7 @@ function TokenConfigPanel({ onTokenChange }) {
 
   function handleSave() {
     saveToken(token.trim());
+    saveSecretKey(secretKey.trim());
     setSaved(true);
     onTokenChange && onTokenChange(token.trim());
     setTimeout(() => setSaved(false), 2000);
@@ -70,7 +82,9 @@ function TokenConfigPanel({ onTokenChange }) {
 
   function handleLimpar() {
     clearToken();
+    clearSecretKey();
     setToken('');
+    setSecretKey('');
     setTestStatus(null);
     setTestMsg('');
     onTokenChange && onTokenChange('');
@@ -111,8 +125,8 @@ function TokenConfigPanel({ onTokenChange }) {
 
   return (
     <div style={{
-      background: hasToken ? 'rgba(0,229,160,0.04)' : 'rgba(255,196,54,0.04)',
-      border: `1px solid ${hasToken ? 'rgba(0,229,160,0.25)' : 'rgba(255,196,54,0.25)'}`,
+      background: hasToken ? 'rgba(52,211,153,0.04)' : 'rgba(251,191,36,0.04)',
+      border: `1px solid ${hasToken ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.25)'}`,
       borderRadius: 8, marginBottom: 14, overflow: 'hidden',
     }}>
       {/* Header toggle */}
@@ -123,15 +137,15 @@ function TokenConfigPanel({ onTokenChange }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Key size={14} style={{ color: hasToken ? 'var(--accent-green)' : 'var(--accent-gold)', flexShrink: 0 }}/>
-          <span style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <span style={{ fontFamily: '"Exo 2",sans-serif', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Token API UEX Corp
           </span>
           {hasToken ? (
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-green)', background: 'rgba(0,229,160,0.1)', border: '1px solid rgba(0,229,160,0.3)', padding: '1px 7px', borderRadius: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-green)', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', padding: '1px 7px', borderRadius: 10 }}>
               ✓ CONFIGURADO
             </span>
           ) : (
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-gold)', background: 'rgba(255,196,54,0.1)', border: '1px solid rgba(255,196,54,0.3)', padding: '1px 7px', borderRadius: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-gold)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', padding: '1px 7px', borderRadius: 10 }}>
               SEM TOKEN
             </span>
           )}
@@ -144,8 +158,8 @@ function TokenConfigPanel({ onTokenChange }) {
       {expanded && (
         <div style={{ padding: '0 16px 14px' }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
-            O token é salvo <strong>apenas no seu computador</strong> (localStorage) e nunca é enviado para nenhum outro serviço além da UEX Corp API.
-            Obtenha seu token em <a href="https://uexcorp.space/account/api" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account/api</a>.
+            O <strong>Bearer Token</strong> é salvo <strong>apenas no seu computador</strong> (localStorage) e nunca é enviado para nenhum outro serviço além da UEX Corp API.
+            Obtenha o seu Bearer Token em <a href="https://uexcorp.space/api/apps" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/api/apps</a>.
           </div>
 
           {/* Token input */}
@@ -174,13 +188,36 @@ function TokenConfigPanel({ onTokenChange }) {
             </div>
           </div>
 
+          {/* Secret key input (necessária para negociações/notificações do Marketplace) */}
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '2px 0 6px' }}>
+            A <strong>secret key</strong> é a chave do seu aplicativo UEX e é diferente do Bearer Token. Para receber notificações de novas mensagens de negociação do Marketplace, informe a secret key gerada em{' '}
+            <a href="https://uexcorp.space/account" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>uexcorp.space/account</a>.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Key size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}/>
+              <input
+                type="password"
+                value={secretKey}
+                onChange={e => setSecretKey(e.target.value)}
+                placeholder="Cole sua secret key aqui (opcional)..."
+                style={{
+                  width: '100%', padding: '9px 12px 9px 32px',
+                  background: 'var(--bg-base)', border: '1px solid var(--border-subtle)',
+                  borderRadius: 6, color: 'var(--text-primary)',
+                  fontFamily: 'Share Tech Mono,monospace', fontSize: 13, outline: 'none',
+                }}
+              />
+            </div>
+          </div>
+
           {/* Actions */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={handleSave} disabled={!token.trim()} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-              background: 'rgba(0,229,160,0.1)', border: '1px solid rgba(0,229,160,0.35)',
+              background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.35)',
               borderRadius: 6, color: 'var(--accent-green)',
-              fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+              fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
               cursor: token.trim() ? 'pointer' : 'not-allowed', textTransform: 'uppercase',
               opacity: token.trim() ? 1 : 0.5, letterSpacing: '0.06em',
             }}>
@@ -190,9 +227,9 @@ function TokenConfigPanel({ onTokenChange }) {
 
             <button onClick={handleTest} disabled={!token.trim() || testStatus === 'testing'} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-              background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)',
+              background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.3)',
               borderRadius: 6, color: 'var(--accent-primary)',
-              fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+              fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
               cursor: (token.trim() && testStatus !== 'testing') ? 'pointer' : 'not-allowed',
               textTransform: 'uppercase', letterSpacing: '0.06em',
               opacity: (token.trim() && testStatus !== 'testing') ? 1 : 0.5,
@@ -205,9 +242,9 @@ function TokenConfigPanel({ onTokenChange }) {
             {hasToken && (
               <button onClick={handleLimpar} style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                background: 'rgba(255,68,102,0.08)', border: '1px solid rgba(255,68,102,0.2)',
+                background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.2)',
                 borderRadius: 6, color: 'var(--accent-red)',
-                fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700,
+                fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700,
                 cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
                 <X size={13}/> Remover Token
@@ -219,8 +256,8 @@ function TokenConfigPanel({ onTokenChange }) {
           {testStatus && testStatus !== 'testing' && (
             <div style={{
               marginTop: 10, padding: '9px 14px',
-              background: testStatus === 'ok' ? 'rgba(0,229,160,0.08)' : 'rgba(255,68,102,0.08)',
-              border: `1px solid ${testStatus === 'ok' ? 'rgba(0,229,160,0.3)' : 'rgba(255,68,102,0.3)'}`,
+              background: testStatus === 'ok' ? 'rgba(52,211,153,0.08)' : 'rgba(251,113,133,0.08)',
+              border: `1px solid ${testStatus === 'ok' ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.3)'}`,
               borderRadius: 6, fontSize: 12, fontWeight: 600,
               color: testStatus === 'ok' ? 'var(--accent-green)' : 'var(--accent-red)',
               display: 'flex', alignItems: 'center', gap: 8,
@@ -242,8 +279,8 @@ function StatusBadge({ ok }) {
   return (
     <span style={{ display:'inline-flex',alignItems:'center',gap:4,fontSize:10,fontWeight:700,
       padding:'2px 7px',borderRadius:10,
-      background: ok ? 'rgba(0,229,160,0.12)' : 'rgba(255,68,102,0.1)',
-      border: `1px solid ${ok ? 'rgba(0,229,160,0.3)' : 'rgba(255,68,102,0.3)'}`,
+      background: ok ? 'rgba(52,211,153,0.12)' : 'rgba(251,113,133,0.1)',
+      border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : 'rgba(251,113,133,0.3)'}`,
       color: ok ? 'var(--accent-green)' : 'var(--accent-red)',
     }}>
       {ok ? <CheckCircle2 size={10}/> : <AlertTriangle size={10}/>}
@@ -265,7 +302,7 @@ function DataTable({ data, columns, onRowClick, selectedId }) {
             {columns.map(col => (
               <th key={col.key} style={{ padding:'8px 12px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',
                 color:'var(--accent-primary)',fontWeight:700,whiteSpace:'nowrap',
-                fontFamily:'Rajdhani,sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>
+                fontFamily:'"Exo 2",sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em' }}>
                 {col.label}
               </th>
             ))}
@@ -278,12 +315,12 @@ function DataTable({ data, columns, onRowClick, selectedId }) {
               style={{
                 borderBottom:'1px solid var(--border-subtle)',
                 background: selectedId && (row.id === selectedId || row.uuid === selectedId)
-                  ? 'rgba(0,212,255,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                  ? 'rgba(56,189,248,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)',
                 cursor: onRowClick ? 'pointer' : 'default',
                 transition:'background 0.15s',
               }}
-              onMouseEnter={e => onRowClick && (e.currentTarget.style.background='rgba(0,212,255,0.05)')}
-              onMouseLeave={e => onRowClick && (e.currentTarget.style.background = selectedId && (row.id === selectedId || row.uuid === selectedId) ? 'rgba(0,212,255,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)')}
+              onMouseEnter={e => onRowClick && (e.currentTarget.style.background='rgba(56,189,248,0.05)')}
+              onMouseLeave={e => onRowClick && (e.currentTarget.style.background = selectedId && (row.id === selectedId || row.uuid === selectedId) ? 'rgba(56,189,248,0.08)' : i%2===0 ? 'transparent' : 'rgba(255,255,255,0.015)')}
             >
               {columns.map(col => (
                 <td key={col.key} style={{ padding:'7px 12px',color:'var(--text-secondary)',verticalAlign:'middle' }}>
@@ -317,7 +354,7 @@ function DetailPanel({ item, onClose, tab }) {
     <div style={{ position:'fixed',top:0,right:0,width:380,height:'100vh',background:'var(--bg-card)',
       borderLeft:'1px solid var(--border-normal)',zIndex:100,overflowY:'auto',boxShadow:'-4px 0 24px rgba(0,0,0,0.4)' }}>
       <div style={{ padding:'16px 18px',borderBottom:'1px solid var(--border-subtle)',display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--bg-panel)',position:'sticky',top:0,zIndex:1 }}>
-        <div style={{ fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
+        <div style={{ fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>
           {item.name || item.code || '—'}
         </div>
         <button onClick={onClose} style={{ background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px',fontSize:14 }}>✕</button>
@@ -348,7 +385,7 @@ function DetailPanel({ item, onClose, tab }) {
           ))}
         </div>
         {item.wiki && (
-          <a href={item.wiki} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:6,marginTop:12,padding:'8px 12px',background:'rgba(0,212,255,0.06)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,textDecoration:'none' }}>
+          <a href={item.wiki} target="_blank" rel="noreferrer" style={{ display:'flex',alignItems:'center',gap:6,marginTop:12,padding:'8px 12px',background:'rgba(56,189,248,0.06)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,textDecoration:'none' }}>
             <ExternalLink size={13}/> Ver no Wiki
           </a>
         )}
@@ -424,7 +461,7 @@ function CommoditiesTab() {
           <RefreshCw size={12}/> Atualizar
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} commodities · Dados da UEX Corp API (community crowdsourced)</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando da UEX API...</div>
@@ -438,40 +475,66 @@ function CommoditiesTab() {
 
 // ── ITEMS tab ─────────────────────────────────────────────────────────────────
 function ItensTab() {
-  const [data,     setData]     = useState([]);
-  const [cats,     setCats]     = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState('');
-  const [search,   setSearch]   = useState('');
-  const [catFilter,setCatFilter]= useState('');
-  const [selected, setSelected] = useState(null);
+  const [data,      setData]      = useState([]);
+  const [cats,      setCats]      = useState([]);
+  const [selCat,    setSelCat]    = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [loadingCat,setLoadingCat]= useState(false);
+  const [error,     setError]     = useState('');
+  const [search,    setSearch]    = useState('');
+  const [selected,  setSelected]  = useState(null);
 
-  async function load() {
+  // Carregar só categorias na montagem (sem buscar items ainda)
+  async function loadCats() {
     setLoading(true); setError('');
     try {
-      const [itens, categories] = await Promise.all([
-        uexFetch('items'),
-        uexFetch('categories'),
-      ]);
-      setData(itens);
-      setCats(categories);
-      setBatchProvenance('item', itens.map(i => i.name), SOURCES.UEX_API, {
-        endpoint: 'itens', gameVersion: '4.8.1',
-      });
+      const categories = await uexFetch('categories');
+      // Filtrar só categorias relevantes (excluir commodities, vehicles, etc.)
+      const relevant = (categories||[]).filter(c =>
+        c.section && !['commodities','vehicles','mining','refineries'].includes((c.section||'').toLowerCase())
+      );
+      setCats(relevant);
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+
+  // Carregar items da categoria selecionada
+  async function loadItemsByCat(catId) {
+    if (!catId) return;
+    setLoadingCat(true); setError(''); setData([]); setSelected(null);
+    try {
+      const itens = await uexFetch(`items?id_category=${catId}`);
+      const normalizedItems = (itens || []).map(item => ({
+        ...item,
+        name: normalizeUexItemName(item?.name),
+      }));
+      setData(normalizedItems);
+      if (normalizedItems.length) {
+        setBatchProvenance('item', normalizedItems.map(i => i.name), SOURCES.UEX_API, {
+          endpoint: 'items', gameVersion: '4.8.1',
+        });
+      }
+    } catch(e) { setError(e.message); }
+    finally { setLoadingCat(false); }
+  }
+
+  useEffect(() => { loadCats(); }, []);
+
+  function handleCatChange(catId) {
+    setSelCat(catId);
+    setSearch('');
+    loadItemsByCat(catId);
+  }
 
   const filtered = useMemo(() => {
-    return data.filter(item => {
-      if (search && !item.name?.toLowerCase().includes(search.toLowerCase())) return false;
-      if (catFilter && item.id_category !== Number(catFilter)) return false;
-      return true;
-    });
-  }, [data, search, catFilter]);
+    if (!search.trim()) return data;
+    return data.filter(item =>
+      item.name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.company_name?.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [data, search]);
 
-  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
+  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
 
   const cols = [
     { key:'name', label:'Nome', render:(v,r)=>(
@@ -481,7 +544,7 @@ function ItensTab() {
       </div>
     )},
     { key:'company_name', label:'Fabricante', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
-    { key:'category_name', label:'Categoria', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
+    { key:'category_name', label:'Categoria', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'size', label:'Tamanho', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'price_buy',  label:'Compra', render:v=><Preço value={v} unit='un' color='var(--accent-red)'/> },
     { key:'price_sell', label:'Venda',  render:v=><Preço value={v} unit='un' color='var(--accent-green)'/> },
@@ -490,25 +553,60 @@ function ItensTab() {
 
   return (
     <div>
-      <div style={{ display:'flex',gap:8,marginBottom:12,flexWrap:'wrap' }}>
-        <div style={{ position:'relative',flex:'1 1 200px' }}>
-          <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
-          <input className="search-input" style={{ paddingLeft:30,width:'100%' }} placeholder="Buscar item (armadura, arma, componente...)..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        </div>
-        <select style={SS} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
-          <option value="">Todas Categorias</option>
-          {cats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+      {/* Seletor de categoria — obrigatório pois a API requer id_category */}
+      <div style={{ display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center' }}>
+        <select
+          style={{ padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none',minWidth:240 }}
+          value={selCat} onChange={e=>handleCatChange(e.target.value)}>
+          <option value="">— Selecione uma categoria de itens —</option>
+          {cats.map(c=><option key={c.id} value={String(c.id)}>{c.name_v2||c.name} {c.section?`(${c.section})`:''}</option>)}
         </select>
-        <button onClick={load} style={{ padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',gap:5,fontSize:12 }}>
-          <RefreshCw size={12}/> Atualizar
+        {data.length > 0 && (
+          <div style={{ position:'relative',flex:1,minWidth:180 }}>
+            <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
+            <input className="search-input" style={{ paddingLeft:30,width:'100%' }}
+              placeholder="Buscar por nome ou fabricante..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          </div>
+        )}
+        <button onClick={loadCats} style={{ display:'flex',alignItems:'center',gap:5,padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase' }}>
+          <RefreshCw size={11}/> Recarregar
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
-      <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} itens</div>
-      {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando itens...</div>
-      ) : (
-        <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
+
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
+
+      {/* Empty states */}
+      {loading && (
+        <div style={{ textAlign:'center',padding:40,color:'var(--text-muted)' }}>
+          <RefreshCw size={20} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/>
+          Carregando categorias...
+        </div>
+      )}
+      {loadingCat && (
+        <div style={{ textAlign:'center',padding:40,color:'var(--accent-primary)' }}>
+          <RefreshCw size={20} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/>
+          Buscando itens da categoria...
+        </div>
+      )}
+      {!loading && !loadingCat && !selCat && cats.length > 0 && (
+        <div style={{ textAlign:'center',padding:'40px 20px',color:'var(--text-muted)' }}>
+          <div style={{ fontSize:36,marginBottom:10 }}>📦</div>
+          <div style={{ fontSize:13,fontWeight:600,marginBottom:6 }}>Selecione uma categoria acima</div>
+          <div style={{ fontSize:11 }}>A UEX API requer uma categoria específica para listar itens.<br/>Escolha uma no seletor para carregar os resultados.</div>
+        </div>
+      )}
+      {!loading && !loadingCat && !error && selCat && filtered.length === 0 && (
+        <div style={{ color:'var(--text-muted)',fontSize:13,padding:'20px 0',textAlign:'center' }}>
+          Nenhum item encontrado nesta categoria.
+        </div>
+      )}
+
+      {/* Tabela de resultados */}
+      {!loading && !loadingCat && filtered.length > 0 && (
+        <>
+          <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} itens</div>
+          <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
+        </>
       )}
       <DetailPanel item={selected} onClose={()=>setSelected(null)} tab="itens"/>
     </div>
@@ -527,7 +625,15 @@ function VeículosTab() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const result = await uexFetch('vehicles');
+      // A aba força uma atualização explícita. Se a UEX API já estiver
+      // sincronizando em paralelo pelo carregamento inicial, a mesma Promise é
+      // reaproveitada pelo módulo de veículos.
+      const savedCatalog = await ensureVehicleCatalog({ force: true });
+      const verifiedCatalog = loadVehicleCatalog();
+      if (!verifiedCatalog?.vehicles?.length) {
+        throw new Error('A sincronização terminou, mas o catálogo local de veículos não pôde ser confirmado.');
+      }
+      const result = savedCatalog.vehicles || verifiedCatalog.vehicles || [];
       setData(result);
       setBatchProvenance('vehicle', result.map(v => v.name), SOURCES.UEX_API, {
         endpoint: 'veículos', gameVersion: '4.8.1',
@@ -548,7 +654,7 @@ function VeículosTab() {
 
   const roles = useMemo(() => [...new Set(data.map(v=>v.role).filter(Boolean))].sort(), [data]);
 
-  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Rajdhani,sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
+  const SS = { padding:'7px 26px 7px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none',appearance:'none',WebkitAppearance:'none' };
 
   const cols = [
     { key:'name', label:'Nome', render:(v,r)=>(
@@ -558,7 +664,7 @@ function VeículosTab() {
       </div>
     )},
     { key:'company_name', label:'Fabricante', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v}</span> },
-    { key:'role', label:'Papel', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(0,212,255,0.08)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
+    { key:'role', label:'Papel', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'size', label:'Tamanho', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'crew', label:'Tripulação', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11 }}>{v||'—'}</span> },
     { key:'cargo', label:'Carga (SCU)', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)' }}>{v||0}</span> },
@@ -581,7 +687,7 @@ function VeículosTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5,border:'1px solid rgba(255,68,102,0.2)' }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5,border:'1px solid rgba(251,113,133,0.2)' }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} veículos</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando veículos...</div>
@@ -600,6 +706,7 @@ function MiningTab() {
   const [error,     setError]     = useState('');
   const [search,    setSearch]    = useState('');
   const [selected,  setSelected]  = useState(null);
+  const [dbStats,   setDbStats]   = useState(getUexMiningStats);
 
   async function load() {
     setLoading(true); setError('');
@@ -607,6 +714,8 @@ function MiningTab() {
       const all = await uexFetch('commodities');
       const minerals = all.filter(c => c.is_mineral || c.is_raw || c.is_extractable);
       setBrutosPreços(minerals);
+      const db = saveUexMiningDB(minerals);
+      setDbStats({ updatedAt: db.updatedAt, count: minerals.length });
       setBatchProvenance('mining_ore', minerals.map(m => m.name), SOURCES.UEX_API, {
         endpoint: 'commodities', gameVersion: '4.8.1',
       });
@@ -614,6 +723,8 @@ function MiningTab() {
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
 
   const filtered = useMemo(() =>
     rawPreços.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase()))
@@ -624,8 +735,8 @@ function MiningTab() {
       <div style={{ display:'flex',alignItems:'center',gap:6,flexWrap:'wrap' }}>
         <span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span>
         <ProvenanceBadge category="mining_ore" name={v}/>
-        {r.is_volatile_time && <span style={{ fontSize:9,color:'var(--accent-red)',fontWeight:700,background:'rgba(255,68,102,0.1)',border:'1px solid rgba(255,68,102,0.2)',padding:'1px 5px',borderRadius:3 }}>VOLÁTIL</span>}
-        {r.is_explosive    && <span style={{ fontSize:9,color:'var(--accent-orange)',fontWeight:700,background:'rgba(255,140,0,0.1)',border:'1px solid rgba(255,140,0,0.2)',padding:'1px 5px',borderRadius:3 }}>EXPLOSIVO</span>}
+        {r.is_volatile_time && <span style={{ fontSize:9,color:'var(--accent-red)',fontWeight:700,background:'rgba(251,113,133,0.1)',border:'1px solid rgba(251,113,133,0.2)',padding:'1px 5px',borderRadius:3 }}>VOLÁTIL</span>}
+        {r.is_explosive    && <span style={{ fontSize:9,color:'var(--accent-orange)',fontWeight:700,background:'rgba(251,146,60,0.1)',border:'1px solid rgba(251,146,60,0.2)',padding:'1px 5px',borderRadius:3 }}>EXPLOSIVO</span>}
       </div>
     )},
     { key:'code', label:'Código', render:v=><span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-primary)' }}>{v}</span> },
@@ -639,6 +750,13 @@ function MiningTab() {
 
   return (
     <div>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8 }}>
+        <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
+          <strong style={{ color:'var(--accent-green)' }}>Banco local de minérios:</strong>{' '}
+          {dbStats.updatedAt ? `${dbStats.count} minérios/recursos — atualizado em ${ptDate(dbStats.updatedAt)}` : 'ainda não sincronizado'}
+        </div>
+        <div style={{ fontSize:10,color:'var(--text-muted)' }}>Alimenta os preços e a lista de minérios na Guia de Mineração</div>
+      </div>
       <div style={{ display:'flex',gap:8,marginBottom:12 }}>
         <div style={{ position:'relative',flex:1 }}>
           <Search size={12} style={{ position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none' }}/>
@@ -648,10 +766,10 @@ function MiningTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} minérios/recursos · Dados crowdsourced UEX</div>
       {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando...</div>
+        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando e sincronizando banco...</div>
       ) : (
         <DataTable data={filtered} columns={cols} onRowClick={setSelected} selectedId={selected?.id}/>
       )}
@@ -666,20 +784,37 @@ function LocalizaçãosTab() {
   const [planets,  setPlanetas]  = useState([]);
   const [moons,    setLuas]    = useState([]);
   const [stations, setEstações] = useState([]);
+  const [cities,   setCidades]  = useState([]);
+  const [outposts, setPostos]   = useState([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
   const [subTab,   setSubTab]   = useState('systems');
+  const [dbStats,  setDbStats]  = useState(getUexLocationsStats);
 
   async function load() {
     setLoading(true); setError('');
     try {
-      const [sys, pla, mon, sta] = await Promise.all([
+      const [sys, pla, mon, sta, cit, out, term] = await Promise.all([
         uexFetch('star_systems'),
         uexFetch('planets'),
         uexFetch('moons'),
         uexFetch('space_stations'),
+        uexFetch('cities'),
+        uexFetch('outposts'),
+        uexFetch('terminals'),
       ]);
-      setSistemas(sys); setPlanetas(pla); setLuas(mon); setEstações(sta);
+      setSistemas(sys); setPlanetas(pla); setLuas(mon); setEstações(sta); setCidades(cit); setPostos(out);
+
+      // Salva tudo no banco local de localizações — é isso que alimenta os seletores
+      // de local/tipo-de-local em Inventário, Baú de Minério e Mineração em Grupo.
+      const db = saveUexLocationsDB({ systems:sys, planets:pla, moons:mon, stations:sta, cities:cit, outposts:out, terminals:term });
+      setDbStats({ updatedAt: db.updatedAt, counts: {
+        systems:sys.length, planets:pla.length, moons:mon.length, stations:sta.length,
+        cities:cit.length, outposts:out.length, terminals:term.length,
+      }});
+      setBatchProvenance('location', [...pla,...mon,...sta,...cit,...out].map(l => l.name), SOURCES.UEX_API, {
+        endpoint: 'localizações', gameVersion: '4.8.1',
+      });
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -690,6 +825,8 @@ function LocalizaçãosTab() {
     { id:'planets',  label:`Planetas (${planets.length})` },
     { id:'moons',    label:`Luas (${moons.length})` },
     { id:'stations', label:`Estações (${stations.length})` },
+    { id:'cities',   label:`Cidades (${cities.length})` },
+    { id:'outposts', label:`Postos (${outposts.length})` },
   ];
 
   const sysCols = [
@@ -710,15 +847,41 @@ function LocalizaçãosTab() {
     { key:'is_available', label:'Disponível', render:v=><span style={{ color:v?'var(--accent-green)':'var(--text-muted)' }}>{v?'✓':'✗'}</span> },
     { key:'has_trade', label:'Trade', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
   ];
+  const cityCols = [
+    { key:'name', label:'Cidade', render:v=><span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span> },
+    { key:'star_system_name', label:'Sistema', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)' }}>{v||'—'}</span> },
+    { key:'planet_name', label:'Planeta', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
+    { key:'has_trade_terminal', label:'Terminal', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
+  ];
+  const outpostCols = [
+    { key:'name', label:'Posto Avançado', render:v=><span style={{ fontWeight:700,color:'var(--text-primary)' }}>{v}</span> },
+    { key:'star_system_name', label:'Sistema', render:v=><span style={{ fontSize:11,color:'var(--accent-primary)' }}>{v||'—'}</span> },
+    { key:'planet_name', label:'Planeta/Lua', render:v=><span style={{ fontSize:11,color:'var(--text-secondary)' }}>{v||'—'}</span> },
+    { key:'has_trade_terminal', label:'Terminal', render:v=>v?<span style={{ fontSize:11,color:'var(--accent-gold)' }}>✓</span>:<span style={{ color:'var(--text-muted)' }}>—</span> },
+  ];
 
-  const currentData   = subTab==='systems'?systems:subTab==='planets'?planets:subTab==='moons'?moons:stations;
-  const currentCols   = subTab==='systems'?sysCols:subTab==='stations'?staCols:locCols;
+  const TAB_DATA = { systems, planets, moons, stations, cities, outposts };
+  const TAB_COLS = { systems:sysCols, planets:locCols, moons:locCols, stations:staCols, cities:cityCols, outposts:outpostCols };
+  const currentData = TAB_DATA[subTab];
+  const currentCols  = TAB_COLS[subTab];
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
 
   return (
     <div>
+      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:12,padding:'10px 14px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:8 }}>
+        <div style={{ fontSize:11,color:'var(--text-secondary)' }}>
+          <strong style={{ color:'var(--accent-green)' }}>Banco local de localizações:</strong>{' '}
+          {dbStats.updatedAt
+            ? `${dbStats.counts.systems} sistemas · ${dbStats.counts.planets} planetas · ${dbStats.counts.moons} luas · ${dbStats.counts.stations} estações · ${dbStats.counts.cities} cidades · ${dbStats.counts.outposts} postos · ${dbStats.counts.terminals} terminais — atualizado em ${ptDate(dbStats.updatedAt)}`
+            : 'ainda não sincronizado'}
+        </div>
+        <div style={{ fontSize:10,color:'var(--text-muted)' }}>Alimenta os seletores de local em Inventário, Baú de Minério e Mineração em Grupo</div>
+      </div>
+
       <div style={{ display:'flex',gap:0,marginBottom:14,border:'1px solid var(--border-subtle)',borderRadius:7,overflow:'hidden',width:'fit-content' }}>
         {SUBTABS.map(t=>(
-          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{ padding:'8px 14px',background:subTab===t.id?'rgba(0,212,255,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:subTab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em' }}>
+          <button key={t.id} onClick={()=>setSubTab(t.id)} style={{ padding:'8px 14px',background:subTab===t.id?'rgba(56,189,248,0.1)':'transparent',border:'none',borderRight:'1px solid var(--border-subtle)',color:subTab===t.id?'var(--accent-primary)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,cursor:'pointer',letterSpacing:'0.04em' }}>
             {t.label}
           </button>
         ))}
@@ -726,9 +889,9 @@ function LocalizaçãosTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       {loading ? (
-        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando locais...</div>
+        <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando locais e sincronizando banco...</div>
       ) : (
         <DataTable data={currentData} columns={currentCols}/>
       )}
@@ -775,7 +938,7 @@ function TerminaisTab() {
     { key:'type', label:'Tipo', render:v=><span style={{ fontSize:10,background:'rgba(255,255,255,0.05)',border:'1px solid var(--border-subtle)',padding:'1px 6px',borderRadius:3 }}>{v||'—'}</span> },
     { key:'has_commodity', label:'Commodity', render:v=><span style={{ color:v?'var(--accent-gold)':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
     { key:'has_item',      label:'Itens',     render:v=><span style={{ color:v?'var(--accent-primary)':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
-    { key:'has_vehicle',   label:'Veículos',  render:v=><span style={{ color:v?'#ff8c00':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
+    { key:'has_vehicle',   label:'Veículos',  render:v=><span style={{ color:v?'#fb923c':'var(--text-muted)',fontSize:11 }}>{v?'✓':'—'}</span> },
     { key:'is_available',  label:'Online',    render:v=><StatusBadge ok={v}/> },
   ];
 
@@ -793,7 +956,7 @@ function TerminaisTab() {
           <RefreshCw size={12}/>
         </button>
       </div>
-      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(255,68,102,0.08)',borderRadius:5 }}>Erro: {error}</div>}
+      {error && <div style={{ color:'var(--accent-red)',fontSize:12,marginBottom:10,padding:'8px 12px',background:'rgba(251,113,133,0.08)',borderRadius:5 }}>Erro: {error}</div>}
       <div style={{ fontSize:11,color:'var(--text-muted)',marginBottom:8 }}>{filtered.length} de {data.length} terminais</div>
       {loading ? (
         <div style={{ textAlign:'center',padding:60,color:'var(--text-muted)' }}><RefreshCw size={24} style={{ animation:'spin 1s linear infinite',display:'block',margin:'0 auto 10px' }}/> Carregando terminais...</div>
@@ -805,15 +968,242 @@ function TerminaisTab() {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Botão de sync do banco de itens ──────────────────────────────────────────
+function ItemDBSyncButton() {
+  const [syncing,  setSyncing]  = useState(false);
+  const [phase,    setPhase]    = useState('');
+  const [syncInfo, setSyncInfo] = useState(() => {
+    const db = loadUexItemsDB();
+    return db.updatedAt ? {
+      count: db.itemCount,
+      priceCount: db.items.filter(item => getUexItemAveragePrice(item) > 0).length,
+      updatedAt: db.updatedAt,
+    } : null;
+  });
+  const [error, setError] = useState('');
+  const [priceWarning, setPriceWarning] = useState('');
+
+  async function handleSync() {
+    setSyncing(true); setError(''); setPriceWarning(''); setPhase('Buscando categorias...');
+    try {
+      const allItems = [];
+      const seenIds  = new Set();
+      const priceMap = {}; // id_item -> estatísticas separadas de compra/venda
+      const priceUuidMap = {}; // item_uuid -> estatísticas, fallback estável do item
+      const priceNameMap = {}; // item_name normalizado -> estatísticas, último fallback
+      const normalizePriceName = value => String(value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+      // 1. Buscar categorias
+      const catRes = await uexFetch('categories');
+      if (!catRes || !Array.isArray(catRes)) throw new Error('Falha ao buscar categorias');
+      const itemCats = catRes.filter(c =>
+        c.section && !['commodities','vehicles','mining','refineries'].includes((c.section||'').toLowerCase())
+      );
+
+      setPhase(`Buscando itens de ${itemCats.length} categorias...`);
+
+      // 2. Buscar itens por categoria
+      for (let i = 0; i < itemCats.length; i++) {
+        const cat = itemCats[i];
+        try {
+          const items = await uexFetch(`items?id_category=${cat.id}`);
+          if (items && Array.isArray(items)) {
+            items.forEach(item => {
+              if (!seenIds.has(item.id)) {
+                seenIds.add(item.id);
+                allItems.push({
+                  id:           item.id,
+                  name:         normalizeUexItemName(item.name),
+                  category:     item.category,
+                  section:      item.section,
+                  size:         item.size,
+                  company_name: item.company_name,
+                  quality:      item.quality,
+                  uuid:         item.uuid,
+                  wiki:         item.wiki,
+                  color:        item.color,
+                  is_commodity: item.is_commodity,
+                  price_buy:    item.price_buy    || 0,
+                  price_sell:   item.price_sell   || 0,
+                });
+              }
+            });
+          }
+        } catch { /* categoria vazia */ }
+        if (i % 5 === 4) await new Promise(r => setTimeout(r, 200));
+      }
+
+      setPhase(`Buscando preços de mercado (todos os terminais)...`);
+
+      // 3. Buscar items_prices_all para enriquecer com preços reais de mercado.
+      // (items_prices exige id_item/id_terminal por chamada e por isso falhava silenciosamente
+      // sem preencher nada; items_prices_all traz tudo de uma vez, sem parâmetros.)
+      let priceFetchError = '';
+      try {
+        const prices = await uexFetch('items_prices_all');
+        if (prices && Array.isArray(prices)) {
+          // Agrupar por id_item e também por item_uuid. O ID numérico pode
+          // mudar em atualizações da UEX; o UUID é o fallback estável.
+          const addPriceRow = (target, key, buy, sell) => {
+            if (!key) return;
+            if (!target[key]) {
+              target[key] = {
+                buyTotal: 0, buyCount: 0, buyMax: 0, buyMin: Infinity,
+                sellTotal: 0, sellCount: 0, sellMax: 0, sellMin: Infinity,
+              };
+            }
+            if (buy > 0) {
+              target[key].buyTotal += buy;
+              target[key].buyCount++;
+              if (buy > target[key].buyMax) target[key].buyMax = buy;
+              if (buy < target[key].buyMin) target[key].buyMin = buy;
+            }
+            if (sell > 0) {
+              target[key].sellTotal += sell;
+              target[key].sellCount++;
+              if (sell > target[key].sellMax) target[key].sellMax = sell;
+              if (sell < target[key].sellMin) target[key].sellMin = sell;
+            }
+          };
+          prices.forEach(p => {
+            const buy = normalizeUexNumber(p.price_buy);
+            const sell = normalizeUexNumber(p.price_sell);
+            if (p.id_item) addPriceRow(priceMap, String(p.id_item), buy, sell);
+            if (p.item_uuid) addPriceRow(priceUuidMap, String(p.item_uuid).toLowerCase(), buy, sell);
+            const priceName = normalizePriceName(p.item_name);
+            if (priceName) addPriceRow(priceNameMap, priceName, buy, sell);
+          });
+        } else {
+          priceFetchError = 'A UEX não retornou uma lista de preços válida.';
+        }
+      } catch (e) { priceFetchError = e.message; }
+
+      // 4. Enriquecer itens com preços.
+      // Para o valor do Inventário, priorizamos a média de venda; quando a UEX
+      // não possui venda registrada, usamos a média de compra como fallback.
+      const enriched = allItems.map(item => {
+        const normalizedItemName = normalizePriceName(item.name);
+        const p = priceMap[String(item.id)]
+          || (item.uuid ? priceUuidMap[String(item.uuid).toLowerCase()] : null)
+          || priceNameMap[normalizedItemName];
+        const hasSell = p && p.sellCount > 0;
+        const hasBuy = p && p.buyCount > 0;
+        const sellAvg = hasSell ? Math.round(p.sellTotal / p.sellCount) : 0;
+        const buyAvg = hasBuy ? Math.round(p.buyTotal / p.buyCount) : 0;
+        const fallback = normalizeUexNumber(item.price_sell) || normalizeUexNumber(item.price_buy);
+        const priceAvg = sellAvg || buyAvg || fallback;
+        const selected = hasSell
+          ? { max: p.sellMax, min: p.sellMin }
+          : hasBuy
+          ? { max: p.buyMax, min: p.buyMin }
+          : { max: 0, min: 0 };
+        return {
+          ...item,
+          price_avg: priceAvg,
+          price_sell_avg: sellAvg,
+          price_buy_avg: buyAvg,
+          price_max: selected.max,
+          price_min: selected.min,
+        };
+      });
+
+      const db = saveUexItemsDB(enriched);
+      setSyncInfo({
+        count: db.itemCount,
+        priceCount: enriched.filter(item => getUexItemAveragePrice(item) > 0).length,
+        updatedAt: db.updatedAt,
+      });
+      if (priceFetchError) setPriceWarning(`Itens sincronizados, mas os preços de mercado não puderam ser carregados: ${priceFetchError}`);
+      setPhase('');
+    } catch (err) {
+      setError(`Erro: ${err.message}`);
+    }
+    setSyncing(false);
+  }
+
+  const ptDate = (iso) => iso ? new Date(iso).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : null;
+
+  return (
+    <div style={{ display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4 }}>
+      <button onClick={handleSync} disabled={syncing} style={{
+        display:'flex',alignItems:'center',gap:6,padding:'8px 14px',
+        background:syncing?'rgba(255,200,0,0.08)':'rgba(52,211,153,0.08)',
+        border:`1px solid ${syncing?'rgba(255,200,0,0.3)':'rgba(52,211,153,0.3)'}`,
+        borderRadius:6,color:syncing?'var(--accent-gold)':'var(--accent-green)',
+        fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',
+        cursor:syncing?'not-allowed':'pointer',letterSpacing:'0.06em',opacity:syncing?0.8:1,
+      }}>
+        <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
+        {syncing ? (phase||'Sincronizando...') : 'Sync Banco de Itens'}
+      </button>
+      {syncInfo?.count > 0 && !syncing && (
+        <span style={{ fontSize:10,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace' }}>
+          {syncInfo.count.toLocaleString('pt-BR')} itens · {syncInfo.priceCount||0} com preço médio · {ptDate(syncInfo.updatedAt)}
+        </span>
+      )}
+      {error && <span style={{ fontSize:10,color:'var(--accent-red)' }}>{error}</span>}
+      {priceWarning && !error && <span style={{ fontSize:10,color:'var(--accent-gold)',maxWidth:280,textAlign:'right' }}>{priceWarning}</span>}
+    </div>
+  );
+}
+
+function MarketPricesSyncButton() {
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [count, setCount] = useState(() => loadMarketPrices().length);
+
+  async function handleSync() {
+    setSyncing(true); setError(''); setMessage('');
+    try {
+      const rows = await syncMarketPrices();
+      setCount(rows.length);
+      setMessage(`${rows.length.toLocaleString('pt-BR')} médias por qualidade salvas localmente.`);
+    } catch (err) { setError(err.message || 'Não foi possível sincronizar médias por qualidade.'); }
+    setSyncing(false);
+  }
+
+  return <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+    <button onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: syncing ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 6, color: 'var(--accent-gold)', fontSize: 11, fontWeight: 700, fontFamily: '"Exo 2",sans-serif', textTransform: 'uppercase', cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.75 : 1 }}><TrendingUp size={13} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />{syncing ? 'Sincronizando médias…' : 'Sync Preços / Qualidade'}</button>
+    {count > 0 && !syncing && <span style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'Share Tech Mono,monospace' }}>{count.toLocaleString('pt-BR')} linhas no cache local</span>}
+    {message && <span style={{ fontSize: 9, color: 'var(--accent-green)', maxWidth: 240, textAlign: 'right' }}>{message}</span>}
+    {error && <span style={{ fontSize: 9, color: 'var(--accent-red)', maxWidth: 240, textAlign: 'right' }}>{error}</span>}
+  </div>;
+}
+
 export default function UexApiPage() {
   const [activeTab, setActiveTab] = useState('commodities');
   const [apiStatus, setApiStatus] = useState(null); // null | true | false
+  const [vehicleSyncMessage, setVehicleSyncMessage] = useState('');
 
   useEffect(() => {
     fetch(`${UEX_BASE}/game_versions`)
       .then(r => r.json())
       .then(j => setApiStatus(j.status === 'ok'))
       .catch(() => setApiStatus(false));
+  }, []);
+
+  useEffect(() => {
+    // A primeira abertura da tela deve preparar o Hangar mesmo que o usuário
+    // nunca tenha entrado na aba Veículos. Com catálogo existente, não há nova
+    // consulta: o cache local continua sendo reaproveitado.
+    if (loadVehicleCatalog()?.vehicles?.length) return undefined;
+    let active = true;
+    setVehicleSyncMessage('Carregando catálogo de veículos para o Hangar...');
+    ensureVehicleCatalog()
+      .then(result => {
+        if (!active) return;
+        setVehicleSyncMessage(result?.vehicles?.length
+          ? `Catálogo de veículos pronto: ${result.vehicles.length} registros.`
+          : 'A UEX não retornou veículos nesta sincronização.');
+      })
+      .catch(error => {
+        if (!active) return;
+        setVehicleSyncMessage(`Catálogo de veículos não carregado: ${error.message || 'erro de conexão'}.`);
+      });
+    return () => { active = false; };
   }, []);
 
   return (
@@ -829,14 +1219,19 @@ export default function UexApiPage() {
             Dados em tempo real da comunidade Star Citizen via UEX Corp API 2.0 · api.uexcorp.uk/2.0
           </div>
         </div>
-        <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
-          style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(0,212,255,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
-          <ExternalLink size={13}/> Documentação
-        </a>
+        <div style={{ display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end' }}>
+          {vehicleSyncMessage && <span style={{ maxWidth: 280, fontSize: 10, color: vehicleSyncMessage.includes('não carregado') ? 'var(--accent-red)' : 'var(--text-muted)', textAlign: 'right' }}>{vehicleSyncMessage}</span>}
+          <ItemDBSyncButton/>
+          <MarketPricesSyncButton/>
+          <a href="https://uexcorp.space/api/documentation/" target="_blank" rel="noreferrer"
+            style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.08)',border:'1px solid var(--border-normal)',borderRadius:6,color:'var(--accent-primary)',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textDecoration:'none',textTransform:'uppercase',letterSpacing:'0.06em' }}>
+            <ExternalLink size={13}/> Documentação
+          </a>
+        </div>
       </div>
 
       {/* Info banner */}
-      <div style={{ padding:'8px 32px',borderBottom:'1px solid var(--border-subtle)',background:'rgba(0,119,255,0.04)',flexShrink:0,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap' }}>
+      <div style={{ padding:'8px 32px',borderBottom:'1px solid var(--border-subtle)',background:'rgba(99,102,241,0.04)',flexShrink:0,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap' }}>
         <Info size={13} style={{ color:'var(--accent-primary)',flexShrink:0 }}/>
         <span style={{ fontSize:11,color:'var(--text-secondary)' }}>
           Dados crowdsourced pela comunidade Star Citizen. Preços são médias dos últimos 15 dias reportados por jogadminérios.
@@ -859,10 +1254,10 @@ export default function UexApiPage() {
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{
             display:'flex',alignItems:'center',gap:7,padding:'12px 16px',
-            background:activeTab===t.id?'rgba(0,212,255,0.08)':'transparent',
+            background:activeTab===t.id?'rgba(56,189,248,0.08)':'transparent',
             border:'none',borderBottom:`2px solid ${activeTab===t.id?t.color:'transparent'}`,
             color:activeTab===t.id?t.color:'var(--text-secondary)',
-            fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:700,
+            fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,
             letterSpacing:'0.05em',textTransform:'uppercase',cursor:'pointer',
             transition:'all 0.2s',whiteSpace:'nowrap',
           }}>

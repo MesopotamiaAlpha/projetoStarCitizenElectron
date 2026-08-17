@@ -169,7 +169,7 @@ function storageReset(key) { localStorage.removeItem(PREFIX+key); }
 
 // ── Cell editor ───────────────────────────────────────────────────────────────
 function Cell({ value, type, onChange }) {
-  const base = { background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-primary)',outline:'none',padding:'4px 6px',width:'100%',fontFamily:'Rajdhani,sans-serif',fontSize:12 };
+  const base = { background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-primary)',outline:'none',padding:'4px 6px',width:'100%',fontFamily:'"Exo 2",sans-serif',fontSize:12 };
   if (type==='boolean') {
     return <input type="checkbox" checked={!!value} onChange={e=>onChange(e.target.checked)} style={{ width:16,height:16,accentColor:'var(--accent-green)',cursor:'pointer' }}/>;
   }
@@ -262,12 +262,12 @@ export default function DataEditorPage() {
         </div>
         <div style={{ display:'flex',gap:8,alignItems:'center' }}>
           {isModified && (
-            <button onClick={handleReset} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:saveStatus==='reset'?'var(--accent-green)':'var(--text-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',transition:'all 0.2s' }}>
+            <button onClick={handleReset} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:6,color:saveStatus==='reset'?'var(--accent-green)':'var(--text-secondary)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',transition:'all 0.2s' }}>
               <RotateCcw size={13}/>
               {saveStatus==='reset'?'Restaurado!':'Restaurar Padrão'}
             </button>
           )}
-          <button onClick={handleSave} disabled={!tableData} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(0,229,160,0.12)',border:'1px solid rgba(0,229,160,0.35)',borderRadius:6,color:saveStatus==='saved'?'var(--accent-green)':'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',opacity:tableData?1:0.5,transition:'all 0.2s' }}>
+          <button onClick={handleSave} disabled={!tableData} style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 18px',background:'rgba(52,211,153,0.12)',border:'1px solid rgba(52,211,153,0.35)',borderRadius:6,color:saveStatus==='saved'?'var(--accent-green)':'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:tableData?1:0.5,transition:'all 0.2s' }}>
             {saveStatus==='saved'?<Check size={13}/>:<Save size={13}/>}
             {saveStatus==='saved'?'Salvo!':'Salvar Alterações'}
           </button>
@@ -280,7 +280,7 @@ export default function DataEditorPage() {
           <div style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',padding:'0 6px',marginBottom:10 }}>Selecione o dataset</div>
           {groupedDatasets.map(({group,items})=>(
             <div key={group} style={{ marginBottom:8 }}>
-              <button onClick={()=>setExpandGroups(p=>({...p,[group]:!p[group]}))} style={{ display:'flex',alignItems:'center',gap:6,width:'100%',background:'none',border:'none',cursor:'pointer',padding:'6px 6px',color:'var(--text-muted)',fontFamily:'Rajdhani,sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em' }}>
+              <button onClick={()=>setExpandGroups(p=>({...p,[group]:!p[group]}))} style={{ display:'flex',alignItems:'center',gap:6,width:'100%',background:'none',border:'none',cursor:'pointer',padding:'6px 6px',color:'var(--text-muted)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em' }}>
                 {expandGroups[group]?<ChevronDown size={11}/>:<ChevronRight size={11}/>}
                 {group}
               </button>
@@ -288,10 +288,10 @@ export default function DataEditorPage() {
                 <button key={d.key} onClick={()=>setActiveKey(d.key)} style={{
                   display:'flex',alignItems:'center',justifyContent:'space-between',
                   width:'100%',textAlign:'left',padding:'7px 10px 7px 22px',marginBottom:2,
-                  borderRadius:6,cursor:'pointer',background:activeKey===d.key?'rgba(0,212,255,0.1)':'transparent',
+                  borderRadius:6,cursor:'pointer',background:activeKey===d.key?'rgba(56,189,248,0.1)':'transparent',
                   border:`1px solid ${activeKey===d.key?'var(--border-normal)':'transparent'}`,
                   color:activeKey===d.key?'var(--accent-primary)':'var(--text-secondary)',
-                  fontFamily:'Rajdhani,sans-serif',fontSize:12,fontWeight:activeKey===d.key?700:400,
+                  fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:activeKey===d.key?700:400,
                   transition:'all 0.15s',
                 }}>
                   <span>{d.label}</span>
@@ -310,16 +310,16 @@ export default function DataEditorPage() {
           {/* Dataset info bar */}
           <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12 }}>
             <div>
-              <span style={{ fontFamily:'Orbitron,monospace',fontSize:14,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>{dataset.label}</span>
+              <span style={{ fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em' }}>{dataset.label}</span>
               <span style={{ marginLeft:10,fontSize:11,color:'var(--text-muted)' }}>{dataset.group}</span>
-              {isModified && <span style={{ marginLeft:10,fontSize:10,color:'var(--accent-gold)',background:'rgba(255,196,54,0.1)',border:'1px solid rgba(255,196,54,0.25)',borderRadius:3,padding:'1px 7px',fontWeight:700 }}>● PERSONALIZADO</span>}
+              {isModified && <span style={{ marginLeft:10,fontSize:10,color:'var(--accent-gold)',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:3,padding:'1px 7px',fontWeight:700 }}>● PERSONALIZADO</span>}
             </div>
             {tableData && (
               <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)' }}>{tableData.length} linhas · {dataset.fields.length} colunas</span>
             )}
           </div>
 
-          <div style={{ fontSize:12,color:'var(--text-muted)',background:'rgba(0,119,255,0.05)',border:'1px solid rgba(0,119,255,0.12)',borderRadius:6,padding:'8px 12px',marginBottom:14,display:'flex',alignItems:'center',gap:8 }}>
+          <div style={{ fontSize:12,color:'var(--text-muted)',background:'rgba(99,102,241,0.05)',border:'1px solid rgba(99,102,241,0.12)',borderRadius:6,padding:'8px 12px',marginBottom:14,display:'flex',alignItems:'center',gap:8 }}>
             <AlertTriangle size={13} style={{ color:'var(--accent-primary)',flexShrink:0 }}/>
             Edite qualquer célula, adicione ou remova linhas e clique em <strong style={{ color:'var(--accent-green)' }}>Salvar Alterações</strong>. As mudanças serão aplicadas imediatamente na ferramenta correspondente. <strong style={{ color:'var(--accent-gold)' }}>Restaurar Padrão</strong> volta aos valores originais do jogo.
           </div>
@@ -335,7 +335,7 @@ export default function DataEditorPage() {
                     <tr style={{ background:'var(--bg-panel)',position:'sticky',top:0,zIndex:1 }}>
                       <th style={{ padding:'8px 6px',borderBottom:'1px solid var(--border-subtle)',width:60,fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em' }}>AÇÕES</th>
                       {dataset.fields.map(f=>(
-                        <th key={f.k} style={{ padding:'8px 10px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',color:'var(--accent-primary)',fontWeight:700,whiteSpace:'nowrap',fontFamily:'Rajdhani,sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em',borderLeft:'1px solid var(--border-subtle)' }}>
+                        <th key={f.k} style={{ padding:'8px 10px',textAlign:'left',borderBottom:'1px solid var(--border-subtle)',color:'var(--accent-primary)',fontWeight:700,whiteSpace:'nowrap',fontFamily:'"Exo 2",sans-serif',fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em',borderLeft:'1px solid var(--border-subtle)' }}>
                           {f.k}
                           <span style={{ marginLeft:4,fontSize:9,color:'var(--text-muted)',fontWeight:400,textTransform:'none',letterSpacing:0 }}>({f.t})</span>
                         </th>
@@ -345,14 +345,14 @@ export default function DataEditorPage() {
                   <tbody>
                     {tableData.map((row,rowIdx)=>(
                       <tr key={rowIdx} style={{ borderBottom:'1px solid var(--border-subtle)',background:rowIdx%2===0?'transparent':'rgba(255,255,255,0.015)' }}
-                        onMouseEnter={e=>e.currentTarget.style.background='rgba(0,212,255,0.04)'}
+                        onMouseEnter={e=>e.currentTarget.style.background='rgba(56,189,248,0.04)'}
                         onMouseLeave={e=>e.currentTarget.style.background=rowIdx%2===0?'transparent':'rgba(255,255,255,0.015)'}
                       >
                         <td style={{ padding:'4px 6px',textAlign:'center',verticalAlign:'middle' }}>
                           <div style={{ display:'flex',gap:3,justifyContent:'center' }}>
                             <button onClick={()=>handleMoveRow(rowIdx,-1)} disabled={rowIdx===0} title="Mover para cima" style={{ width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-muted)',cursor:rowIdx===0?'default':'pointer',opacity:rowIdx===0?0.3:1,fontSize:11 }}>↑</button>
                             <button onClick={()=>handleMoveRow(rowIdx,1)} disabled={rowIdx===tableData.length-1} title="Mover para baixo" style={{ width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,0.04)',border:'1px solid var(--border-subtle)',borderRadius:3,color:'var(--text-muted)',cursor:rowIdx===tableData.length-1?'default':'pointer',opacity:rowIdx===tableData.length-1?0.3:1,fontSize:11 }}>↓</button>
-                            <button onClick={()=>handleDeleteRow(rowIdx)} title="Remover linha" style={{ width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(255,68,102,0.08)',border:'1px solid rgba(255,68,102,0.2)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer' }}>
+                            <button onClick={()=>handleDeleteRow(rowIdx)} title="Remover linha" style={{ width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer' }}>
                               <Trash2 size={10}/>
                             </button>
                           </div>
@@ -369,7 +369,7 @@ export default function DataEditorPage() {
               </div>
 
               {/* Add row button */}
-              <button onClick={handleAddRow} style={{ display:'flex',alignItems:'center',gap:8,padding:'9px 18px',background:'rgba(0,229,160,0.08)',border:'1px solid rgba(0,229,160,0.25)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'Rajdhani,sans-serif',textTransform:'uppercase',letterSpacing:'0.08em' }}>
+              <button onClick={handleAddRow} style={{ display:'flex',alignItems:'center',gap:8,padding:'9px 18px',background:'rgba(52,211,153,0.08)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:6,color:'var(--accent-green)',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',letterSpacing:'0.08em' }}>
                 <Plus size={14}/> Adicionar Nova Linha
               </button>
             </>
