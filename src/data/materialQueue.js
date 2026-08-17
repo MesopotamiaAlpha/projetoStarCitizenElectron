@@ -50,6 +50,11 @@ export function materialKey(materialName, qualityMin = 0) {
   return `${String(materialName || '').trim().toLowerCase()}::q${normalizeQualityMin(qualityMin)}`;
 }
 
+// Compatibilidade com blueprints antigas que podem ter usado qualityMin ou quality.
+export function getIngredientQualityMin(ingredient = {}) {
+  return normalizeQualityMin(ingredient.quality_min ?? ingredient.qualityMin ?? ingredient.quality ?? 0);
+}
+
 function legacyMaterialKey(materialName) {
   return String(materialName || '').trim().toLowerCase();
 }
@@ -79,7 +84,7 @@ export function queueBlueprint(bp, quantity = 1) {
       ingredients: (bp.ingredients || []).map(i => ({
         material_name: i.material_name,
         quantity:      i.quantity,
-        quality_min:   normalizeQualityMin(i.quality_min),
+        quality_min:   getIngredientQualityMin(i),
         unit:          i.unit || 'un',
       })),
     });
@@ -208,7 +213,7 @@ export function calcShoppingList(queue, stockEntries) {
   const map = {};
   for (const bp of queue.queuedBlueprints) {
     for (const ing of bp.ingredients || []) {
-      const qualityMin = normalizeQualityMin(ing.quality_min);
+      const qualityMin = getIngredientQualityMin(ing);
       const key = materialKey(ing.material_name, qualityMin);
       if (!map[key]) {
                 map[key] = {

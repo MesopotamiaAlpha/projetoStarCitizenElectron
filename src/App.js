@@ -19,8 +19,8 @@ import MarketAlertsPage   from './pages/MarketAlertsPage';
 import BackupPage         from './pages/BackupPage';
 import DataDirectoryPage  from './pages/DataDirectoryPage';
 import NotesPage          from './pages/NotesPage';
-import LocationsAdminPage from './pages/LocationsAdminPage';
-import { MissionAdminPage } from './pages/MissionAdminPage';
+import SystemAdminPage from './pages/SystemAdminPage';
+import UsefulLinksPage from './pages/UsefulLinksPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
@@ -28,10 +28,12 @@ import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
 import ContextHelpOverlay from './components/ContextHelpOverlay';
-import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell } from 'lucide-react';
+import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
-import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord } from './data/missionAutoMonitor';
+import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
+import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
+import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -58,6 +60,7 @@ function buildMockAPI() {
       pieces:(s.pieces||[]).map(p=>({
         ...p,
         owned:state[`p${p.id}o`]||0,
+        quantity: state[`p${p.id}q`] !== undefined ? Math.max(0, Number(state[`p${p.id}q`]) || 0) : (state[`p${p.id}o`] ? 1 : 0),
         wishlist:state[`p${p.id}w`]||0,
         notes:state[`p${p.id}n`]||'',
         obtained_date:state[`p${p.id}d`]||null,
@@ -73,8 +76,8 @@ function buildMockAPI() {
     togglePiece: async (id) => {
       const state=load();
       const n=(state[`p${id}o`]||0)?0:1;
-      state[`p${id}o`]=n; state[`p${id}d`]=n?new Date().toISOString():null;
-      save(state); return {owned:n};
+      state[`p${id}o`]=n; state[`p${id}q`]=n ? Math.max(1, Number(state[`p${id}q`]) || 1) : 0; state[`p${id}d`]=n?new Date().toISOString():null;
+      save(state); return {owned:n, quantity:state[`p${id}q`]};
     },
     togglePieceWishlist: async (id) => {
       const state=load();
@@ -83,6 +86,14 @@ function buildMockAPI() {
     },
     updatePieceNotes: async (id,notes) => {
       const state=load(); state[`p${id}n`]=notes; save(state); return {success:true};
+    },
+    updatePieceQuantity: async (id, quantity) => {
+      const state=load();
+      const nextQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
+      state[`p${id}q`] = nextQuantity;
+      state[`p${id}o`] = nextQuantity > 0 ? 1 : 0;
+      state[`p${id}d`] = nextQuantity > 0 ? (state[`p${id}d`] || new Date().toISOString()) : null;
+      save(state); return {success:true, quantity:nextQuantity, owned:state[`p${id}o`]};
     },
     getStats: async () => {
       const state=load();
@@ -102,6 +113,8 @@ function buildMockAPI() {
     },
     createCustomSet: async ({set,pieces}) => {
       const state=load();
+      const all=[...MOCK,...(state._custom||[])];
+      if (all.some(existing => getArmorIdentity(existing) === getArmorIdentity(set))) return {success:false,duplicate:true,error:'Esta armadura já está cadastrada.'};
       const id=Date.now();
       const newPieces=(pieces||[]).map((p,i)=>({...p,id:id*100+i+1,set_id:id,is_lootable:p.is_lootable?1:0,is_purchasable:p.is_purchasable?1:0,owned:0,wishlist:0,notes:'',obtained_date:null}));
       const ns={...set,id,is_custom:1,set_name:set.variant_name&&set.variant_name!=='Base'?`${set.base_name||set.set_name} — ${set.variant_name}`:set.base_name||set.set_name,pieces:newPieces};
@@ -125,6 +138,16 @@ function buildMockAPI() {
     },
     deleteCustomSet: async (setId) => {
       const state=load(); state._custom=(state._custom||[]).filter(s=>s.id!==setId); save(state); return {success:true};
+    },
+    getDuplicateCustomSets: async () => {
+      const state=load();
+      return getDuplicateArmorGroups(state._custom||[]);
+    },
+    deleteCustomSets: async (ids) => {
+      const state=load();
+      const selected=new Set((Array.isArray(ids)?ids:[]).map(Number));
+      state._custom=(state._custom||[]).filter(set => !selected.has(Number(set.id)));
+      save(state); return {success:true,deleted:[...selected]};
     },
     deleteCustomPiece: async (pieceId) => {
       const state=load();
@@ -189,8 +212,8 @@ const NAV_GROUPS = [
     { id:'backup', label:'Backup & Restauração', icon:Save },
     { id:'data-directory', label:'Diretório de Dados', icon:FolderCog },
     { id:'notes',  label:'Bloco de Notas',          icon:Edit3 },
-    { id:'locations', label:'Adicionar Local',       icon:Globe  },
-    { id:'mission-admin', label:'Gerenciador de Missões', icon:ListChecks },
+    { id:'system-admin', label:'Administradores do Sistema', icon:FolderCog },
+    { id:'useful-links', label:'Links Úteis', icon:Link2 },
   ]},
 ];
 
@@ -200,6 +223,7 @@ const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [pendingNegotiationHash, setPendingNegotiationHash] = useState('');
   const [sets,       setSets]       = useState([]);
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -217,10 +241,14 @@ export default function App() {
   useEffect(() => {
     const api = window.electronAPI;
     if (!api?.onMissionMonitorEvent || !api?.onMissionMonitorStatus) return undefined;
-    const cleanEvent = api.onMissionMonitorEvent(event => {
+    const cleanEvent = api.onMissionMonitorEvent(async event => {
       const catalog = loadMissionAdmin();
       const typeNames = getMissionAdminOptions('types', '', catalog).map(option => option.name);
-      upsertAutomaticMissionRecord(event, typeNames);
+      const mission = upsertAutomaticMissionRecord(event, typeNames);
+      if (event?.type === 'mission_complete' && mission) {
+        const rewardResult = await dispatchMissionRewardsToDefaultInventory(mission);
+        updateStoredMissionRecord(rewardResult.mission || mission);
+      }
       appendMissionAutoMonitorEvent(event);
     });
     const cleanStatus = api.onMissionMonitorStatus(status => setMissionAutoMonitorStatus(status));
@@ -246,7 +274,12 @@ export default function App() {
     });
   }
 
-  function goToPage(pageId) {
+  function goToPage(pageId, options = {}) {
+    if (pageId === 'uexnegotiations') {
+      setPendingNegotiationHash(String(options?.negotiationHash || '').trim());
+    } else {
+      setPendingNegotiationHash('');
+    }
     setActivePage(pageId);
     // Garante que a seção da página escolhida esteja aberta
     const group = NAV_GROUPS.find(g => g.pages.some(p => p.id === pageId));
@@ -336,14 +369,14 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-badge">v1.0</span>
+          <span className="version-badge">v1.6.5</span>
         </div>
       </aside>
 
       <main className="main-content">
         <div key={activePage} className="page-transition-shell" data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
-          {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} />}
+          {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
           {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
           {activePage==='inventory'  && <InventoryPage />}
           {activePage==='blueprints' && <BlueprintPage />}
@@ -354,8 +387,13 @@ export default function App() {
           {activePage==='clanvault' && <ClanVaultPage />}
           {activePage==='missions'   && <MissionTrackerPage />}
           {activePage==='orevault'   && <OreVaultPage />}
-          {activePage==='uexsales'   && <UexSalesPage />}
-          {activePage==='uexnegotiations' && <UexNegotiationsPage />}
+          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} />}
+          {activePage==='uexnegotiations' && (
+            <UexNegotiationsPage
+              targetNegotiationHash={pendingNegotiationHash}
+              onTargetNegotiationConsumed={() => setPendingNegotiationHash('')}
+            />
+          )}
           {activePage==='wikelo'     && <WikeloTrackerPage />}
           {activePage==='uexapi'     && <UexApiPage />}
           {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}
@@ -364,8 +402,8 @@ export default function App() {
           {activePage==='backup'     && <BackupPage />}
           {activePage==='data-directory' && <DataDirectoryPage />}
           {activePage==='notes'      && <NotesPage />}
-          {activePage==='locations'   && <LocationsAdminPage />}
-          {activePage==='mission-admin' && <MissionAdminPage />}
+          {activePage==='system-admin' && <SystemAdminPage />}
+          {activePage==='useful-links' && <UsefulLinksPage />}
         </div>
       </main>
 

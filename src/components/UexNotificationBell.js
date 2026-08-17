@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX } from 'lucide-react';
+import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX, ArrowRight, ExternalLink } from 'lucide-react';
 import { loadToken, checkForUpdates, messageIdentity, notificationIdentity, isCrossFeedDuplicate } from '../data/uexNegotiations';
 import { checkMarketAlerts, focusMarketAlert, loadMarketAlertSettings, MARKET_ALERT_SETTINGS_UPDATED_EVENT } from '../data/uexMarketAlerts';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, getActiveNegotiationHash } from '../data/uexUiEvents';
@@ -188,6 +188,18 @@ export default function UexNotificationBell({ onNavigate }) {
     setItems([]);
   }
 
+  function handleOpenNegotiation(item) {
+    const hash = String(item?.negotiationHash || '').trim();
+    if (!hash) {
+      onNavigate && onNavigate('uexnegotiations');
+      setOpen(false);
+      return;
+    }
+    setItems(previous => previous.filter(current => current.key !== item.key));
+    setOpen(false);
+    onNavigate && onNavigate('uexnegotiations', { negotiationHash: hash });
+  }
+
   function timeAgo(ts) {
     if (!ts) return '';
     const diffMin = Math.max(0, Math.round((Date.now() - ts) / 60000));
@@ -287,14 +299,29 @@ export default function UexNotificationBell({ onNavigate }) {
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>{item.location || 'Local não informado'}{item.seller ? ` · ${item.seller}` : ''}{item.source ? ` · ${item.source}` : ''}</div>
                     </button>
                   ) : item.kind === 'message' ? (
-                    <>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {item.fromUser || 'Comprador/Vendedor'} · {item.listingTitle}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenNegotiation(item)}
+                      className="uex-notification-message-link"
+                      style={{ display: 'block', width: '100%', padding: 0, color: 'inherit', background: 'none', border: 0, textAlign: 'left', cursor: 'pointer' }}
+                      title="Abrir esta negociação UEX"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.fromUser || 'Comprador/Vendedor'}
+                        </span>
+                        <ArrowRight size={12} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.listingTitle || 'Negociação UEX'}
+                        </span>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, wordBreak: 'break-word' }}>
+                      <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
                         {item.message}
                       </div>
-                    </>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, color: 'var(--accent-primary)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Abrir conversa <ExternalLink size={11} />
+                      </div>
+                    </button>
                   ) : (
                     <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>{item.message}</div>
                   )}

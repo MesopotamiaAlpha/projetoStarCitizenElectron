@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useDeferredValue } from 'react';
 import {
   TrendingUp, TrendingDown, RefreshCw, Plus, Edit3, Trash2,
   Save, X, Search, Package, DollarSign, BarChart3, ShoppingBag,
@@ -12,6 +12,9 @@ import { normalizeUexItemName } from '../data/uexItemsDB';
 import { buildUexListingUrl } from '../data/uexNegotiations';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
+import { loadVault, consumeVaultEntries } from '../data/oreVault';
+import { CARGO_UNITS, isCargoUnit, areCargoUnitsCompatible, normalizeCargoUnit, cargoEquivalentTotal, toCargoBase } from '../data/cargoUnits';
+import { recommendDiscount, extractActiveCompetitorPrices } from '../data/uexDiscount';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 const TOKEN_KEY    = 'sc_uex_token_v1';
@@ -83,6 +86,42 @@ function normalizeInventoryName(value) {
   return normalizeUexItemName(value).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function getInventoryReservedQuantity(item) {
+  let rows = item?.reservations;
+  if (typeof rows === 'string') {
+    try { rows = JSON.parse(rows); } catch { rows = []; }
+  }
+  if (!Array.isArray(rows)) rows = [];
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  const reserved = rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity ?? row?.amount) || 0), 0);
+  return Math.min(total, reserved);
+}
+
+function getInventoryAvailableQuantity(item) {
+  return Math.max(0, (Number(item?.quantity) || 0) - getInventoryReservedQuantity(item));
+}
+
+function getCatalogListingTarget(item = {}) {
+  const directUrl = [
+    item.listing_url,
+    item.listingUrl,
+    item.source_listing_url,
+    item.sourceListingUrl,
+    item.url,
+    item.link,
+  ].map(value => String(value || '').trim()).find(value => /^https?:\/\//i.test(value));
+  if (directUrl) return { url: directUrl, exact: true };
+
+  const slug = item.listing_slug || item.listingSlug || item.source_listing_slug || item.sourceListingSlug || item.slug;
+  if (slug) return { url: buildUexListingUrl(slug), exact: true };
+
+  const title = String(item.title || '').trim();
+  return {
+    url: title ? `https://uexcorp.space/marketplace/home/?search=${encodeURIComponent(title)}` : 'https://uexcorp.space/marketplace/',
+    exact: false,
+  };
+}
+
 function normalizeMarketSlug(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -109,18 +148,169 @@ function inventoryLocationKey(item) {
 }
 
 function getInventoryBinding(item) {
-  const raw = item?.inventory_binding;
-  const locationKeys = Array.isArray(raw?.locationKeys)
-    ? [...new Set(raw.locationKeys.map(key => String(key || '').trim()).filter(Boolean))]
-    : [];
-  return { locationKeys, linked: locationKeys.length > 0, updatedAt: raw?.updatedAt || null };
+  const raw = item?.inventory_binding || {};
+  // Compatibilidade: versões antigas guardavam `locationKey` singular.
+  // A leitura converte automaticamente o formato antigo para a lista nova.
+  const candidates = [
+    ...(Array.isArray(raw.locationKeys) ? raw.locationKeys : []),
+    ...(Array.isArray(raw.location_keys) ? raw.location_keys : []),
+    ...(Array.isArray(raw.locations) ? raw.locations : []),
+    ...(raw.locationKey ? [raw.locationKey] : []),
+  ];
+  const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
+  const armorPieceIds = [...new Set((Array.isArray(raw.armorPieceIds) ? raw.armorPieceIds : Array.isArray(raw.armor_piece_ids) ? raw.armor_piece_ids : []).map(id => String(id || '').trim()).filter(Boolean))];
+  return { locationKeys, armorPieceIds, linked: locationKeys.length > 0 || armorPieceIds.length > 0, updatedAt: raw.updatedAt || null };
 }
 
-function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = []) {
+function getVaultBinding(item) {
+  const raw = item?.vault_binding || {};
+  const entryIds = Array.isArray(raw.entryIds)
+    ? [...new Set(raw.entryIds.map(id => String(id || '').trim()).filter(Boolean))]
+    : [];
+  const boxUnit = normalizeCargoUnit(raw.boxUnit || 'un');
+  const boxQuantity = Number(raw.boxQuantity);
+  return {
+    entryIds,
+    boxUnit,
+    boxQuantity: Number.isFinite(boxQuantity) && boxQuantity > 0 ? boxQuantity : 1,
+    quality: raw.quality || '',
+    linked: entryIds.length > 0,
+    updatedAt: raw.updatedAt || null,
+  };
+}
+
+function vaultEntryLabel(entry) {
+  const quality = String(entry?.quality || '').trim() || 'Qualidade não informada';
+  const location = String(entry?.location || '').trim() || 'Local não informado';
+  return `${quality} · ${location}`;
+}
+
+function getVaultStockSummary(listing, vaultEntries = []) {
+  const name = normalizeInventoryName(listing?.title);
+  const matches = (Array.isArray(vaultEntries) ? vaultEntries : [])
+    .filter(entry => normalizeInventoryName(entry?.ore_name) === name);
+  const binding = getVaultBinding(listing);
+  const selected = matches.filter(entry => binding.entryIds.includes(String(entry.id)));
+  const unitsCompatible = selected.length > 0 && selected.every(entry => isCargoUnit(binding.boxUnit)
+    ? areCargoUnitsCompatible(entry.unit, binding.boxUnit)
+    : normalizeCargoUnit(entry.unit || 'un') === binding.boxUnit);
+  const total = selected.length && unitsCompatible
+    ? cargoEquivalentTotal(selected, binding.boxUnit).total
+    : selected.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0);
+  const boxBase = isCargoUnit(binding.boxUnit) ? toCargoBase(binding.boxQuantity, binding.boxUnit) : binding.boxQuantity;
+  const stockBase = isCargoUnit(binding.boxUnit) ? toCargoBase(total, binding.boxUnit) : total;
+  const boxesAvailable = boxBase > 0 && unitsCompatible ? Math.floor((stockBase + 1e-9) / boxBase) : 0;
+  return {
+    name,
+    matches,
+    selected,
+    binding,
+    hasMatch: matches.length > 0,
+    isLinked: binding.linked && selected.length > 0,
+    unitsCompatible,
+    total,
+    boxesAvailable,
+    boxesAfterListing: boxesAvailable - Math.max(0, Number(listing?.in_stock) || 0),
+  };
+}
+
+function VaultStockLinkModal({ listing, vaultEntries, onSave, onClose }) {
+  const summary = getVaultStockSummary(listing, vaultEntries);
+  const [selectedIds, setSelectedIds] = useState(() => summary.binding.entryIds);
+  const [boxQuantity, setBoxQuantity] = useState(String(summary.binding.boxQuantity || 1));
+  const [boxUnit, setBoxUnit] = useState(summary.binding.linked ? summary.binding.boxUnit : normalizeCargoUnit(summary.matches[0]?.unit || 'un'));
+  const selectedEntries = summary.matches.filter(entry => selectedIds.includes(String(entry.id)));
+  const selectedTotal = selectedEntries.length && (isCargoUnit(boxUnit) ? selectedEntries.every(entry => isCargoUnit(entry.unit)) : selectedEntries.every(entry => normalizeCargoUnit(entry.unit || 'un') === boxUnit))
+    ? cargoEquivalentTotal(selectedEntries, boxUnit).total
+    : selectedEntries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+  const numericBoxQuantity = Number(String(boxQuantity).replace(',', '.')) || 0;
+  const boxesAvailable = numericBoxQuantity > 0 && selectedEntries.length
+    ? (isCargoUnit(boxUnit) ? Math.floor((toCargoBase(selectedTotal, boxUnit) + 1e-9) / toCargoBase(numericBoxQuantity, boxUnit)) : Math.floor(selectedTotal / numericBoxQuantity))
+    : 0;
+
+  function toggleEntry(entry) {
+    const id = String(entry.id);
+    setSelectedIds(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
+  }
+
+  function handleSave() {
+    if (!selectedIds.length || numericBoxQuantity <= 0) return;
+    const qualities = [...new Set(selectedEntries.map(entry => String(entry.quality || '').trim()).filter(Boolean))];
+    onSave({ entryIds: selectedIds, boxQuantity: numericBoxQuantity, boxUnit: normalizeCargoUnit(boxUnit), quality: qualities.length === 1 ? qualities[0] : qualities.join(' + '), updatedAt: new Date().toISOString() });
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:1350, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div style={{ width:'min(650px,100%)', maxHeight:'92vh', overflowY:'auto', background:'var(--bg-card)', border:'1px solid rgba(52,211,153,0.36)', borderRadius:12, padding:18, boxShadow:'0 24px 80px rgba(0,0,0,0.7)' }} onMouseDown={event => event.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:9, fontWeight:800, color:'var(--accent-green)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Vínculo com o Baú de Minério</div>
+            <h3 style={{ margin:'5px 0 0', color:'var(--text-primary)', fontFamily:'Michroma,sans-serif', fontSize:15 }}>{listing.title}</h3>
+            <div style={{ marginTop:4, color:'var(--text-muted)', fontSize:11 }}>Selecione a qualidade e os locais exatos que fornecem cada caixa anunciada.</div>
+          </div>
+          <button onClick={onClose} title="Fechar" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-muted)', cursor:'pointer' }}><X size={14}/></button>
+        </div>
+
+        {!summary.hasMatch ? (
+          <div style={{ padding:12, border:'1px solid rgba(251,191,36,0.28)', background:'rgba(251,191,36,0.07)', borderRadius:7, color:'var(--accent-gold)', fontSize:11, lineHeight:1.55 }}>Este minério ainda não existe no Baú. Cadastre primeiro a quantidade, a unidade, a qualidade e o local no Baú de Minério.</div>
+        ) : (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+              <div>
+                <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', marginBottom:4 }}>Quantidade por caixa</label>
+                <input type="text" inputMode="decimal" value={boxQuantity} onChange={event => setBoxQuantity(event.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'7px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12, outline:'none' }}/>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:10, color:'var(--text-muted)', fontWeight:700, textTransform:'uppercase', marginBottom:4 }}>Unidade da caixa</label>
+                <select value={boxUnit} onChange={event => setBoxUnit(event.target.value)} style={{ width:'100%', boxSizing:'border-box', padding:'7px 9px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12, outline:'none' }}>
+                  <option value="un">un</option>
+                  {CARGO_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:7, marginBottom:10 }}>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(52,211,153,0.2)', background:'rgba(52,211,153,0.06)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Estoque selecionado</div><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{selectedTotal} {boxUnit}</strong></div>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(56,189,248,0.2)', background:'rgba(56,189,248,0.05)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Caixas possíveis</div><strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{boxesAvailable}</strong></div>
+              <div style={{ padding:'8px 9px', border:'1px solid rgba(251,191,36,0.2)', background:'rgba(251,191,36,0.05)', borderRadius:6 }}><div style={{ fontSize:9, color:'var(--text-muted)' }}>Qualidade</div><strong style={{ color:'var(--accent-gold)', fontSize:11 }}>{[...new Set(selectedEntries.map(entry => String(entry.quality || '').trim()).filter(Boolean))].join(' + ') || '—'}</strong></div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {summary.matches.map(entry => {
+                const selected = selectedIds.includes(String(entry.id));
+                return <label key={entry.id} style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 10px', border:`1px solid ${selected ? 'rgba(52,211,153,0.45)' : 'var(--border-subtle)'}`, background:selected ? 'rgba(52,211,153,0.09)' : 'rgba(255,255,255,0.02)', borderRadius:7, cursor:'pointer' }}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleEntry(entry)} />
+                  <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}><strong style={{ color:'var(--accent-gold)' }}>{entry.quality || 'Qualidade não informada'}</strong> · {entry.location || 'Local não informado'}</span>
+                  <strong style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:12 }}>{entry.quantity} {entry.unit || 'un'}</strong>
+                </label>;
+              })}
+            </div>
+            <div style={{ marginTop:9, color:'var(--text-muted)', fontSize:10, lineHeight:1.45 }}>Para minérios em SCU/cSCU/mSCU/μSCU, a quantidade acima representa uma caixa. Para Sadaryx e outros registros em `un`, cada caixa equivale a uma unidade.</div>
+          </>
+        )}
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:7, marginTop:15 }}>
+          <button onClick={onClose} style={{ padding:'7px 12px', border:'1px solid var(--border-subtle)', borderRadius:5, background:'transparent', color:'var(--text-secondary)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Cancelar</button>
+          {summary.binding.linked && <button onClick={() => onSave(null)} style={{ padding:'7px 12px', border:'1px solid rgba(251,113,133,0.28)', borderRadius:5, background:'rgba(251,113,133,0.07)', color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700 }}>Remover vínculo</button>}
+          <button onClick={handleSave} disabled={!summary.hasMatch || !selectedIds.length || numericBoxQuantity <= 0} style={{ padding:'7px 12px', border:'1px solid rgba(52,211,153,0.35)', borderRadius:5, background:'rgba(52,211,153,0.1)', color:'var(--accent-green)', cursor:'pointer', opacity:summary.hasMatch && selectedIds.length && numericBoxQuantity > 0 ? 1 : 0.5, fontSize:11, fontWeight:700 }}><Save size={11}/> Salvar vínculo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getArmorCollectionMatches(listing, armorSets = []) {
+  const target = normalizeInventoryName(listing?.title);
+  if (!target) return [];
+  return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
+    .filter(piece => normalizeInventoryName(piece.piece_name) === target);
+}
+
+function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = []) {
   const name = normalizeInventoryName(listing?.title);
   const matches = (Array.isArray(inventoryItems) ? inventoryItems : [])
     .filter(entry => normalizeInventoryName(entry?.name) === name);
   const binding = getInventoryBinding(listing);
+  const armorMatches = getArmorCollectionMatches(listing, armorSets);
+  const linkedArmor = armorMatches.filter(piece => binding.armorPieceIds.includes(String(piece.id)));
+  const armorQuantity = linkedArmor.reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
   const locationMap = new Map((managedLocations || []).map(location => [location.key, location]));
   const locationRows = [...new Map(matches.map(entry => {
     const key = inventoryLocationKey(entry);
@@ -132,31 +322,44 @@ function getInventoryStockSummary(listing, inventoryItems = [], managedLocations
       location_type: entry.location_type || 'Outros',
       location_name: entry.location_name || 'Local não informado',
       quantity: 0,
+      reservedQuantity: 0,
     }];
   })).values()];
   matches.forEach(entry => {
     const row = locationRows.find(candidate => candidate.key === inventoryLocationKey(entry));
-    if (row) row.quantity += Math.max(0, Number(entry.quantity) || 0);
+    if (row) {
+      row.quantity += getInventoryAvailableQuantity(entry);
+      row.reservedQuantity += getInventoryReservedQuantity(entry);
+    }
   });
   binding.locationKeys.forEach(key => {
     if (locationRows.some(row => row.key === key)) return;
     const [system = 'Outro', location_type = 'Outros', location_name = 'Local não informado'] = key.split('::');
     const managed = locationMap.get(key);
-    locationRows.push({ key, label: managed?.label || `${location_name} · ${system} · ${location_type}`, system, location_type, location_name, quantity: 0 });
+    locationRows.push({ key, label: managed?.label || `${location_name} · ${system} · ${location_type}`, system, location_type, location_name, quantity: 0, reservedQuantity: 0 });
   });
-  const allQuantity = matches.reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
+  const allQuantity = matches.reduce((total, entry) => total + getInventoryAvailableQuantity(entry), 0);
+  const allReservedQuantity = matches.reduce((total, entry) => total + getInventoryReservedQuantity(entry), 0);
   const linkedMatches = binding.linked ? matches.filter(entry => binding.locationKeys.includes(inventoryLocationKey(entry))) : [];
-  const linkedQuantity = linkedMatches.reduce((total, entry) => total + Math.max(0, Number(entry.quantity) || 0), 0);
-  const quantity = binding.linked ? linkedQuantity : allQuantity;
+  const linkedQuantity = linkedMatches.reduce((total, entry) => total + getInventoryAvailableQuantity(entry), 0);
+  const linkedReservedQuantity = linkedMatches.reduce((total, entry) => total + getInventoryReservedQuantity(entry), 0);
+  const quantity = (binding.locationKeys.length > 0 ? linkedQuantity : allQuantity) + armorQuantity;
+  const reservedQuantity = (binding.locationKeys.length > 0 ? linkedReservedQuantity : allReservedQuantity);
   return {
     name,
     matches,
+    armorMatches,
+    linkedArmor,
+    armorQuantity,
     locationRows,
     binding,
-    hasMatch: matches.length > 0,
+    hasMatch: matches.length > 0 || armorMatches.length > 0,
     isLinked: binding.linked,
     allQuantity,
+    allReservedQuantity,
     linkedQuantity,
+    linkedReservedQuantity,
+    reservedQuantity,
     quantity,
     surplus: quantity - Math.max(0, Number(listing?.in_stock) || 0),
   };
@@ -252,12 +455,14 @@ function MiniBarChart({ data, color='var(--accent-primary)', height=80 }) {
 }
 
 // ── Modal de vínculo com o Inventário de Itens ─────────────────────────────────
-function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, onSave, onClose }) {
-  const summary = getInventoryStockSummary(listing, inventoryItems, managedLocations);
+function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, armorSets = [], onSave, onClose }) {
+  const summary = getInventoryStockSummary(listing, inventoryItems, managedLocations, armorSets);
   const [selectedKeys, setSelectedKeys] = useState(() => summary.binding.locationKeys);
+  const [selectedArmorIds, setSelectedArmorIds] = useState(() => summary.binding.armorPieceIds);
   const selectedQuantity = summary.locationRows
     .filter(row => selectedKeys.includes(row.key))
     .reduce((total, row) => total + row.quantity, 0);
+  const selectedArmorQuantity = summary.armorMatches.filter(piece => selectedArmorIds.includes(String(piece.id))).reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
 
   function toggleLocation(key) {
     setSelectedKeys(previous => previous.includes(key)
@@ -265,8 +470,13 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, on
       : [...previous, key]);
   }
 
+  function toggleArmor(id) {
+    const key = String(id);
+    setSelectedArmorIds(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key]);
+  }
+
   function handleSave() {
-    onSave(selectedKeys.length ? { locationKeys: selectedKeys, updatedAt: new Date().toISOString() } : null);
+    onSave(selectedKeys.length || selectedArmorIds.length ? { locationKeys: selectedKeys, armorPieceIds: selectedArmorIds, updatedAt: new Date().toISOString() } : null);
   }
 
   return (
@@ -283,16 +493,41 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, on
 
         {!summary.hasMatch ? (
           <div style={{ padding:12, border:'1px solid rgba(251,191,36,0.28)', background:'rgba(251,191,36,0.07)', borderRadius:7, color:'var(--accent-gold)', fontSize:11, lineHeight:1.55 }}>
-            Este item ainda não existe no Inventário de Itens. Cadastre <strong>{listing.title}</strong> no inventário para que os locais apareçam aqui e o estoque seja calculado automaticamente.
+            Este item ainda não existe no Inventário de Itens nem na Coleção de Armaduras. Cadastre <strong>{listing.title}</strong> em uma dessas telas para vincular o estoque.
           </div>
         ) : (
           <>
-            <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap', marginBottom:9, padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
-              <span style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</span>
-              <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity} unidade{selectedQuantity === 1 ? '' : 's'}</strong>
+            {summary.armorMatches.length > 0 && (
+              <div style={{ marginBottom:12, padding:10, border:'1px solid rgba(167,139,250,0.28)', background:'rgba(167,139,250,0.06)', borderRadius:7 }}>
+                <div style={{ color:'var(--accent-purple)', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Coleção de armaduras</div>
+                <div style={{ color:'var(--text-muted)', fontSize:10, marginBottom:8 }}>Selecione as peças que devem alimentar este anúncio. A quantidade é lida diretamente da sua coleção.</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                  {summary.armorMatches.map(piece => {
+                    const quantity = Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0);
+                    const selected = selectedArmorIds.includes(String(piece.id));
+                    return <label key={piece.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', border:`1px solid ${selected ? 'rgba(167,139,250,0.45)' : 'var(--border-subtle)'}`, background:selected ? 'rgba(167,139,250,0.1)' : 'rgba(255,255,255,0.02)', borderRadius:6, cursor:quantity > 0 ? 'pointer' : 'not-allowed', opacity:quantity > 0 ? 1 : 0.55 }}>
+                      <input type="checkbox" checked={selected} disabled={quantity <= 0} onChange={() => toggleArmor(piece.id)} />
+                      <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}>{piece.armor_set_name}{piece.armor_variant_name && piece.armor_variant_name !== 'Base' ? ` · ${piece.armor_variant_name}` : ''}</span>
+                      <strong style={{ color:'var(--accent-purple)', fontFamily:'Share Tech Mono,monospace', fontSize:11 }}>{quantity} un</strong>
+                    </label>;
+                  })}
+                </div>
+                <div style={{ marginTop:8, color:'var(--text-secondary)', fontSize:10 }}>Coleção selecionada: <strong style={{ color:'var(--accent-purple)' }}>{selectedArmorQuantity} unidades</strong></div>
+              </div>
+            )}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
+              <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10 }}>Locais selecionados</div>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedKeys.length}</strong>
+              </div>
+              <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</div>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity + selectedArmorQuantity} unidade{selectedQuantity + selectedArmorQuantity === 1 ? '' : 's'}</strong>
+              </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {summary.locationRows.map(row => (
+
                 <label key={row.key} style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 10px', border:`1px solid ${selectedKeys.includes(row.key) ? 'rgba(56,189,248,0.45)' : 'var(--border-subtle)'}`, background:selectedKeys.includes(row.key) ? 'rgba(56,189,248,0.09)' : 'rgba(255,255,255,0.02)', borderRadius:7, cursor:'pointer' }}>
                   <input type="checkbox" checked={selectedKeys.includes(row.key)} onChange={() => toggleLocation(row.key)} />
                   <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}>{row.label}</span>
@@ -408,6 +643,7 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
 // ── Modal de venda manual ─────────────────────────────────────────────────────
 function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const [itemName,   setItemName]  = useState('');
+  const [listingId,  setListingId] = useState('');
   const [price,      setPrice]     = useState('');
   const [qty,        setQty]       = useState('1');
   const [quality,    setQuality]   = useState('');
@@ -422,13 +658,14 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
   const LS = { fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:4 };
 
   const total = (parseFloat(price)||0) * (parseInt(qty)||1);
+  const matchingListings = (catalogItems || []).filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(itemName));
 
   function handleSave() {
     if (!itemName.trim()) { setError('Nome do item obrigatório.'); return; }
     if (!price || parseFloat(price) <= 0) { setError('Preço deve ser maior que zero.'); return; }
     onSave({
       id: Date.now(),
-      title: itemName.trim(), price: parseFloat(price), qty: parseInt(qty)||1,
+      title: itemName.trim(), listingId: listingId || null, price: parseFloat(price), qty: parseInt(qty)||1,
       total_revenue: type === 'sold' ? total : 0,
       quality, buyer, type,
       date: new Date(date).getTime() / 1000,
@@ -454,6 +691,12 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
             <datalist id="catalog-list">
               {[...new Set(catalogItems.map(c=>c.title))].map(t=><option key={t} value={t}/>)}
             </datalist>
+            {matchingListings.length > 0 && (
+              <select value={listingId} onChange={e=>setListingId(e.target.value)} style={{ width:'100%', marginTop:6, padding:'6px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-secondary)', fontSize:11, outline:'none' }}>
+                <option value="">Selecionar anúncio específico (opcional)</option>
+                {matchingListings.map(item => <option key={item.id} value={item.id}>{item.title} · {item.location || 'local não informado'}{item.vault_binding ? ' · Baú vinculado' : ''}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label style={LS}>Tipo</label>
@@ -511,23 +754,53 @@ function ManualSaleModal({ catalogItems, onSave, onClose }) {
 }
 
 // ── Card de item do catálogo com dados de mercado ─────────────────────────────
-function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendDataFetchedAt, inventoryItems, managedLocations, onOpenStockLink }) {
+function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySummary: indexedInventorySummary, vaultSummary: indexedVaultSummary, marketTrend, onEditStock, onDelete, trendData, trendDataFetchedAt, inventoryItems, managedLocations, armorSets, vaultEntries, onOpenStockLink, onOpenVaultStockLink }) {
   const [expanded, setExpanded]   = useState(false);
   const [editStock, setEditStock]     = useState(false);
   const [stockVal, setStockVal]       = useState(String(item.in_stock || 0));
   const [internalVal, setInternalVal] = useState(String(item.internal_stock || 0));
   const [delConf, setDelConf]     = useState(false);
-  const inventorySummary = getInventoryStockSummary(item, inventoryItems, managedLocations);
+  const [discountAnalysis, setDiscountAnalysis] = useState(null);
+  const [discountLoading, setDiscountLoading] = useState(false);
+  const [discountError, setDiscountError] = useState('');
+  const inventorySummary = indexedInventorySummary || getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets);
+  const vaultSummary = indexedVaultSummary || getVaultStockSummary(item, vaultEntries);
   const displayedInternalStock = inventorySummary.isLinked ? inventorySummary.quantity : Number(item.internal_stock) || 0;
 
-  const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
+  const itemSales = indexedItemSales || sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
   const totalSold = itemSales.reduce((a,s) => a + (s.total_revenue || 0), 0);
   const qtyListed = item.in_stock || 0;
+  const listingTarget = getCatalogListingTarget(item);
+
+  async function analyzeDiscount() {
+    const itemId = marketTrend?.id_item ?? marketTrend?.uex_item_id ?? listingTarget.itemId;
+    if (itemId === null || itemId === undefined || String(itemId).trim() === '') {
+      setDiscountError('A UEX não retornou o identificador deste item para comparar concorrentes.');
+      setDiscountAnalysis(null);
+      return;
+    }
+    setDiscountLoading(true);
+    setDiscountError('');
+    try {
+      const response = await uexFetch(`marketplace_listings?id_item=${encodeURIComponent(itemId)}&operation=sell`);
+      const competitorPrices = extractActiveCompetitorPrices(response, {
+        itemId,
+        ownListingId: item.id,
+        ownSourceListingId: item.source_listing_id,
+      });
+      setDiscountAnalysis(recommendDiscount({ currentPrice: item.price, competitorPrices }));
+    } catch (error) {
+      setDiscountAnalysis(null);
+      setDiscountError(error.message || 'Não foi possível consultar os anúncios concorrentes.');
+    } finally {
+      setDiscountLoading(false);
+    }
+  }
 
   // Dados de tendência da UEX: correspondência exata por ID, slug ou nome.
   // Nunca usar apenas o primeiro termo do título, pois isso mistura itens como
   // Yormandi Tongue e Yormandi Eye.
-  const trend = findMarketTrendForItem(item, trendData);
+  const trend = marketTrend || findMarketTrendForItem(item, trendData);
 
   // Detectar qualidade no título
   const suggestedQ = extractQualityFromTitle(item.title || '');
@@ -580,12 +853,16 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
             <span>Listado: {qtyListed}</span>
             <span style={{ color: inventorySummary.isLinked ? 'var(--accent-green)' : inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)' }}>
               Estoque: {inventorySummary.isLinked ? displayedInternalStock : inventorySummary.hasMatch ? 'não vinculado' : 'desconhecido'}
+              {inventorySummary.isLinked && inventorySummary.reservedQuantity > 0 && <span style={{ color:'var(--accent-gold)' }}> · {inventorySummary.reservedQuantity} reservado</span>}
             </span>
           </div>
         </div>
 
         {/* Ações */}
         <div style={{ display:'flex', gap:4, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
+          <a href={listingTarget.url} target="_blank" rel="noreferrer" aria-label={listingTarget.exact ? 'Ver anúncio na UEX' : 'Pesquisar item na UEX'} title={listingTarget.exact ? 'Ver este anúncio diretamente na UEX' : 'Anúncio sem URL direta; pesquisar item na UEX'} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(56,189,248,0.28)', background:'rgba(56,189,248,0.08)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', textDecoration:'none' }}>
+            <ExternalLink size={11}/>
+          </a>
           {delConf ? (
             <>
               <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
@@ -625,20 +902,31 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                 ))}
               </div>
 
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Atalho do anúncio</div>
+                <a href={listingTarget.url} target="_blank" rel="noreferrer" onClick={event=>event.stopPropagation()} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.28)', borderRadius:5, color:'var(--accent-primary)', fontSize:10, fontWeight:700, textDecoration:'none' }} title={listingTarget.exact ? 'Abrir este anúncio diretamente na UEX' : 'Pesquisar este item na UEX'}>
+                  <ExternalLink size={11}/> {listingTarget.exact ? 'Ver anúncio na UEX' : 'Pesquisar na UEX'}
+                </a>
+              </div>
+
               {/* Controle de estoque interno */}
               <div style={{ marginTop:10, padding:'10px 12px', background:inventorySummary.isLinked ? 'rgba(52,211,153,0.06)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.06)' : 'rgba(251,113,133,0.05)', border:`1px solid ${inventorySummary.isLinked ? 'rgba(52,211,153,0.2)' : inventorySummary.hasMatch ? 'rgba(251,191,36,0.24)' : 'rgba(251,113,133,0.22)'}`, borderRadius:7 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:7 }}>
                   <div style={{ fontSize:9, fontWeight:700, color:inventorySummary.isLinked ? 'var(--accent-green)' : inventorySummary.hasMatch ? 'var(--accent-gold)' : 'var(--accent-red)', textTransform:'uppercase', letterSpacing:'0.08em' }}>📦 Estoque Interno</div>
-                  {inventorySummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>VINCULADO AO INVENTÁRIO</span>}
+                  {inventorySummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>{inventorySummary.binding.locationKeys.length > 0 && `VINCULADO A ${inventorySummary.binding.locationKeys.length} LOCAL${inventorySummary.binding.locationKeys.length === 1 ? '' : 'IS'}`}{inventorySummary.binding.locationKeys.length > 0 && inventorySummary.binding.armorPieceIds.length > 0 ? ' + ' : ''}{inventorySummary.binding.armorPieceIds.length > 0 && `${inventorySummary.binding.armorPieceIds.length} PEÇA${inventorySummary.binding.armorPieceIds.length === 1 ? '' : 'S'} DA COLEÇÃO`}</span>}
                 </div>
                 {inventorySummary.isLinked ? (
                   <>
                     <div style={{ display:'flex', alignItems:'baseline', gap:8, flexWrap:'wrap' }}>
                       <span style={{ fontFamily:'Michroma,sans-serif', fontSize:20, fontWeight:800, color:'var(--accent-green)' }}>{displayedInternalStock}</span>
-                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidade{displayedInternalStock === 1 ? '' : 's'} no inventário selecionado</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>unidade{displayedInternalStock === 1 ? '' : 's'} livres no inventário selecionado</span>
                     </div>
+                    {inventorySummary.reservedQuantity > 0 && <div style={{ marginTop:5, fontSize:10, color:'var(--accent-gold)' }}><strong>{inventorySummary.reservedQuantity} unidade{inventorySummary.reservedQuantity === 1 ? '' : 's'}</strong> reservada{inventorySummary.reservedQuantity === 1 ? '' : 's'} para outra pessoa; não entra no saldo de venda.</div>}
                     <div style={{ marginTop:5, fontSize:10, color:inventorySummary.surplus >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                       Após vender as {qtyListed} listadas: <strong>{inventorySummary.surplus >= 0 ? `${inventorySummary.surplus} sobrando` : `${Math.abs(inventorySummary.surplus)} em falta`}</strong>
+                    </div>
+                    <div style={{ marginTop:5, fontSize:10, color:'var(--text-muted)', lineHeight:1.45 }}>
+                      Fontes: {[...inventorySummary.locationRows.filter(row => inventorySummary.binding.locationKeys.includes(row.key)).map(row => row.label), ...(inventorySummary.binding.armorPieceIds.length > 0 ? [`Coleção de Armaduras (${inventorySummary.binding.armorPieceIds.length} peça${inventorySummary.binding.armorPieceIds.length === 1 ? '' : 's'})`] : [])].join(' · ') || '—'}
                     </div>
                   </>
                 ) : (
@@ -652,6 +940,21 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                   {!inventorySummary.isLinked && <button onClick={() => { setStockVal(String(item.internal_stock || 0)); setEditStock(true); }} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 9px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Edit3 size={9}/> Informar manualmente</button>}
                 </div>
                 {editStock && !inventorySummary.isLinked && <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:8 }}><input type="number" min="0" value={stockVal} onChange={e=>setStockVal(e.target.value)} style={{ width:80, padding:'5px 8px', background:'var(--bg-base)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13, outline:'none' }}/><button onClick={() => { onEditStock(item.id, parseInt(stockVal, 10) || 0); setEditStock(false); }} style={{ padding:'5px 10px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Save size={10}/> Salvar</button><button onClick={() => setEditStock(false)} style={{ padding:'5px 8px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-muted)', cursor:'pointer', fontSize:10 }}><X size={10}/></button></div>}
+
+                {/* Vínculo opcional com o Baú de Minério */}
+                <div style={{ marginTop:10, padding:'10px 12px', background:vaultSummary.isLinked ? 'rgba(52,211,153,0.06)' : vaultSummary.hasMatch ? 'rgba(251,191,36,0.05)' : 'rgba(255,255,255,0.025)', border:`1px solid ${vaultSummary.isLinked ? 'rgba(52,211,153,0.2)' : vaultSummary.hasMatch ? 'rgba(251,191,36,0.2)' : 'var(--border-subtle)'}`, borderRadius:7 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap' }}>
+                    <div style={{ fontSize:9, fontWeight:700, color:vaultSummary.isLinked ? 'var(--accent-green)' : vaultSummary.hasMatch ? 'var(--accent-gold)' : 'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>⛏ Baú de Minério</div>
+                    {vaultSummary.isLinked && <span style={{ fontSize:9, color:'var(--accent-green)', fontWeight:700 }}>QUALIDADE: {vaultSummary.binding.quality || 'SELECIONADA'}</span>}
+                  </div>
+                  {vaultSummary.isLinked ? (
+                    <>
+                      <div style={{ marginTop:5, fontSize:11, color:'var(--text-secondary)' }}><strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace' }}>{vaultSummary.binding.boxQuantity} {vaultSummary.binding.boxUnit}</strong> por caixa · <strong style={{ color:'var(--accent-primary)' }}>{vaultSummary.boxesAvailable}</strong> caixas disponíveis</div>
+                      <div style={{ marginTop:4, fontSize:10, color:vaultSummary.boxesAfterListing >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>Após vender as {qtyListed} caixas listadas: <strong>{vaultSummary.boxesAfterListing >= 0 ? `${vaultSummary.boxesAfterListing} caixas sobrando` : `${Math.abs(vaultSummary.boxesAfterListing)} caixas em falta`}</strong></div>
+                    </>
+                  ) : <div style={{ marginTop:5, fontSize:10, color:vaultSummary.hasMatch ? 'var(--accent-gold)' : 'var(--text-muted)' }}>{vaultSummary.hasMatch ? 'Escolha a qualidade e a entrada no Baú para vincular.' : 'Nenhuma entrada deste item foi encontrada no Baú.'}</div>}
+                  <button onClick={() => onOpenVaultStockLink(item)} style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:7, padding:'5px 9px', background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.25)', borderRadius:4, color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}><MapPin size={10}/> {vaultSummary.isLinked ? 'Editar vínculo do Baú' : 'Vincular ao Baú'}</button>
+                </div>
               </div>
             </div>
 
@@ -703,6 +1006,29 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                       </div>
                     </div>
                   )}
+
+                  <div style={{ marginTop:9, padding:'9px 10px', background:'rgba(56,189,248,0.045)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:6 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:5 }}>
+                      <div style={{ fontSize:9, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.06em' }}>Análise de desconto competitivo</div>
+                      <button onClick={event => { event.stopPropagation(); analyzeDiscount(); }} disabled={discountLoading} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 8px', color:'var(--accent-primary)', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:4, cursor:discountLoading?'not-allowed':'pointer', fontSize:10, fontWeight:700, opacity:discountLoading?0.65:1 }}>
+                        <RefreshCw size={10} style={{ animation:discountLoading?'spin 1s linear infinite':'none' }}/> {discountLoading ? 'Analisando...' : discountAnalysis ? 'Atualizar análise' : 'Analisar concorrentes'}
+                      </button>
+                    </div>
+                    {!discountAnalysis && !discountError && <div style={{ fontSize:10, color:'var(--text-muted)', lineHeight:1.45 }}>Consulte os anúncios ativos do mesmo item para calcular uma sugestão. O preço não será alterado automaticamente.</div>}
+                    {discountError && <div style={{ fontSize:10, color:'var(--accent-red)', lineHeight:1.45 }}>{discountError}</div>}
+                    {discountAnalysis && (
+                      <div>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6 }}>
+                          <div><div style={{ fontSize:9, color:'var(--text-muted)' }}>Preço anterior</div><strong style={{ fontFamily:'Share Tech Mono,monospace', color:'var(--text-primary)' }}>{ptMoney(discountAnalysis.previousPrice)} aUEC</strong></div>
+                          <div><div style={{ fontSize:9, color:'var(--text-muted)' }}>Menor concorrente</div><strong style={{ fontFamily:'Share Tech Mono,monospace', color:'var(--accent-gold)' }}>{discountAnalysis.competitorLowest ? `${ptMoney(discountAnalysis.competitorLowest)} aUEC` : '—'}</strong></div>
+                          <div><div style={{ fontSize:9, color:'var(--text-muted)' }}>Concorrentes analisados</div><strong style={{ fontFamily:'Share Tech Mono,monospace', color:'var(--accent-primary)' }}>{discountAnalysis.competitorCount}</strong></div>
+                        </div>
+                        {discountAnalysis.status === 'discount_recommended' && <div style={{ marginTop:7, padding:'7px 8px', background:'rgba(52,211,153,0.07)', border:'1px solid rgba(52,211,153,0.22)', borderRadius:5 }}><div style={{ fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>Sugestão: aplicar desconto de {ptDecimal(discountAnalysis.discountPercent)}% ({ptMoney(discountAnalysis.discountValue)} aUEC)</div><div style={{ fontSize:10, color:'var(--text-secondary)', marginTop:2 }}>Preço sugerido: <strong>{ptMoney(discountAnalysis.suggestedPrice)} aUEC</strong>, cerca de 1% abaixo do menor concorrente ativo.</div></div>}
+                        {discountAnalysis.status === 'already_competitive' && <div style={{ marginTop:7, fontSize:10, color:'var(--accent-green)', lineHeight:1.45 }}>Seu preço já está igual ou abaixo do menor concorrente ativo. Nenhum desconto é recomendado.</div>}
+                        {discountAnalysis.status === 'insufficient_data' && <div style={{ marginTop:7, fontSize:10, color:'var(--text-muted)', lineHeight:1.45 }}>Não há anúncios concorrentes ativos suficientes para sugerir um desconto.</div>}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div style={{ fontSize:11, color:'var(--text-muted)', padding:'20px 0', textAlign:'center' }}>
@@ -742,32 +1068,63 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
 }
 
 // ── Tab: Meus Itens (catálogo) ────────────────────────────────────────────────
-function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryItems = [], managedLocations = [], onEditStock, onDeleteItem, onAddEsgotado, onOpenStockLink }) {
+function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryItems = [], managedLocations = [], armorSets = [], vaultEntries = [], onEditStock, onDeleteItem, onAddEsgotado, onOpenStockLink, onOpenVaultStockLink }) {
   const [search, setSearch] = useState('');
-  const displayedStock = item => {
-    const summary = getInventoryStockSummary(item, inventoryItems, managedLocations);
-    return summary.isLinked ? summary.quantity : Number(item.internal_stock) || 0;
-  };
+  const deferredSearch = useDeferredValue(search);
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('date');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+  const stockById = useMemo(() => new Map(catalog.map(item => [String(item.id), getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets)])), [catalog, inventoryItems, managedLocations, armorSets]);
+  const vaultById = useMemo(() => new Map(catalog.map(item => [String(item.id), getVaultStockSummary(item, vaultEntries)])), [catalog, vaultEntries]);
+  const expiryById = useMemo(() => new Map(catalog.map(item => [String(item.id), listingExpiryState(item)])), [catalog]);
+  const salesByTitle = useMemo(() => {
+    const map = new Map();
+    for (const sale of sales) {
+      if (sale.type !== 'sold') continue;
+      const key = String(sale.title || '').trim().toLowerCase();
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(sale);
+    }
+    return map;
+  }, [sales]);
+  const trendById = useMemo(() => new Map(catalog.map(item => [String(item.id), findMarketTrendForItem(item, trendData)])), [catalog, trendData]);
+  const displayedStock = item => {
+    const summary = stockById.get(String(item.id));
+    return summary?.isLinked ? summary.quantity : Number(item.internal_stock) || 0;
+  };
+  useEffect(() => { setPage(1); }, [deferredSearch, filterStatus, sortBy, catalog.length]);
 
   const filtered = useMemo(() => {
     let list = catalog;
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       list = list.filter(i => i.title?.toLowerCase().includes(q) || i.location?.toLowerCase().includes(q));
     }
     if (filterStatus === 'active')   list = list.filter(i => !i.is_sold_out && (i.in_stock === undefined || i.in_stock > 0));
     if (filterStatus === 'soldout')  list = list.filter(i => i.is_sold_out || (i.in_stock !== undefined && i.in_stock <= 0));
-    if (filterStatus === 'expired')  list = list.filter(i => listingExpiryState(i).status === 'expired');
-    if (filterStatus === 'expiring') list = list.filter(i => listingExpiryState(i).status === 'expiring');
+    if (filterStatus === 'expired')  list = list.filter(i => expiryById.get(String(i.id))?.status === 'expired');
+    if (filterStatus === 'expiring') list = list.filter(i => expiryById.get(String(i.id))?.status === 'expiring');
     if (sortBy === 'price_asc')  list = [...list].sort((a,b) => (a.price||0) - (b.price||0));
     if (sortBy === 'price_desc') list = [...list].sort((a,b) => (b.price||0) - (a.price||0));
     if (sortBy === 'date')       list = [...list].sort((a,b) => (b.date_added||0) - (a.date_added||0));
     if (sortBy === 'name')       list = [...list].sort((a,b) => (a.title||'').localeCompare(b.title||''));
     if (sortBy === 'stock')      list = [...list].sort((a,b) => displayedStock(b) - displayedStock(a));
     return list;
-  }, [catalog, search, filterStatus, sortBy, inventoryItems, managedLocations]);
+  }, [catalog, deferredSearch, filterStatus, sortBy, stockById, expiryById]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleItems = useMemo(() => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filtered, safePage]);
+  const catalogStats = useMemo(() => {
+    let active = 0; let soldout = 0; let totalStock = 0;
+    for (const item of catalog) {
+      totalStock += displayedStock(item);
+      if (item.is_sold_out || (item.in_stock !== undefined && item.in_stock <= 0)) soldout += 1; else active += 1;
+    }
+    return { active, soldout, totalStock };
+  }, [catalog, stockById]);
 
   const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
@@ -781,9 +1138,9 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
         {[
           { label:'Total de Itens', value:catalog.length, color:'var(--accent-primary)', sub:'no catálogo' },
-          { label:'Ativos', value:catalog.filter(i=>!i.is_sold_out && (i.in_stock===undefined||i.in_stock>0)).length, color:'var(--accent-green)', sub:'listados ativamente' },
-          { label:'Esgotados', value:catalog.filter(i=>i.is_sold_out||(i.in_stock!==undefined&&i.in_stock<=0)).length, color:'var(--accent-red)', sub:'sem estoque' },
-          { label:'Estoque Total', value:catalog.reduce((a,i)=>a+displayedStock(i),0), color:'var(--accent-gold)', sub:'no inventário/vínculos' },
+          { label:'Ativos', value:catalogStats.active, color:'var(--accent-green)', sub:'listados ativamente' },
+          { label:'Esgotados', value:catalogStats.soldout, color:'var(--accent-red)', sub:'sem estoque' },
+          { label:'Estoque Total', value:catalogStats.totalStock, color:'var(--accent-gold)', sub:'no inventário/vínculos' },
         ].map(({label,value,color,sub}) => (
           <div key={label} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'10px 12px' }}>
             <div style={{ fontFamily:'Michroma,sans-serif', fontSize:18, fontWeight:800, color }}>{value}</div>
@@ -817,7 +1174,7 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
         <button onClick={onAddEsgotado} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.25)', borderRadius:5, color:'var(--accent-red)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', whiteSpace:'nowrap' }}>
           <Plus size={11}/> Esgotado Manual
         </button>
-        <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} item{filtered.length!==1?'s':''}</span>
+        <span style={{ marginLeft:'auto', fontFamily:'Share Tech Mono,monospace', fontSize:11, color:'var(--text-muted)' }}>{filtered.length} item{filtered.length!==1?'s':''}{filtered.length > PAGE_SIZE ? ` · página ${safePage}/${totalPages}` : ''}</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -831,25 +1188,38 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
           </div>
         </div>
       ) : (
-        filtered.map(item => (
+        visibleItems.map(item => (
           <CatalogItemCard
             key={item.id}
             item={item}
             sales={sales}
+            itemSales={salesByTitle.get(String(item.title || '').trim().toLowerCase()) || []}
+            inventorySummary={stockById.get(String(item.id))}
+            vaultSummary={vaultById.get(String(item.id))}
+            marketTrend={trendById.get(String(item.id))}
             trendData={trendData}
             trendDataFetchedAt={trendDataFetchedAt}
             inventoryItems={inventoryItems}
             managedLocations={managedLocations}
+            armorSets={armorSets}
+            vaultEntries={vaultEntries}
             onOpenStockLink={onOpenStockLink}
+            onOpenVaultStockLink={onOpenVaultStockLink}
             onEditStock={onEditStock}
             onDelete={onDeleteItem}
           />
-        ))
+                ))
+      )}
+      {filtered.length > PAGE_SIZE && (
+        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', gap:10, padding:'14px 0' }}>
+          <button className="filter-chip" disabled={safePage <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}>‹ Anterior</button>
+          <span style={{ color:'var(--text-muted)', fontSize:11, fontFamily:'Share Tech Mono,monospace' }}>{safePage} / {totalPages}</span>
+          <button className="filter-chip" disabled={safePage >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}>Próxima ›</button>
+        </div>
       )}
     </div>
   );
 }
-
 // ── Modal de detalhes e edição de venda ────────────────────────────────────────
 function SaleDetailsModal({ sale, onClose, onSave }) {
   const [editing, setEditing] = useState(false);
@@ -1420,7 +1790,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
 }
 
 // ── Página Principal ──────────────────────────────────────────────────────────
-export default function UexSalesPage() {
+export default function UexSalesPage({ armorSets = [] }) {
   const [catalog,   setCatalog]   = useState(() => loadCatalog());
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
@@ -1434,8 +1804,10 @@ export default function UexSalesPage() {
   const [showEsgotadoForm, setShowEsgotadoForm] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username);
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [vaultEntries, setVaultEntries] = useState(() => loadVault().entries);
   const [managedLocations, setManagedLocations] = useState(() => buildManagedLocationOptions());
   const [stockLinkItem, setStockLinkItem] = useState(null);
+  const [vaultLinkItem, setVaultLinkItem] = useState(null);
   // Refs para evitar closure stale no fluxo de importação
   const catalogRef    = React.useRef(catalog);
   const importQueueRef = React.useRef([]);
@@ -1461,15 +1833,22 @@ export default function UexSalesPage() {
 
   useEffect(() => {
     loadInventoryForStock();
+    setVaultEntries(loadVault().entries);
     const refreshInventory = event => {
       if (Array.isArray(event.detail?.items)) setInventoryItems(event.detail.items.map(item => ({ ...item, name: normalizeUexItemName(item.name) })));
       else loadInventoryForStock();
     };
+    const refreshVault = event => {
+      if (Array.isArray(event.detail?.vault?.entries)) setVaultEntries(event.detail.vault.entries);
+      else setVaultEntries(loadVault().entries);
+    };
     const refreshLocations = () => setManagedLocations(buildManagedLocationOptions());
     window.addEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+    window.addEventListener('sc_ore_vault_updated', refreshVault);
     window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
     return () => {
       window.removeEventListener(INVENTORY_UPDATED_EVENT, refreshInventory);
+      window.removeEventListener('sc_ore_vault_updated', refreshVault);
       window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
     };
   }, [loadInventoryForStock]);
@@ -1619,19 +1998,59 @@ export default function UexSalesPage() {
     });
     refreshCatalog(updated);
   }
-  function handleSaveStockLink(itemId, binding) {
+  function handleSaveVaultStockLink(itemId, binding) {
+    const entryIds = [...new Set((Array.isArray(binding?.entryIds) ? binding.entryIds : []).map(id => String(id || '').trim()).filter(Boolean))];
+    const boxQuantity = Number(String(binding?.boxQuantity ?? '').replace(',', '.')) || 0;
+    const boxUnit = normalizeCargoUnit(binding?.boxUnit || 'un');
+    const normalizedBinding = entryIds.length && boxQuantity > 0
+      ? { entryIds, boxQuantity, boxUnit, quality: String(binding?.quality || '').trim(), updatedAt: binding?.updatedAt || new Date().toISOString() }
+      : null;
     const updated = catalogRef.current.map(item => item.id === itemId
-      ? { ...item, inventory_binding: binding }
+      ? { ...item, vault_binding: normalizedBinding }
+      : item);
+    refreshCatalog(updated);
+    setVaultLinkItem(null);
+    setSyncMsg(normalizedBinding ? `✓ Baú vinculado: ${boxQuantity} ${boxUnit} por caixa.` : '✓ Vínculo com o Baú removido.');
+  }
+
+  function handleSaveStockLink(itemId, binding) {
+    const candidates = [
+      ...(Array.isArray(binding?.locationKeys) ? binding.locationKeys : []),
+      ...(binding?.locationKey ? [binding.locationKey] : []),
+    ];
+    const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
+    const armorPieceIds = [...new Set((Array.isArray(binding?.armorPieceIds) ? binding.armorPieceIds : []).map(id => String(id || '').trim()).filter(Boolean))];
+    const normalizedBinding = locationKeys.length || armorPieceIds.length
+      ? { locationKeys, armorPieceIds, updatedAt: binding?.updatedAt || new Date().toISOString() }
+      : null;
+    const updated = catalogRef.current.map(item => item.id === itemId
+      ? { ...item, inventory_binding: normalizedBinding }
       : item);
     refreshCatalog(updated);
     setStockLinkItem(null);
-    setSyncMsg(binding ? '✓ Estoque do anúncio vinculado ao Inventário de Itens.' : '✓ Vínculo removido; o estoque manual foi preservado.');
+    setSyncMsg(normalizedBinding ? `✓ Estoque vinculado a ${locationKeys.length} local${locationKeys.length === 1 ? '' : 'is'} do Inventário de Itens.` : '✓ Vínculo removido; o estoque manual foi preservado.');
   }
   function handleDeleteItem(itemId) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
   }
   function handleManualSale(sale) {
-    refreshSales([sale, ...sales]);
+    let nextSale = sale;
+    let updatedCatalog = catalogRef.current;
+    const boundCandidates = updatedCatalog.filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(sale.title) && item.vault_binding?.entryIds?.length);
+    const target = sale.listingId
+      ? updatedCatalog.find(item => String(item.id) === String(sale.listingId))
+      : boundCandidates.length === 1 ? boundCandidates[0] : null;
+    if (sale.type === 'sold' && target?.vault_binding?.entryIds?.length) {
+      const binding = target.vault_binding;
+      const boxQuantity = Number(binding.boxQuantity) || 1;
+      const boxUnit = normalizeCargoUnit(binding.boxUnit || 'un');
+      const consumption = consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit);
+      nextSale = { ...sale, vault_consumption_status: consumption.success ? 'consumed' : 'failed', vault_consumed_at: consumption.success ? new Date().toISOString() : null, vault_consumption_message: consumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding.quality || '' };
+      const nextStock = Math.max(0, (Number(target.in_stock) || 0) - sale.qty);
+      updatedCatalog = updatedCatalog.map(item => String(item.id) === String(target.id) ? { ...item, in_stock:nextStock, is_sold_out:nextStock <= 0 ? 1 : 0, last_sale_at:new Date().toISOString() } : item);
+      refreshCatalog(updatedCatalog);
+    }
+    refreshSales([nextSale, ...sales]);
     setShowManualSale(false);
   }
   function handleDeleteSale(saleId) {
@@ -1692,8 +2111,17 @@ export default function UexSalesPage() {
           listing={stockLinkItem}
           inventoryItems={inventoryItems}
           managedLocations={managedLocations}
+          armorSets={armorSets}
           onSave={binding => handleSaveStockLink(stockLinkItem.id, binding)}
           onClose={() => setStockLinkItem(null)}
+        />
+      )}
+      {vaultLinkItem && (
+        <VaultStockLinkModal
+          listing={vaultLinkItem}
+          vaultEntries={vaultEntries}
+          onSave={binding => handleSaveVaultStockLink(vaultLinkItem.id, binding)}
+          onClose={() => setVaultLinkItem(null)}
         />
       )}
       {showEsgotadoForm && (
@@ -1761,8 +2189,8 @@ export default function UexSalesPage() {
       <div className="page-body">
         {activeTab==='items' && (
           <MyItemsTab catalog={catalog} sales={sales} trendData={trendData} trendDataFetchedAt={trendDataFetchedAt}
-            inventoryItems={inventoryItems} managedLocations={managedLocations}
-            onOpenStockLink={setStockLinkItem}
+            inventoryItems={inventoryItems} managedLocations={managedLocations} armorSets={armorSets} vaultEntries={vaultEntries}
+            onOpenStockLink={setStockLinkItem} onOpenVaultStockLink={setVaultLinkItem}
             onEditStock={handleEditStock} onDeleteItem={handleDeleteItem} onAddEsgotado={handleAddEsgotado}/>
         )}
         {activeTab==='sales' && (

@@ -21,7 +21,10 @@ import {
   formatCargoNumber,
   cargoInputStep,
   parseCargoInput,
+  cargoInputToStorage,
+  formatCargoBreakdown,
   cargoEquivalentTotal,
+  analyzeCargoQuantityInput,
 } from '../data/cargoUnits';
 
 // ── Lista completa de minérios do Star Citizen (atualizada SCMDB/SCMINER 2026) ──
@@ -146,6 +149,14 @@ function ptNum(v, unit = '') {
   return formatCargoNumber(v, isCargoUnit(unit) ? 9 : 3);
 }
 
+function getStoredDisplay(entry) {
+  const storedUnit = normalizeCargoUnit(entry?.unit || 'un');
+  if (!isCargoUnit(storedUnit)) return { quantity:Number(entry?.quantity || 0) || 0, unit:storedUnit };
+  const displayUnit = normalizeCargoUnit(entry?.input_unit || storedUnit);
+  const base = toCargoBase(entry?.quantity, storedUnit);
+  return { quantity:fromCargoBase(base, displayUnit), unit:displayUnit };
+}
+
 function mergeOreQuantities(existing, incoming) {
   const existingUnit = normalizeCargoUnit(existing.unit || 'un');
   const incomingUnit = normalizeCargoUnit(incoming.unit || 'un');
@@ -208,13 +219,20 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
 // ── OreForm ───────────────────────────────────────────────────────────────────
 function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion = 0 }) {
   const empty = { id:null, ore_name:preselectedOre||'', quantity:'', unit:'un', quality:'', location:'', refined:false, notes:'' };
-  const [d, setD] = useState(() => initial ? {...initial, unit:normalizeCargoUnit(initial.unit || 'un'), quantity:String(initial.quantity ?? '')} : empty);
+  const [d, setD] = useState(() => {
+    if (!initial) return empty;
+    const display = getStoredDisplay(initial);
+    return {...initial, unit:display.unit, quantity:String(display.quantity ?? '')};
+  });
   const [showQP, setShowQP] = useState(false);
+  const [advancedUnit, setAdvancedUnit] = useState(() => Boolean(initial && ['mSCU','μSCU'].includes(normalizeCargoUnit(initial.unit || ''))));
   const [error, setError]   = useState('');
   const set = (k,v) => setD(p=>({...p,[k]:v}));
+  const cargoMode = isCargoUnit(d.unit);
 
   const oreInfo = getOreInfo(d.ore_name);
   const oreCat  = getOreCategory(d.ore_name);
+  const quantityAnalysis = useMemo(() => analyzeCargoQuantityInput(d.quantity, d.unit), [d.quantity, d.unit]);
   const LOCATIONS = useMemo(() => buildManagedLocationOptions(), [locationsVersion]);
 
   const IS = {width:'100%',padding:'8px 10px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:13,outline:'none'};
@@ -225,7 +243,17 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
     if (!d.ore_name.trim()) { setError('Nome do minério obrigatório.'); return; }
     const qty = parseCargoInput(d.quantity, d.unit);
     if (!Number.isFinite(qty) || qty <= 0) { setError('Quantidade deve ser maior que zero.'); return; }
-    onSave({...d, unit:normalizeCargoUnit(d.unit || 'un'), ore_name:d.ore_name.trim(), quantity:isCargoUnit(d.unit) ? roundCargo(qty) : qty});
+    const normalizedUnit = normalizeCargoUnit(d.unit || 'un');
+    const storage = isCargoUnit(normalizedUnit)
+      ? cargoInputToStorage(qty, normalizedUnit)
+      : { quantity: qty, unit: normalizedUnit, inputUnit: normalizedUnit };
+    onSave({
+      ...d,
+      unit: storage.unit,
+      input_unit: storage.inputUnit,
+      ore_name:d.ore_name.trim(),
+      quantity:roundCargo(storage.quantity),
+    });
   }
 
   return (
@@ -252,26 +280,63 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
       <div style={{display:'grid',gridTemplateColumns:'2fr 120px 100px',gap:9,marginBottom:9}}>
         <div>
           <label style={LS}>Minério *</label>
-          <input style={IS} list="ore-list-form" value={d.ore_name} onChange={e=>set('ore_name',e.target.value)} placeholder="ex: Caranite, Quantainium..."/>
+          <input style={IS} list="ore-list-form" value={d.ore_name} onChange={e=>set('ore_name', e.target.value)} placeholder="ex: Caranite, Quantainium..."/>
           <datalist id="ore-list-form">{ALL_ORE_NAMES.map(o=><option key={o} value={o}/>)}</datalist>
         </div>
         <div>
-          <label style={LS}>Quantidade *</label>
-          <input style={IS} type="text" inputMode="decimal" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder={isCargoUnit(d.unit) ? 'ex: 12.911' : 'ex: 16'}/>
+          <label style={LS}>{cargoMode ? 'Quantidade mostrada no jogo *' : 'Quantidade *'}</label>
+          <input style={{...IS,fontSize:15,fontWeight:700,borderColor:cargoMode?'rgba(56,189,248,0.45)':'var(--border-subtle)'}} type="text" inputMode="decimal" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder={cargoMode ? (d.unit === 'SCU' ? 'ex: 0,677' : 'ex: 67,7') : 'ex: 16'}/>
+          {cargoMode && <div style={{marginTop:4,fontSize:9,color:'var(--accent-primary)'}}>Copie o número da caixa de carga. Exemplo: <strong>0,677</strong>.</div>}
         </div>
         <div>
-          <label style={LS}>Unidade</label>
+          <label style={LS}>Unidade de medida</label>
           <select style={SS} value={d.unit} onChange={e=>set('unit',e.target.value)}>
-            <option value="un">un</option>
-            {CARGO_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+            <option value="un">un — quantidade de itens</option>
+            <option value="SCU">SCU</option>
+            <option value="cSCU">cSCU</option>
+            <option value="mSCU">mSCU</option>
+            <option value="μSCU">μSCU</option>
             <option value="kg">kg</option>
           </select>
+          <div style={{marginTop:4,fontSize:9,color:'var(--text-muted)'}}>{d.unit === 'un' ? 'Use para Feynmaline, gemas e itens contados por unidade.' : d.unit === 'SCU' ? 'Use o valor SCU exibido no jogo.' : 'A quantidade será convertida e comparada como carga.'}</div>
         </div>
       </div>
 
+      {quantityAnalysis.applicable && quantityAnalysis.valid && (
+        <div style={{marginTop:-2,marginBottom:10,padding:'10px 11px',borderRadius:8,border:`1px solid ${quantityAnalysis.severity==='warning'?'rgba(251,191,36,0.42)':'rgba(56,189,248,0.22)'}`,background:quantityAnalysis.severity==='warning'?'rgba(251,191,36,0.07)':'rgba(56,189,248,0.05)',color:'var(--text-secondary)',fontSize:11}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+            {quantityAnalysis.severity==='warning' ? <AlertTriangle size={13} style={{color:'var(--accent-gold)'}}/> : <CheckCircle2 size={13} style={{color:'var(--accent-primary)'}}/>}
+            <strong style={{fontSize:10,color:quantityAnalysis.severity==='warning'?'var(--accent-gold)':'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Conferência da quantidade</strong>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:6}}>
+            <div style={{padding:'7px 8px',background:'rgba(0,0,0,0.12)',border:'1px solid var(--border-subtle)',borderRadius:5}}>
+              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Você digitou</div>
+              <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--text-primary)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.input, 9)} {quantityAnalysis.unit}</strong>
+            </div>
+            <div style={{padding:'7px 8px',background:'rgba(0,0,0,0.12)',border:'1px solid var(--border-subtle)',borderRadius:5}}>
+              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Isso equivale a</div>
+              <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-primary)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.scu, 9)} SCU</strong>
+            </div>
+            <div style={{padding:'7px 8px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:5}}>
+              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Será salvo como</div>
+              <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-green)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.cscu, 9)} cSCU</strong>
+            </div>
+          </div>
+          {quantityAnalysis.suggestedUnit && (
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)',flexWrap:'wrap'}}>
+              <span style={{fontSize:10,color:'var(--accent-gold)'}}>Confira a unidade: este valor pode ter sido digitado na unidade errada.</span>
+              <button type="button" onClick={()=>{set('unit',quantityAnalysis.suggestedUnit);set('quantity',quantityAnalysis.suggestedValue);}} style={{padding:'5px 8px',background:'rgba(251,191,36,0.11)',border:'1px solid rgba(251,191,36,0.35)',borderRadius:4,color:'var(--accent-gold)',cursor:'pointer',fontFamily:'"Exo 2",sans-serif',fontSize:10,fontWeight:700}}>
+                Trocar para {quantityAnalysis.suggestedUnit} · {formatCargoNumber(quantityAnalysis.suggestedValue, 9)}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:9,marginBottom:9,alignItems:'end'}}>
         <div>
-          <label style={LS}>Qualidade</label>
+          <label style={LS}>Qualidade <span style={{fontWeight:500,textTransform:'none',letterSpacing:0}}>(ex.: 916)</span></label>
+          <div style={{fontSize:9,color:'var(--text-muted)',marginBottom:4}}>A qualidade é separada da quantidade e não participa da conversão SCU/cSCU.</div>
           <div style={{position:'relative'}}>
             <input style={IS} value={d.quality} onChange={e=>set('quality',e.target.value)}
               onFocus={()=>setShowQP(true)} onBlur={()=>setTimeout(()=>setShowQP(false),150)}
@@ -350,7 +415,7 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty, transferDestinations, o
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
             <span style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color}}>{entry.ore_name}</span>
-            {entry.refined && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)',fontWeight:700}}>REFINADO</span>}
+            {entry.refined && <span title="Este minério foi marcado como refinado" style={{fontSize:9,padding:'2px 7px',borderRadius:4,background:'rgba(52,211,153,0.14)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.4)',fontWeight:800,letterSpacing:'0.04em'}}>REFINADO ✓</span>}
             {entry.quality && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(255,200,0,0.1)',color:'var(--accent-gold)',border:'1px solid rgba(255,200,0,0.25)',fontWeight:700}}>★ {entry.quality}</span>}
             {oreInfo?.rarity && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:`${RARITY_COLORS[oreInfo.rarity]}18`,color:RARITY_COLORS[oreInfo.rarity],fontWeight:700}}>{oreInfo.rarity}</span>}
           </div>
@@ -362,8 +427,16 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty, transferDestinations, o
         </div>
         {/* Quantidade */}
         <div style={{textAlign:'right',flexShrink:0}}>
-          <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{ptNum(entry.quantity, entry.unit)}</div>
-          <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{entry.unit}</div>
+          {(() => {
+            const display = getStoredDisplay(entry);
+            const storedUnit = normalizeCargoUnit(entry.unit || 'un');
+            const isStoredCargo = isCargoUnit(storedUnit);
+            return <>
+              <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{ptNum(display.quantity, display.unit)}</div>
+              <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{display.unit}</div>
+              {isStoredCargo && display.unit !== storedUnit && <div style={{fontSize:9,color:'var(--text-secondary)',marginTop:3,whiteSpace:'nowrap'}}>= {ptNum(entry.quantity, storedUnit)} {storedUnit} salvo</div>}
+            </>;
+          })()}
         </div>
         {/* Ações */}
         <div style={{display:'flex',gap:4,flexShrink:0}}>
@@ -689,7 +762,12 @@ export default function OreVaultPage() {
   function handleMerge() {
     if (!dupData) return;
     const quantities = mergeOreQuantities(dupData.existing, dupData.newEntry);
-    const merged = { ...dupData.existing, ...quantities, updated_at: new Date().toISOString() };
+    const merged = {
+      ...dupData.existing,
+      ...quantities,
+      input_unit: dupData.newEntry.input_unit || dupData.existing.input_unit || quantities.unit,
+      updated_at: new Date().toISOString(),
+    };
     addOreEntry(merged);
     refresh();
     setDupData(null); setShowForm(false); setEditEntry(null); setPreOre(null);

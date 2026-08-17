@@ -1,4 +1,6 @@
 // ── UEX Marketplace Negotiations / Notifications ────────────────────────────
+import { isNegotiationClosed } from './uexNegotiationStatus';
+
 // Consulta as negociações do Marketplace UEX e as mensagens de cada uma,
 // mantendo localmente o controle do que já foi visto para gerar o badge
 // "você tem uma nova mensagem".
@@ -45,6 +47,43 @@ function saveState(state) { localStorage.setItem(STATE_KEY, JSON.stringify(state
 
 function normalizedText(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function normalizeUexUsername(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^@+/, '')
+    .replace(/\s+/g, '')
+    .toLocaleLowerCase();
+}
+
+export function getNegotiationMessageSender(message) {
+  return String(
+    message?.user_username
+      || message?.username
+      || message?.from_username
+      || message?.fromUser
+      || message?.user_name
+      || message?.user?.username
+      || message?.user?.name
+      || '',
+  ).trim();
+}
+
+export function isOwnNegotiationMessage(message, currentUsername = '', negotiation = null) {
+  const sender = normalizeUexUsername(getNegotiationMessageSender(message));
+  if (!sender) return false;
+
+  const configured = normalizeUexUsername(currentUsername);
+  if (configured && sender === configured) return true;
+
+  // Fallback para quando o username local não foi configurado ou está antigo:
+  // a API informa se a conta autenticada é o anunciante (vendedor) ou o cliente
+  // (comprador), permitindo comparar com o participante correto da negociação.
+  const currentParticipant = Number(negotiation?.is_listing_advertiser) === 1 || negotiation?.is_listing_advertiser === true
+    ? negotiation?.advertiser_username
+    : negotiation?.client_username;
+  return Boolean(currentParticipant) && sender === normalizeUexUsername(currentParticipant);
 }
 
 function notificationMessageText(value) {
@@ -170,7 +209,7 @@ export async function checkForUpdates() {
   ]);
 
   // Só vasculha mensagens de negociações com atividade recente (evita 1 chamada por deal).
-  const activeNegotiations = negotiations.filter(n => !n.date_closed);
+  const activeNegotiations = negotiations.filter(n => !isNegotiationClosed(n));
   const recentlyActive = firstRun
     ? activeNegotiations
     : activeNegotiations.filter(n => (n.date_modified || 0) * 1000 >= state.lastCheck - 5 * 60 * 1000);
@@ -184,7 +223,7 @@ export async function checkForUpdates() {
     try { msgs = await fetchNegotiationMessages(neg.hash); } catch { continue; }
     for (const m of msgs) {
       if (!m.message) continue; // ignora eventos internos sem texto
-      const isMine = myUsername && (m.user_username || '').trim().toLowerCase() === myUsername;
+      const isMine = isOwnNegotiationMessage(m, myUsername, neg);
       const identity = messageIdentity(m, neg.hash);
       const contentIdentity = messageIdentity({ ...m, id: '' }, neg.hash);
       const legacyId = stableId(m.id);
@@ -198,9 +237,9 @@ export async function checkForUpdates() {
           key: identity,
           id: m.id,
           negotiationHash: neg.hash,
-          listingTitle: m.listing_title,
-          listingSlug: m.listing_slug,
-          fromUser: m.user_username,
+          listingTitle: m.listing_title || neg.listing_title || neg.title || 'Negociação UEX',
+          listingSlug: m.listing_slug || neg.listing_slug || neg.slug || '',
+          fromUser: getNegotiationMessageSender(m),
           message: m.message,
           dateAdded: (m.date_added || 0) * 1000,
         });

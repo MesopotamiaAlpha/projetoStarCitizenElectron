@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen, Coins, Filter } from 'lucide-react';
 import {
   loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages, sendNegotiationMessage,
+  getNegotiationMessageSender, isOwnNegotiationMessage,
   translatePortugueseToEnglish, translateEnglishToPortuguese,
 } from '../data/uexNegotiations';
 import {
@@ -9,6 +10,8 @@ import {
 } from '../data/uexSales';
 import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
+import { getNegotiationClosedAt, isNegotiationClosed } from '../data/uexNegotiationStatus';
+import { formatRelativeMessageTime } from '../data/uexMessageTime';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -116,6 +119,70 @@ function negotiationAmount(negotiation) {
   return amount === null || amount === undefined || amount === '' ? '—' : `${amount} ${negotiation.unit || ''} ${negotiation.deal_value_currency || negotiation.currency || ''}`.trim();
 }
 
+function numericInputValue(value) {
+  let text = String(value ?? '').trim().replace(/[^0-9,.-]/g, '');
+  if (!text) return 0;
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    text = comma > dot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (comma >= 0) {
+    text = text.replace(',', '.');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    text = text.replace(/\./g, '');
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
+  const initialQuantity = Math.max(1, Math.round(numericInputValue(negotiation?.deal_quantity || negotiation?.quantity || 1)));
+  const initialTotal = numericInputValue(negotiation?.deal_value || negotiation?.total_price || (numericInputValue(negotiation?.price) * initialQuantity));
+  const initialUnitPrice = numericInputValue(negotiation?.unit_price || negotiation?.unitPrice || negotiation?.price) || (initialTotal > 0 ? initialTotal / initialQuantity : 0);
+  const [quantity, setQuantity] = useState(String(initialQuantity));
+  const [unitPriceInput, setUnitPriceInput] = useState(initialUnitPrice > 0 ? String(initialUnitPrice) : '');
+  const [error, setError] = useState('');
+  const qty = numericInputValue(quantity);
+  const unitPrice = numericInputValue(unitPriceInput);
+  const total = qty > 0 && unitPrice > 0 ? qty * unitPrice : 0;
+
+  function submit(event) {
+    event.preventDefault();
+    if (!Number.isFinite(qty) || qty <= 0) { setError('Informe uma quantidade maior que zero.'); return; }
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) { setError('Informe um valor unitário maior que zero.'); return; }
+    onConfirm({ quantity: Math.round(qty), unitPrice, totalRevenue: total });
+  }
+
+  const fieldStyle = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 14, outline: 'none' };
+  return (
+    <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, background: 'rgba(0,0,0,0.76)' }} onMouseDown={event => { if (event.target === event.currentTarget && !saving) onCancel(); }}>
+      <form onSubmit={submit} style={{ width: '100%', maxWidth: 470, background: 'var(--bg-card)', border: '1px solid rgba(52,211,153,0.38)', borderRadius: 12, padding: 20, boxShadow: '0 24px 80px rgba(0,0,0,0.62)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-green)', fontFamily: 'Michroma,sans-serif', fontSize: 13, fontWeight: 800 }}><Coins size={16} /> CONCLUIR VENDA</div>
+            <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5 }}>Informe o que foi realmente vendido. A quantidade pode ser maior que a quantidade do anúncio.</div>
+          </div>
+          <button type="button" onClick={onCancel} disabled={saving} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ padding: '9px 11px', marginBottom: 14, background: 'rgba(56,189,248,0.06)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 7 }}>
+          <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 800 }}>{negotiation?.listing_title || 'Item da negociação'}</div>
+          <div style={{ marginTop: 3, color: 'var(--text-muted)', fontSize: 10 }}>Comprador: @{negotiation?.client_username || 'não informado'}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Quantidade vendida<input autoFocus type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={{ ...fieldStyle, marginTop: 5 }} /></label>
+          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Valor unitário<input type="number" min="0.01" step="0.01" value={unitPriceInput} onChange={event => setUnitPriceInput(event.target.value)} placeholder="Ex.: 400000" style={{ ...fieldStyle, marginTop: 5 }} /></label>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12, padding: '9px 11px', background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.18)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 11 }}><div style={{ display:'flex', justifyContent:'space-between', gap:10 }}><span>Valor unitário</span><strong style={{ color: 'var(--text-secondary)', fontFamily: 'Share Tech Mono,monospace' }}>{unitPrice > 0 ? `${unitPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div><div style={{ display:'flex', justifyContent:'space-between', gap:10 }}><span>Total calculado ({qty > 0 ? qty : 0} × unitário)</span><strong style={{ color: 'var(--accent-green)', fontFamily: 'Share Tech Mono,monospace' }}>{total > 0 ? `${total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div></div>
+        {error && <div style={{ marginTop: 10, color: 'var(--accent-red)', fontSize: 11 }}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" onClick={onCancel} disabled={saving} style={{ padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>Cancelar</button>
+          <button type="submit" disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 13px', background: 'rgba(52,211,153,0.13)', border: '1px solid rgba(52,211,153,0.35)', borderRadius: 6, color: 'var(--accent-green)', cursor: saving ? 'wait' : 'pointer', fontSize: 11, fontWeight: 800 }}>{saving ? 'Registrando...' : 'Confirmar e registrar venda'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function NegotiationThread({ negotiation, onBack }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -132,6 +199,7 @@ function NegotiationThread({ negotiation, onBack }) {
   const [translationMessageError, setTranslationMessageError] = useState('');
   const [incomingPreview, setIncomingPreview] = useState(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [relativeNow, setRelativeNow] = useState(() => Date.now());
   const [polling, setPolling] = useState(false);
   const [buyerCopied, setBuyerCopied] = useState(false);
   const [buyerCopyError, setBuyerCopyError] = useState('');
@@ -140,15 +208,25 @@ function NegotiationThread({ negotiation, onBack }) {
   const [quickTextCopiedId, setQuickTextCopiedId] = useState('');
   const [closure, setClosure] = useState(() => getNegotiationClosure(negotiation.hash));
   const [closing, setClosing] = useState(false);
+  const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [closeError, setCloseError] = useState('');
-  const myUsername = loadUsername().trim().toLowerCase();
-  const isClosed = !!negotiation.date_closed || !!closure;
+  const myUsername = loadUsername();
+  const apiClosedAt = getNegotiationClosedAt(negotiation);
+  const isClosed = isNegotiationClosed(negotiation) || !!closure;
+  const isMyListing = Number(negotiation.is_listing_advertiser) === 1 || negotiation.is_listing_advertiser === true;
+  const isBuyer = !isMyListing;
   const messagesEndRef = React.useRef(null);
   const knownMessageIdsRef = React.useRef(new Set());
   const firstLoadRef = React.useRef(true);
   const pollingRef = React.useRef(false);
   const requestRef = React.useRef(false);
   const translationRequestRef = React.useRef(0);
+  const englishManualEditRef = React.useRef(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRelativeNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     dispatchUexUiEvent(UEX_ACTIVE_NEGOTIATION_EVENT, {
@@ -181,7 +259,7 @@ function NegotiationThread({ negotiation, onBack }) {
       if (firstLoadRef.current) {
         firstLoadRef.current = false;
       } else {
-        const incoming = sorted.filter(m => !knownMessageIdsRef.current.has(messageKey(m)) && (m.user_username || '').trim().toLowerCase() !== myUsername);
+        const incoming = sorted.filter(m => !knownMessageIdsRef.current.has(messageKey(m)) && !isOwnNegotiationMessage(m, myUsername, negotiation));
         if (incoming.length) {
           const newestIncoming = incoming[incoming.length - 1];
           setNewMessagesCount(count => count + incoming.length);
@@ -222,6 +300,7 @@ function NegotiationThread({ negotiation, onBack }) {
     const sourceText = replyPt.trim();
     translationRequestRef.current += 1;
     const requestId = translationRequestRef.current;
+    englishManualEditRef.current = false;
     if (!sourceText) {
       setReplyEn('');
       setTranslationStatus('idle');
@@ -236,7 +315,7 @@ function NegotiationThread({ negotiation, onBack }) {
       try {
         const translated = await translatePortugueseToEnglish(sourceText);
         if (translationRequestRef.current !== requestId) return;
-        setReplyEn(translated);
+        if (!englishManualEditRef.current) setReplyEn(translated);
         setTranslationStatus('ready');
       } catch (e) {
         if (translationRequestRef.current !== requestId) return;
@@ -261,6 +340,7 @@ function NegotiationThread({ negotiation, onBack }) {
       await sendNegotiationMessage(negotiation.hash, text);
       setReplyPt('');
       setReplyEn('');
+      englishManualEditRef.current = false;
       setTranslationStatus('idle');
       await load(); // recarrega a conversa pra mostrar a mensagem enviada
     } catch (e) { setSendError(e.message); }
@@ -329,21 +409,44 @@ function NegotiationThread({ negotiation, onBack }) {
     }
   }
 
-  function handleCloseNegotiation(status) {
+  function handleCloseNegotiation(status, saleOverrides = {}) {
     if (closing || closure) return;
     setClosing(true);
     setCloseError('');
     try {
       let result = null;
-      if (status === 'success') result = registerNegotiationSale(negotiation);
+      if (status === 'success') result = registerNegotiationSale(negotiation, saleOverrides);
       const savedClosure = closeNegotiation(negotiation.hash, status, {
+        role: 'seller',
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
         catalogCreated: result?.catalogCreated || false,
+        vaultConsumption: result?.vaultConsumption || null,
       });
       setClosure({ ...savedClosure, sale: result?.sale || null });
+      setSaleModalOpen(false);
     } catch (e) {
       setCloseError(e.message || 'Não foi possível registrar o encerramento local.');
+    } finally {
+      setClosing(false);
+    }
+  }
+
+  function handleBuyerSuccess() {
+    if (closing || closure) return;
+    setClosing(true);
+    setCloseError('');
+    try {
+      const savedClosure = closeNegotiation(negotiation.hash, 'success', {
+        role: 'buyer',
+        saleId: null,
+        saleCreated: false,
+        catalogCreated: false,
+        purchaseCompleted: true,
+      });
+      setClosure(savedClosure);
+    } catch (e) {
+      setCloseError(e.message || 'Não foi possível finalizar a compra local.');
     } finally {
       setClosing(false);
     }
@@ -354,6 +457,7 @@ function NegotiationThread({ negotiation, onBack }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {saleModalOpen && <SaleCompletionModal negotiation={negotiation} saving={closing} onCancel={() => setSaleModalOpen(false)} onConfirm={values => handleCloseNegotiation('success', values)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <ArrowLeft size={14} /> Voltar
@@ -364,10 +468,13 @@ function NegotiationThread({ negotiation, onBack }) {
         <div style={{ marginLeft: 'auto', position:'relative', display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', justifyContent:'flex-end' }}>
           {negotiationListingUrl && (
             <a href={negotiationListingUrl} target="_blank" rel="noreferrer" data-help="Abra o anúncio correspondente na UEX para revisar ou finalizar a venda diretamente no site." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-              Finalizar venda na UEX <ExternalLink size={11} />
+              Verificar anúncio na UEX <ExternalLink size={11} />
             </a>
           )}
-          <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'var(--accent-primary)', textDecoration:'none' }}>
+          <a href="https://uexcorp.space/marketplace/manage" target="_blank" rel="noreferrer" data-help="Abra o gerenciador de anúncios da UEX para administrar seus anúncios." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.32)', borderRadius:6, color:'var(--accent-gold)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+            Ir para gerenciador UEX <ExternalLink size={11} />
+          </a>
+          <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.32)', borderRadius:6, color:'var(--accent-primary)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
             Abrir Spectrum <ExternalLink size={11} />
           </a>
           <button type="button" onClick={() => setQuickTextsOpen(opened => !opened)} data-help="Abra seus textos UEX salvos para copiar uma resposta sem sair desta negociação." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:quickTextsOpen?'rgba(167,139,250,0.16)':'rgba(167,139,250,0.09)', border:`1px solid ${quickTextsOpen?'rgba(167,139,250,0.5)':'rgba(167,139,250,0.32)'}`, borderRadius:6, color:'var(--accent-purple)', cursor:'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase' }}>
@@ -402,13 +509,21 @@ function NegotiationThread({ negotiation, onBack }) {
       {closure ? (
         <div style={{ marginBottom:10, padding:'9px 11px', background:closure.status==='success'?'rgba(52,211,153,0.09)':'rgba(251,113,133,0.09)', border:`1px solid ${closure.status==='success'?'rgba(52,211,153,0.32)':'rgba(251,113,133,0.32)'}`, borderRadius:7, color:closure.status==='success'?'var(--accent-green)':'var(--accent-red)', fontSize:11, lineHeight:1.5, display:'flex', alignItems:'flex-start', gap:8 }}>
           {closure.status==='success' ? <CheckCircle2 size={14} style={{ flexShrink:0, marginTop:1 }}/> : <XCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>}
-          <span><strong>{closure.status==='success'?'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO':'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.') : 'Nenhuma venda foi criada para esta negociação.'}</span>
+          <span><strong>{closure.status==='success' ? (closure.role === 'buyer' ? 'COMPRA CONCLUÍDA COM SUCESSO' : 'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO') : 'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.role === 'buyer' ? 'Compra finalizada localmente. Nenhum valor foi solicitado ou registrado.' : (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.')) : 'Nenhuma venda foi criada para esta negociação.'}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Baú atualizado: {closure.vaultConsumption.boxes} caixa{closure.vaultConsumption.boxes === 1 ? '' : 's'} de {closure.vaultConsumption.boxQuantity} {closure.vaultConsumption.boxUnit} descontada{closure.vaultConsumption.boxes === 1 ? '' : 's'}{closure.vaultConsumption.quality ? ` · qualidade ${closure.vaultConsumption.quality}` : ''}.</span></>}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Baú não foi descontado: {closure.vaultConsumption.message}</span></>}
+            {closure.status === 'success' && closure.vaultConsumption?.status === 'not_linked' && <><br/><span style={{ color:'var(--text-muted)' }}>O anúncio não possui vínculo com o Baú; nenhuma quantidade foi descontada.</span></>}
+          </span>
         </div>
       ) : (
         <div style={{ marginBottom:10, padding:'9px 11px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
           <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:8 }}>Registrar resultado local da negociação. Isso não envia nenhuma ação para a UEX.</div>
           <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
-            <button type="button" onClick={()=>handleCloseNegotiation('success')} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> {closing?'Registrando...':'Concluir com sucesso e registrar venda'}</button>
+            {isBuyer ? (
+              <button type="button" onClick={handleBuyerSuccess} disabled={closing} data-help="Marca esta negociação como compra concluída. Não solicita nem registra valor de compra." style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Finalizar compra com sucesso</button>
+            ) : (
+              <button type="button" onClick={()=>setSaleModalOpen(true)} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Concluir com sucesso e registrar venda</button>
+            )}
             <button type="button" onClick={()=>handleCloseNegotiation('failed')} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.28)', borderRadius:6, color:'var(--accent-red)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><XCircle size={12}/> Encerrar sem sucesso</button>
           </div>
           {closeError && <div style={{ marginTop:8, color:'var(--accent-red)', fontSize:10, lineHeight:1.4 }}>{closeError}</div>}
@@ -418,7 +533,7 @@ function NegotiationThread({ negotiation, onBack }) {
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 5 }}>
         {negotiation.advertiser_username} (vendedor) ↔ {negotiation.client_username} (comprador) ·{' '}
         {negotiation.price} {negotiation.unit} · {negotiation.currency}
-        {negotiation.date_closed ? <span style={{ color: 'var(--accent-red)' }}> · Encerrada em {fmtDate(negotiation.date_closed)}</span> : <span style={{ color: 'var(--accent-green)' }}> · Ativa</span>}
+        {apiClosedAt ? <span style={{ color: 'var(--accent-red)' }}> · Encerrada em {fmtDate(apiClosedAt)}</span> : <span style={{ color: 'var(--accent-green)' }}> · Ativa</span>}
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:10, color:'var(--text-muted)', fontSize:10 }}>
         <BellRing size={11} style={{ color:'var(--accent-primary)' }}/>
@@ -448,7 +563,7 @@ function NegotiationThread({ negotiation, onBack }) {
           <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma mensagem nesta negociação ainda.</div>
         )}
         {messages.map(m => {
-          const isMine = myUsername && (m.user_username || '').trim().toLowerCase() === myUsername;
+          const isMine = isOwnNegotiationMessage(m, myUsername, negotiation);
           const translationId = messageKey(m);
           const translatedMessage = messageTranslations[translationId];
           const isTranslating = translatingMessageId === translationId;
@@ -460,7 +575,7 @@ function NegotiationThread({ negotiation, onBack }) {
               borderRadius: 8, padding: '8px 12px',
             }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
-                {isMine ? 'Você' : m.user_username}
+                {isMine ? 'Você' : (getNegotiationMessageSender(m) || 'Usuário UEX')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-primary)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{m.message}</div>
               {!isMine && (
@@ -477,7 +592,7 @@ function NegotiationThread({ negotiation, onBack }) {
                 </>
               )}
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'Share Tech Mono,monospace' }}>
-                {fmtDate(m.date_added)}{!m.date_read && !isMine ? ' · não lida' : ''}
+                {formatRelativeMessageTime(m.date_added, relativeNow)}
               </div>
             </div>
           );
@@ -510,9 +625,12 @@ function NegotiationThread({ negotiation, onBack }) {
               </div>
               <textarea
                 value={replyPt}
-                onChange={e => setReplyPt(e.target.value)}
+                onChange={e => setReplyPt(String(e.target.value))}
                 onKeyDown={handleKeyDown}
-                placeholder="Escreva em português... (Enter envia, Shift+Enter quebra linha)"
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Escreva em português... (aceita letras, números e valores como 2.000.000)"
                 rows={4}
                 className="uex-composer-textarea"
               />
@@ -530,8 +648,11 @@ function NegotiationThread({ negotiation, onBack }) {
               </div>
               <textarea
                 value={replyEn}
-                onChange={e => setReplyEn(e.target.value)}
-                placeholder="A tradução aparecerá aqui..."
+                onChange={e => { englishManualEditRef.current = true; setReplyEn(String(e.target.value)); }}
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="A tradução aparecerá aqui; você pode editar letras, números e valores"
                 rows={4}
                 className="uex-composer-textarea"
               />
@@ -549,7 +670,7 @@ function NegotiationThread({ negotiation, onBack }) {
   );
 }
 
-export default function UexNegotiationsPage() {
+export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed }) {
   const [negotiations, setNegotiations] = useState([]);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState('');
@@ -568,6 +689,38 @@ export default function UexNegotiationsPage() {
   }, [hasToken]);
 
   useEffect(() => { load(); }, [load]);
+
+  const [statusFilter, setStatusFilter] = useState('active');
+
+  const getNegotiationListStatus = useCallback((negotiation) => {
+    const closure = getNegotiationClosure(negotiation.hash);
+    if (closure?.status === 'success') return 'success';
+    if (closure?.status === 'failed') return 'failed';
+    if (isNegotiationClosed(negotiation)) return 'closed';
+    return 'active';
+  }, []);
+
+  const filteredNegotiations = useMemo(() => {
+    if (statusFilter === 'all') return negotiations;
+    return negotiations.filter(negotiation => getNegotiationListStatus(negotiation) === statusFilter);
+  }, [negotiations, statusFilter, getNegotiationListStatus]);
+
+  const statusCounts = useMemo(() => negotiations.reduce((counts, negotiation) => {
+    const status = getNegotiationListStatus(negotiation);
+    counts[status] = (counts[status] || 0) + 1;
+    counts.all += 1;
+    return counts;
+  }, { all: 0, active: 0, closed: 0, success: 0, failed: 0 }), [negotiations, getNegotiationListStatus]);
+
+  useEffect(() => {
+    const target = String(targetNegotiationHash || '').trim();
+    if (!target || !negotiations.length) return;
+    const match = negotiations.find(negotiation => String(negotiation.hash || negotiation.id || '').trim() === target);
+    if (match) {
+      setSelected(match);
+      onTargetNegotiationConsumed?.();
+    }
+  }, [targetNegotiationHash, negotiations, onTargetNegotiationConsumed]);
 
   if (!hasToken) {
     return (
@@ -589,7 +742,7 @@ export default function UexNegotiationsPage() {
           <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <MessageSquare size={18} style={{ color: 'var(--accent-primary)' }} /> NEGOCIAÇÕES UEX
           </div>
-          <div className="page-subtitle">{negotiations.length} negociação{negotiations.length !== 1 ? 'ões' : ''} encontrada{negotiations.length !== 1 ? 's' : ''}</div>
+          <div className="page-subtitle">{filteredNegotiations.length} de {negotiations.length} negociação{negotiations.length !== 1 ? 'ões' : ''} exibida{filteredNegotiations.length !== 1 ? 's' : ''}</div>
         </div>
         <button onClick={load} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.35)', borderRadius: 7, color: 'var(--accent-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
           <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> Atualizar
@@ -597,6 +750,19 @@ export default function UexNegotiationsPage() {
       </div>
 
       <div className="page-body" style={{ padding: 24, height: '100%' }}>
+        {!selected && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}><Filter size={13} /> Mostrar</div>
+            <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} style={{ padding: '7px 28px 7px 9px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 11, fontWeight: 700, outline: 'none' }}>
+              <option value="active">Ativas ({statusCounts.active || 0})</option>
+              <option value="closed">Encerradas pela UEX ({statusCounts.closed || 0})</option>
+              <option value="success">Finalizadas com sucesso ({statusCounts.success || 0})</option>
+              <option value="failed">Sem acordo / sem sucesso ({statusCounts.failed || 0})</option>
+              <option value="all">Todas ({statusCounts.all || 0})</option>
+            </select>
+            <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Negociações antigas ficam ocultas por padrão.</span>
+          </div>
+        )}
         {error && (
           <div style={{ display: 'flex', gap: 8, padding: 12, background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.25)', borderRadius: 6, color: 'var(--accent-red)', fontSize: 12, marginBottom: 14 }}>
             <AlertTriangle size={14} /> {error}
@@ -611,11 +777,15 @@ export default function UexNegotiationsPage() {
             {!loading && negotiations.length === 0 && !error && (
               <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma negociação encontrada na sua conta UEX.</div>
             )}
-            {negotiations.map(n => {
+            {!loading && negotiations.length > 0 && filteredNegotiations.length === 0 && (
+              <div style={{ padding: '28px 14px', color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', background: 'var(--bg-panel)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>Nenhuma negociação corresponde ao filtro selecionado.</div>
+            )}
+            {filteredNegotiations.map(n => {
               const palette = negotiationColor(n);
               const counterparty = negotiationCounterparty(n);
               const localClosure = getNegotiationClosure(n.hash);
-              const isLocallyClosed = Boolean(n.date_closed || localClosure);
+              const apiClosedAt = getNegotiationClosedAt(n);
+              const isLocallyClosed = Boolean(apiClosedAt || localClosure);
               const initial = counterparty.name.replace(/^@/, '').charAt(0).toUpperCase() || '?';
               return (
                 <button key={n.id || n.hash} type="button" onClick={() => setSelected(n)} style={{
@@ -634,7 +804,7 @@ export default function UexNegotiationsPage() {
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5, minWidth:0 }}>
                       <div style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>{n.listing_title || 'Item sem título'}</div>
                       <span style={{ flexShrink:0, padding:'2px 7px', borderRadius:10, background:isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.12)':'rgba(251,113,133,0.1)'):'rgba(52,211,153,0.1)', border:`1px solid ${isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.25)'):'rgba(52,211,153,0.25)'}`, color:isLocallyClosed?(localClosure?.status==='success'?'var(--accent-green)':'var(--accent-red)'):'var(--accent-green)', fontSize:9, fontWeight:800, textTransform:'uppercase' }}>
-                        {localClosure?.status==='success' ? 'Concluída' : localClosure?.status==='failed' ? 'Sem sucesso' : n.date_closed ? 'Encerrada' : 'Ativa'}
+                        {localClosure?.status==='success' ? 'Concluída' : localClosure?.status==='failed' ? 'Sem sucesso' : apiClosedAt ? 'Encerrada' : 'Ativa'}
                       </span>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', fontSize:10, color:'var(--text-secondary)' }}>

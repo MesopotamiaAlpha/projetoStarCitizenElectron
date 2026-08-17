@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Calculator, GripHorizontal, RotateCcw, X } from 'lucide-react';
+import { SCU_CALCULATOR_UNITS, calculateScuValue } from '../data/scuCalculator';
 
 function formatNumberForDisplay(value) {
   const raw = String(value ?? '');
@@ -15,6 +16,10 @@ function formatNumberForDisplay(value) {
 
 function formatExpressionForDisplay(expression) {
   return String(expression || '').replace(/\d+(?:\.\d+)?/g, formatNumberForDisplay);
+}
+
+function formatResultForDisplay(value) {
+  return Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 10 });
 }
 
 function evaluateExpression(expression) {
@@ -55,16 +60,43 @@ const BUTTONS = [
 
 export default function CalculatorWidget() {
   const [open, setOpen] = useState(false);
+  const [calculatorMode, setCalculatorMode] = useState('normal');
   const [expression, setExpression] = useState('');
   const [displayResult, setDisplayResult] = useState('0');
   const [error, setError] = useState(false);
   const [justEvaluated, setJustEvaluated] = useState(false);
+  const [scuInputUnit, setScuInputUnit] = useState('SCU');
+  const [scuOutputUnit, setScuOutputUnit] = useState('SCU');
+  const [scuSummary, setScuSummary] = useState(null);
+
+  function resetCalculator() {
+    setExpression('');
+    setDisplayResult('0');
+    setError(false);
+    setJustEvaluated(false);
+    setScuSummary(null);
+  }
+
+  function changeMode(nextMode) {
+    if (nextMode === calculatorMode) return;
+    setCalculatorMode(nextMode);
+    resetCalculator();
+  }
 
   function calculate(value = expression) {
     try {
-      const result = evaluateExpression(value);
-      setDisplayResult(result.toLocaleString('pt-BR', { maximumFractionDigits:10 }));
-      setExpression(String(result));
+      const arithmeticResult = evaluateExpression(value);
+      if (calculatorMode === 'scu') {
+        const converted = calculateScuValue(arithmeticResult, scuInputUnit, scuOutputUnit);
+        setDisplayResult(`${formatResultForDisplay(converted.output)} ${converted.outputUnit}`);
+        setScuSummary(converted.summary);
+      } else {
+        setDisplayResult(formatResultForDisplay(arithmeticResult));
+        setScuSummary(null);
+      }
+      // Mantemos a expressão no valor aritmético da unidade de entrada para
+      // permitir continuar somando/subtraindo sem misturar unidade de saída.
+      setExpression(String(arithmeticResult));
       setError(false);
       setJustEvaluated(true);
     } catch {
@@ -77,6 +109,7 @@ export default function CalculatorWidget() {
   function appendValue(value) {
     setError(false);
     setJustEvaluated(false);
+    setScuSummary(null);
     setExpression(prev => {
       const current = justEvaluated && !['+','-','×','÷','%'].includes(value) ? '' : prev;
       if (value === '.') {
@@ -95,12 +128,20 @@ export default function CalculatorWidget() {
 
   function handleButton(button) {
     if (button.action === 'clear') {
-      setExpression(''); setDisplayResult('0'); setError(false); setJustEvaluated(false); return;
+      resetCalculator();
+      return;
     }
     if (button.action === 'backspace') {
-      setExpression(prev => prev.slice(0, -1)); setError(false); setJustEvaluated(false); return;
+      setExpression(prev => prev.slice(0, -1));
+      setError(false);
+      setJustEvaluated(false);
+      setScuSummary(null);
+      return;
     }
-    if (button.action === 'equals') { calculate(); return; }
+    if (button.action === 'equals') {
+      calculate();
+      return;
+    }
     appendValue(button.value);
   }
 
@@ -122,7 +163,7 @@ export default function CalculatorWidget() {
   });
 
   const panelStyle = {
-    position:'fixed', right:12, bottom:12, width:'min(286px, calc(100vw - 24px))', maxWidth:'calc(100vw - 24px)', zIndex:4000, pointerEvents:'auto',
+    position:'fixed', right:12, bottom:12, width:'min(320px, calc(100vw - 24px))', maxWidth:'calc(100vw - 24px)', zIndex:4000, pointerEvents:'auto',
     background:'var(--bg-card)', border:'1px solid rgba(56,189,248,0.38)',
     borderRadius:12, boxShadow:'0 18px 55px rgba(0,0,0,0.58), 0 0 0 1px rgba(56,189,248,0.08)',
     overflow:'hidden', fontFamily:'"Exo 2",sans-serif',
@@ -135,6 +176,12 @@ export default function CalculatorWidget() {
     cursor:'pointer', fontFamily:'Share Tech Mono,monospace', fontSize:button.tone==='danger'?11:16, fontWeight:700,
     display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.12s',
   });
+  const modeButtonStyle = (active) => ({
+    flex:1, padding:'6px 7px', border:`1px solid ${active?'rgba(56,189,248,0.42)':'var(--border-subtle)'}`,
+    borderRadius:5, background:active?'rgba(56,189,248,0.14)':'transparent', color:active?'var(--accent-primary)':'var(--text-muted)',
+    cursor:'pointer', fontFamily:'"Exo 2",sans-serif', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.04em',
+  });
+  const unitSelectStyle = { flex:1, minWidth:0, padding:'6px 7px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:11 };
 
   return (
     <>
@@ -152,10 +199,35 @@ export default function CalculatorWidget() {
               <button className="calculator-close" onClick={()=>setOpen(false)} title="Fechar calculadora" aria-label="Fechar calculadora" style={{width:23,height:23,display:'flex',alignItems:'center',justifyContent:'center',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-muted)',cursor:'pointer'}}><X size={12}/></button>
             </div>
           </div>
+
+          <div style={{display:'flex',gap:6,padding:'9px 11px 0'}}>
+            <button type="button" onClick={()=>changeMode('normal')} style={modeButtonStyle(calculatorMode==='normal')}>Modo Normal</button>
+            <button type="button" onClick={()=>changeMode('scu')} style={modeButtonStyle(calculatorMode==='scu')}>Modo SCU</button>
+          </div>
+
+          {calculatorMode === 'scu' && (
+            <div style={{padding:'8px 11px 0'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+                <select aria-label="Unidade de entrada SCU" value={scuInputUnit} onChange={e=>{setScuInputUnit(e.target.value);setScuSummary(null);}} style={unitSelectStyle}>
+                  {SCU_CALCULATOR_UNITS.map(unit=><option key={unit} value={unit}>{unit}</option>)}
+                </select>
+                <span style={{color:'var(--text-muted)',fontSize:10}}>→</span>
+                <select aria-label="Unidade de saída SCU" value={scuOutputUnit} onChange={e=>{setScuOutputUnit(e.target.value);setScuSummary(null);}} style={unitSelectStyle}>
+                  {SCU_CALCULATOR_UNITS.map(unit=><option key={unit} value={unit}>{unit}</option>)}
+                </select>
+              </div>
+              <div style={{fontSize:9,color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace'}}>1 SCU = 100 cSCU = 100 Units</div>
+            </div>
+          )}
+
           <div className="calculator-display" style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
             <div style={{minHeight:18,textAlign:'right',color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatExpressionForDisplay(expression) || '0'}</div>
             <div style={{minHeight:32,textAlign:'right',color:error?'var(--accent-red)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:22,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayResult}</div>
+            {calculatorMode === 'scu' && scuSummary && (
+              <div style={{marginTop:6,paddingTop:6,borderTop:'1px solid rgba(56,189,248,0.14)',fontSize:9,lineHeight:1.45,color:'var(--accent-primary)',fontFamily:'Share Tech Mono,monospace',textAlign:'right',wordBreak:'break-word'}}>{scuSummary.text}</div>
+            )}
           </div>
+
           <div className="calculator-keypad" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
             {BUTTONS.map((button,index)=>(
               <button className={`calculator-key ${button.tone ? `tone-${button.tone}` : ''}`} key={`${button.label}-${index}`} onClick={()=>handleButton(button)} style={buttonStyle(button)}>

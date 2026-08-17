@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, useDeferredValue } from 'react';
 import {
   Cpu, CheckCircle2, Star, Search, Plus, Trash2,
   Edit3, X, Save, FlaskConical, MapPin, Users,
@@ -9,7 +9,7 @@ import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { setProvenance, SOURCES } from '../data/provenance';
 import {
   loadQueue, queueBlueprint, dequeueBlueprint,
-  updateQueuedQty, isBlueprintQueued,
+  updateQueuedQty,
 } from '../data/materialQueue';
 import { CARGO_UNITS, isCargoUnit, normalizeCargoUnit, toCargoBase, fromCargoBase, formatCargoNumber } from '../data/cargoUnits';
 
@@ -19,11 +19,11 @@ const FACTIONS   = ['Starter','Foxwell Enforcement','Headhunters','Covalex','Lin
 const UNITS      = ['un','kg', ...CARGO_UNITS];
 
 // ── Importação SCMDB ───────────────────────────────────────────────────────────
-// O backup SCMDB contém o catálogo e o estado de posse, mas não contém as
-// receitas/materiais. Por isso, toda blueprint importada começa com ingredients:[]
-// e recebe um destaque visual até o usuário cadastrar os minérios necessários.
+// O backup SCMDB pode conter apenas o estado da blueprint. Quando a tag/nome
+// corresponde ao catálogo padrão local, o processo Electron preenche os materiais;
+// sem correspondência, a blueprint permanece destacada para cadastro manual.
 function inferScmdbCategory(item) {
-  const text = `${item?.tag || ''} ${item?.name || ''}`.toLowerCase();
+  const text = `${item?.tag || ''} ${item?.name || item?.productName || ''} ${item?.type || ''} ${item?.gear || ''}`.toLowerCase();
   if (/armor|helmet|core|arms|legs|backpack|medium_armor|heavy_armor|light_armor|flight suit|undersuit/.test(text)) return 'FPS Armor';
   if (/magazine|_mag\b|battery|ammo|munition|cartridge/.test(text)) return 'Ammo';
   if (/cooler|powerplant|power_plant|shield|thruster|quantum|radar|avionics|component/.test(text)) return 'Ship Component';
@@ -34,7 +34,7 @@ function inferScmdbCategory(item) {
 }
 
 function inferScmdbSize(item) {
-  const text = `${item?.tag || ''} ${item?.name || ''}`;
+  const text = `${item?.tag || ''} ${item?.name || item?.productName || ''}`;
   const match = text.match(/(?:^|[_\s])S([1-9])(?:$|[_\s])/i) || text.match(/size\s*([1-9])/i);
   return match ? match[1] : 'Personal';
 }
@@ -46,32 +46,38 @@ export function normalizeScmdbBackup(parsed) {
   const seen = new Set();
   const importedAt = new Date().toISOString();
   const list = parsed.blueprints.map((item, index) => {
-    const tag = String(item?.tag || '').trim();
-    const name = String(item?.name || '').trim();
+    const tag = String(item?.tag || item?.scmdb_tag || item?.guid || '').trim();
+    const name = String(item?.name || item?.productName || '').trim();
     if (!tag || !name) return null;
     const identity = tag.toLowerCase();
     if (seen.has(identity)) return null;
     seen.add(identity);
+    const catalogMaterials = Array.isArray(item?.materials) ? item.materials.map(material => ({
+      material_name: material.name,
+      quantity: Number(material.quantityExact),
+      unit: ['SCU', 'cSCU', 'mSCU', 'μSCU'].includes(material.quantityUnit) ? material.quantityUnit : 'un',
+      notes: `SCMDB · ${material.inputType || 'material'} · slot: ${material.slot || '—'}`,
+    })) : [];
     return {
       name,
       category: inferScmdbCategory(item),
-      subcategory: 'SCMDB',
-      manufacturer: '',
+      subcategory: item?.subtype || item?.type || 'SCMDB',
+      manufacturer: String(item?.manufacturer || ''),
       item_size: inferScmdbSize(item),
       grade: '',
-      item_class: '',
+      item_class: String(item?.type || ''),
       description: `Blueprint importada do SCMDB. Tag: ${tag}`,
       how_to_get: item.url ? `Registro SCMDB: ${item.url}` : 'Importada do backup SCMDB',
       faction: '',
       mission_type: '',
-      patch_added: 'SCMDB',
+      patch_added: item?.sourceVersion || 'SCMDB',
       notes: `SCMDB tag: ${tag}\\nImportada em: ${importedAt}`,
-      ingredients: [],
+      ingredients: Array.isArray(item?.ingredients) && item.ingredients.length ? item.ingredients : catalogMaterials,
       scmdb_tag: tag,
-      scmdb_url: String(item?.url || ''),
+      scmdb_url: String(item?.url || item?.scmdb_url || 'https://scmdb.net/?page=fab'),
       scmdb_completed: item?.completed === true,
       scmdb_index: index,
-      userState: { owned: 1, wishlist: item?.favorite === true ? 1 : 0 },
+      userState: { owned: item?.completed === true ? 1 : 0, wishlist: item?.favorite === true ? 1 : 0 },
     };
   }).filter(Boolean);
   if (!list.length) throw new Error('O backup SCMDB não contém blueprints válidas para importar.');
@@ -422,7 +428,7 @@ function BpCard({ bp, onToggleOwned, onToggleWishlist, onSelect, isSelected, onE
             <button onClick={()=>onToggleOwned(bp.id)} title={bp.owned?'Remover da coleção':'Marcar como obtida'} style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.owned?'rgba(52,211,153,0.4)':'var(--border-subtle)'}`,background:bp.owned?'rgba(52,211,153,0.15)':'transparent',color:bp.owned?'var(--accent-green)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>✓</button>
             <button onClick={()=>onToggleWishlist(bp.id)} title="wishlist" style={{ width:28,height:28,borderRadius:5,border:`1px solid ${bp.wishlist?'rgba(251,191,36,0.4)':'var(--border-subtle)'}`,background:bp.wishlist?'rgba(251,191,36,0.12)':'transparent',color:bp.wishlist?'var(--accent-gold)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13 }}>★</button>
             <button onClick={()=>onEdit(bp)} style={{ width:28,height:28,borderRadius:5,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.06)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><Edit3 size={12}/></button>
-            {!bp.is_default&&(deleteConfirm?(
+            {(!bp.is_default || isScmdbBlueprint(bp))&&(deleteConfirm?(
               <div style={{ display:'flex',gap:4,alignItems:'center' }}>
                 <button onClick={()=>onDelete(bp.id)} style={{ padding:'4px 8px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:4,color:'var(--accent-red)',cursor:'pointer',fontSize:11,fontWeight:700 }}>Sim</button>
                 <button onClick={()=>setDeleteConfirm(false)} style={{ padding:'4px 8px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-secondary)',cursor:'pointer',fontSize:11 }}>Não</button>
@@ -487,9 +493,14 @@ export default function BlueprintPage() {
   const [search,      setSearch]      = useState('');
   const [filterCat,   setFilterCat]   = useState('all');
   const [filterFac,   setFilterFac]   = useState('all');
+  const [filterMaterial, setFilterMaterial] = useState('all');
+  const [filterClass, setFilterClass] = useState('all');
+  const [filterComponentType, setFilterComponentType] = useState('all');
+  const [filterSubtype, setFilterSubtype] = useState('all');
   const [filterObtida, setFilterObtida] = useState('all');
   const [sortBy,      setOrdenarBy]      = useState('name');
   const [selectedBp,  setSelectedBp]  = useState(null);
+  const [visibleCount, setVisibleCount] = useState(100);
   const [queue,       setQueue]       = useState(loadQueue());
   const [scmdbImporting, setScmdbImporting] = useState(false);
   const [scmdbMessage, setScmdbMessage] = useState(null);
@@ -529,7 +540,12 @@ export default function BlueprintPage() {
       const result = await api.importScmdb(normalized);
       normalized.forEach(bp => setProvenance('blueprint', bp.name, SOURCES.MANUAL));
       await loadData();
-      setScmdbMessage({ type:'ok', text:`SCMDB restaurado: ${result.imported || 0} blueprint(s) importada(s) e ${result.skipped || 0} já existente(s) ignorada(s). As importadas sem materiais aparecem em amarelo.` });
+      const details = [
+        `${result.imported || 0} nova(s)`,
+        `${result.enriched || 0} enriquecida(s) com materiais`,
+        `${result.skipped || 0} sem alteração`,
+      ];
+      setScmdbMessage({ type:'ok', text:`SCMDB reconciliado: ${details.join(' · ')}. Blueprints sem correspondência no catálogo continuam com “CADASTRAR MATERIAIS”.` });
     } catch (error) {
       setScmdbMessage({ type:'error', text:error.message || 'Não foi possível restaurar o backup SCMDB.' });
     } finally {
@@ -549,10 +565,11 @@ export default function BlueprintPage() {
   }
 
   async function handleEdit(data) {
-    if (editingBp.is_default) {
-      // Blueprint padrão: criar cópia custom com as alterações
+    if (editingBp.is_default && !isScmdbBlueprint(editingBp)) {
+      // Seeds internos antigos continuam protegidos: a edição cria uma cópia custom.
       await api.createCustom({ ...data, patch_added: editingBp.patch_added || '4.7' });
     } else {
+      // Blueprints SCMDB padrão são registros editáveis pelo usuário.
       await api.updateCustom({ bpId: editingBp.id, ...data });
     }
     setProvenance('blueprint', data.bp.name, SOURCES.MANUAL);
@@ -567,7 +584,7 @@ export default function BlueprintPage() {
   }
 
   function handleQueue(bp) {
-    if (isBlueprintQueued(bp.id)) {
+    if (queuedIds.has(String(bp.id))) {
       dequeueBlueprint(bp.id);
       refreshQueue();
       return;
@@ -580,22 +597,46 @@ export default function BlueprintPage() {
     trackingToastTimerRef.current = setTimeout(() => setTrackingToast(false), 3000);
   }
 
+  const deferredSearch = useDeferredValue(search);
+  const queuedIds = useMemo(() => new Set((queue.queuedBlueprints || []).map(item => String(item.bpId))), [queue]);
+
   const filtered = useMemo(()=>{
     let res=[...bps];
-    if(search){const q=search.toLowerCase();res=res.filter(b=>b.name?.toLowerCase().includes(q)||b.category?.toLowerCase().includes(q)||b.manufacturer?.toLowerCase().includes(q)||b.faction?.toLowerCase().includes(q)||b.ingredients?.some(i=>i.material_name?.toLowerCase().includes(q)));}
+    if(deferredSearch){const q=deferredSearch.toLowerCase();res=res.filter(b=>b.name?.toLowerCase().includes(q)||b.category?.toLowerCase().includes(q)||b.manufacturer?.toLowerCase().includes(q)||b.faction?.toLowerCase().includes(q)||b.ingredients?.some(i=>i.material_name?.toLowerCase().includes(q)));}
     if(filterCat!=='all') res=res.filter(b=>b.category===filterCat);
     if(filterFac!=='all') res=res.filter(b=>b.faction===filterFac);
+    if(filterClass!=='all') res=res.filter(b=>String(b.item_class || b.class || '').trim()===filterClass);
+    if(filterComponentType!=='all') res=res.filter(b=>String(b.component_type || b.componentType || b.type || '').trim()===filterComponentType);
+    if(filterSubtype!=='all') res=res.filter(b=>String(b.subcategory || b.subtype || '').trim()===filterSubtype);
+    if(filterMaterial!=='all') res=res.filter(b=>{
+      let ingredients=b.ingredients;
+      if(typeof ingredients==='string'){try{ingredients=JSON.parse(ingredients);}catch{ingredients=[];}}
+      return Array.isArray(ingredients) && ingredients.some(i=>String(i?.material_name || i?.material || i?.name || '').trim()===filterMaterial);
+    });
     if(filterObtida==='owned')    res=res.filter(b=>b.owned);
     if(filterObtida==='missing')  res=res.filter(b=>!b.owned);
     if(filterObtida==='wishlist') res=res.filter(b=>b.wishlist&&!b.owned);
-    if(filterObtida==='queued')   res=res.filter(b=>isBlueprintQueued(b.id));
+    if(filterObtida==='queued')   res=res.filter(b=>queuedIds.has(String(b.id)));
     if(filterObtida==='materials') res=res.filter(b=>hasBlueprintMaterials(b));
     res.sort((a,b)=>sortBy==='faction'?(a.faction||'').localeCompare(b.faction||''):sortBy==='cat'?(a.category||'').localeCompare(b.category||''):sortBy==='crafted'?(b.crafted_count||0)-(a.crafted_count||0):(a.name||'').localeCompare(b.name||''));
     return res;
-  },[bps,search,filterCat,filterFac,filterObtida,sortBy,queue]);
+  },[bps,deferredSearch,filterCat,filterFac,filterMaterial,filterClass,filterComponentType,filterSubtype,filterObtida,sortBy,queuedIds]);
 
-  const catList = useMemo(()=>[...new Set(bps.map(b=>b.category))].sort(),[bps]);
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [deferredSearch, filterCat, filterFac, filterMaterial, filterClass, filterComponentType, filterSubtype, filterObtida, sortBy, queue]);
+
+  const visibleBlueprints = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const catList = useMemo(()=>[...new Set(bps.map(b=>b.category).filter(Boolean))].sort(),[bps]);
   const facList = useMemo(()=>[...new Set(bps.map(b=>b.faction).filter(Boolean))].sort(),[bps]);
+  const classList = useMemo(()=>[...new Set(bps.map(b=>String(b.item_class || b.class || '').trim()).filter(Boolean))].sort(),[bps]);
+  const componentTypeList = useMemo(()=>[...new Set(bps.map(b=>String(b.component_type || b.componentType || b.type || '').trim()).filter(Boolean))].sort(),[bps]);
+  const subtypeList = useMemo(()=>[...new Set(bps.map(b=>String(b.subcategory || b.subtype || '').trim()).filter(Boolean))].sort(),[bps]);
+  const materialList = useMemo(()=>{
+    const values = new Set();
+    bps.forEach(bp=>{ let ingredients=bp.ingredients; if(typeof ingredients==='string'){try{ingredients=JSON.parse(ingredients);}catch{ingredients=[];}} (Array.isArray(ingredients)?ingredients:[]).forEach(i=>{const name=String(i?.material_name || i?.material || i?.name || '').trim(); if(name) values.add(name);}); });
+    return [...values].sort((a,b)=>a.localeCompare(b));
+  },[bps]);
   const queuedCount = queue.queuedBlueprints.length;
   const ownedCount  = bps.filter(b=>b.owned).length;
     const pct = bps.length>0?Math.round((ownedCount/bps.length)*100):0;
@@ -682,6 +723,22 @@ export default function BlueprintPage() {
               <option value="all">Todas as Facções</option>
               {facList.map(f=><option key={f}>{f}</option>)}
             </select>
+            <select style={SS} value={filterMaterial} onChange={e=>setFilterMaterial(e.target.value)}>
+              <option value="all">Qualquer Minério</option>
+              {materialList.map(material=><option key={material}>{material}</option>)}
+            </select>
+            <select style={SS} value={filterClass} onChange={e=>setFilterClass(e.target.value)}>
+              <option value="all">Qualquer Classe</option>
+              {classList.map(value=><option key={value}>{value}</option>)}
+            </select>
+            <select style={SS} value={filterComponentType} onChange={e=>setFilterComponentType(e.target.value)}>
+              <option value="all">Tipo de Componente</option>
+              {componentTypeList.map(value=><option key={value}>{value}</option>)}
+            </select>
+            <select style={SS} value={filterSubtype} onChange={e=>setFilterSubtype(e.target.value)}>
+              <option value="all">Qualquer Subtipo</option>
+              {subtypeList.map(value=><option key={value}>{value}</option>)}
+            </select>
             <select style={SS} value={sortBy} onChange={e=>setOrdenarBy(e.target.value)}>
               <option value="name">Nome (A-Z)</option>
               <option value="faction">Facção</option>
@@ -709,7 +766,7 @@ export default function BlueprintPage() {
             </div>
           ):(
             <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-              {filtered.map(bp=>(
+              {visibleBlueprints.map(bp=>(
                 <BpCard key={bp.id} bp={bp}
                   onToggleOwned={handleToggleOwned}
                   onToggleWishlist={handleToggleWishlist}
@@ -719,9 +776,10 @@ export default function BlueprintPage() {
                   onEdit={b=>{setEditingBp(b);setShowForm(false);}}
                   onDelete={handleDelete}
                   onQueue={handleQueue}
-                  isQueued={isBlueprintQueued(bp.id)}
+                  isQueued={queuedIds.has(String(bp.id))}
                 />
               ))}
+              {visibleBlueprints.length < filtered.length && <div style={{display:'flex',justifyContent:'center',padding:'14px 0 4px'}}><button type="button" onClick={() => setVisibleCount(count => Math.min(count + 100, filtered.length))} style={{padding:'8px 16px',borderRadius:7,border:'1px solid rgba(56,189,248,0.3)',background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',fontWeight:700,cursor:'pointer'}}>Carregar mais ({Math.min(100, filtered.length - visibleBlueprints.length)})</button></div>}
             </div>
           )}
         </div>

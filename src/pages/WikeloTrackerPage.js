@@ -2,10 +2,18 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Plus, Trash2, Edit3, Save, X, Search, CheckCircle2,
   Star, Package, ChevronDown, ChevronUp, AlertTriangle,
-  Minus, RefreshCw, Archive, Lightbulb
+  Minus, RefreshCw, Archive, Lightbulb, ScanLine, Truck, RotateCcw
 } from 'lucide-react';
 import { searchUexItems } from '../data/uexItemsDB';
 import { calcWikeloFavors } from '../data/wikelo';
+import { INVENTORY_UPDATED_EVENT, publishInventoryUpdate } from '../data/inventoryEvents';
+import {
+  applyWikeloDeliveryPlan,
+  buildWikeloDeliveryPlan,
+  getInventoryItemQuantity,
+  getWikeloMissionProgress,
+  scanWikeloMissions,
+} from '../data/wikeloInventory';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 const MISSIONS_KEY = 'sc_wikelo_missions_v1';
@@ -35,8 +43,7 @@ async function fetchInventoryItems() {
 
 // Buscar quantidade de item no inventário pelo nome exato
 function getInventoryQty(name, items = []) {
-  const found = items.find(i => (i.name||'').trim().toLowerCase() === name.trim().toLowerCase());
-  return found ? (Number(found.quantity) || 0) : 0;
+  return getInventoryItemQuantity(name, items);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -188,7 +195,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck, inventoryItems 
 }
 
 // ── Card de item dentro da missão ─────────────────────────────────────────────
-function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems }) {
+function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventoryItems }) {
   const [editMode, setEditMode] = useState(false);
   const [delConf,  setDelConf]  = useState(false);
   const [adjVal,   setAdjVal]   = useState('');
@@ -199,6 +206,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems })
   const isDone   = qty >= needed;
   const pct      = Math.min(100, Math.round((qty / needed) * 100));
   const fromInv  = item.from_inventory || 0;
+  const scannedAvailable = Math.max(0, Number(item.inventory_available) || 0);
 
   function applyAdj() {
     const n = parseFloat(adjVal) || 0;
@@ -256,9 +264,27 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems })
           <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, color:'var(--text-muted)' }}>/{needed} {item.unit}</span>
         </div>
         {/* Ações */}
-        <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-          <button onClick={()=>setEditMode(true)} style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+          <button onClick={()=>onScan?.(missionId, item)} title="Consultar este item no Inventário sem remover quantidade" style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:4, minHeight:26, padding:'0 7px', borderRadius:4, border:'1px solid rgba(251,191,36,0.28)', background:'rgba(251,191,36,0.07)', color:'var(--accent-gold)', cursor:'pointer', fontSize:9, fontWeight:800, textTransform:'uppercase', whiteSpace:'nowrap' }}>
+            <ScanLine size={11}/> Escanear seus itens
+          </button>
+          <button onClick={()=>setEditMode(true)}
+ style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }} title="Editar item">
             <Edit3 size={10}/>
+          </button>
+          <button
+            onClick={() => onUpdate(missionId, { ...item, collected: Math.max(0, qty - 1), from_inventory: Math.min(fromInv, Math.max(0, qty - 1)), inventory_scanned_at: null })}
+            style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.25)', background:'rgba(251,113,133,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+            title="Remover uma unidade coletada"
+          >
+            <Minus size={10}/>
+          </button>
+          <button
+            onClick={() => onUpdate(missionId, { ...item, collected: 0, from_inventory: 0, inventory_available: 0, inventory_reserved_for_wikelo: 0, inventory_source_locations: [], inventory_source_location: '', inventory_scanned_at: null })}
+            style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,191,36,0.25)', background:'rgba(251,191,36,0.06)', color:'var(--accent-gold)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+            title="Zerar quantidade coletada deste item"
+          >
+            <RotateCcw size={10}/>
           </button>
           {delConf ? (
             <>
@@ -274,8 +300,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems })
       </div>
 
       {/* Controles de +/- coleta */}
-      {!isDone && (
-        <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:24 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:24 }}>
           <div style={{ display:'flex', borderRadius:4, overflow:'hidden', border:'1px solid var(--border-subtle)' }}>
             <button onClick={()=>setAdjMode('add')} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.15)':'transparent', border:'none', borderRight:'1px solid var(--border-subtle)', color:adjMode==='add'?'var(--accent-green)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>+ Coletei</button>
             <button onClick={()=>setAdjMode('sub')} style={{ padding:'3px 8px', background:adjMode==='sub'?'rgba(251,113,133,0.12)':'transparent', border:'none', color:adjMode==='sub'?'var(--accent-red)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>− Remover</button>
@@ -292,14 +317,18 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, inventoryItems })
             placeholder="outro" style={{ width:60, padding:'3px 7px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:10, outline:'none', textAlign:'center' }}/>
           <button onClick={applyAdj} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)', border:`1px solid ${adjMode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>OK</button>
         </div>
-      )}
-      {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo!</div>}
+      {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo! Use − Remover ou o botão de reset se precisar corrigir.</div>}
+      {item.inventory_scanned_at && <div style={{ paddingLeft:24, marginTop:3, fontSize:9, color: scannedAvailable >= needed ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+        <div>Escaneado: {scannedAvailable} disponível no Inventário · {new Date(item.inventory_scanned_at).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}</div>
+        <div style={{ marginTop:3, color:'var(--accent-primary)', fontWeight:700 }}>📍 Estoque analisado: {item.inventory_source_location || 'Local não informado'}</div>
+        {Number(item.inventory_reserved_for_wikelo) > 0 && <div style={{ marginTop:2, color:'var(--accent-gold)' }}>Reserva compartilhada para o Wikelo: {item.inventory_reserved_for_wikelo} {item.unit || 'un'}</div>}
+      </div>}
     </div>
   );
 }
 
 // ── Card de missão ────────────────────────────────────────────────────────────
-function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete, onEditTitle, inventoryItems }) {
+function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete, onEditTitle, onScanItem, onDeliverMission, inventoryItems }) {
   const [expanded,   setExpanded]   = useState(false);
   const [showForm,   setShowForm]   = useState(false);
   const [editTitle,  setEditTitle]  = useState(false);
@@ -307,11 +336,13 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
   const [delConf,    setDelConf]    = useState(false);
   const [invModal,   setInvModal]   = useState(null);
 
-  const items     = mission.items || [];
-  const doneItems = items.filter(i => (i.collected||0) >= (i.needed||1)).length;
-  const total     = items.length;
-  const isComplete = total > 0 && doneItems === total;
-  const pct        = total > 0 ? Math.round(doneItems/total*100) : 0;
+  const items      = mission.items || [];
+  const progress   = getWikeloMissionProgress(mission);
+  const doneItems  = progress.completed;
+  const total      = progress.total;
+  const isComplete = progress.complete;
+  const pct        = progress.percent;
+  const delivered  = mission.wikelo_delivery_status === 'delivered' || Boolean(mission.wikelo_delivered_at);
 
   function handleInventoryCheck(name, invQty, neededQty, cb) {
     setInvModal({ name, invQty, neededQty, cb });
@@ -383,6 +414,8 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
         </div>
       </div>
 
+      {mission.wikelo_delivery_error && <div style={{ margin:'0 16px 10px', padding:'7px 9px', display:'flex', alignItems:'flex-start', gap:6, color:'var(--accent-red)', background:'rgba(251,113,133,0.07)', border:'1px solid rgba(251,113,133,0.24)', borderRadius:5, fontSize:10, lineHeight:1.4 }}><AlertTriangle size={12}/> Entrega não realizada: {mission.wikelo_delivery_error}</div>}
+
       {/* Lista de itens */}
       {expanded && (
         <div style={{ padding:'0 16px 14px' }}>
@@ -394,6 +427,7 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
               key={item.id} item={item} missionId={mission.id}
               onUpdate={onUpdateItem}
               onDelete={onDeleteItem}
+              onScan={onScanItem}
               inventoryItems={inventoryItems}
             />
           ))}
@@ -405,7 +439,9 @@ function MissionCard({ mission, onUpdateItem, onDeleteItem, onAddItem, onDelete,
               onCancel={()=>setShowForm(false)}
             />
           )}
-          {!showForm && (
+          {isComplete && !delivered && <button onClick={() => onDeliverMission?.(mission)} style={{ display:'flex', alignItems:'center', gap:6, width:'100%', justifyContent:'center', padding:'8px 12px', marginTop:8, background:'rgba(255,200,0,0.12)', border:'1px solid rgba(255,200,0,0.42)', borderRadius:6, color:'var(--accent-gold)', cursor:'pointer', fontSize:11, fontWeight:800, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}><Truck size={13}/> Entregar para o Wikelo</button>}
+          {delivered && <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'8px 12px', marginTop:8, color:'var(--accent-green)', background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.24)', borderRadius:6, fontSize:10, fontWeight:800, textTransform:'uppercase' }}><CheckCircle2 size={12}/> Itens entregues ao Wikelo{mission.wikelo_delivered_at ? ` · ${ptDateTime(mission.wikelo_delivered_at)}` : ''}</div>}
+          {!showForm && !delivered && (
             <button onClick={()=>setShowForm(true)} style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', background:'rgba(56,189,248,0.06)', border:'1px dashed rgba(56,189,248,0.25)', borderRadius:6, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase', marginTop:6 }}>
               <Plus size={11}/> Adicionar Item
             </button>
@@ -425,13 +461,27 @@ export default function WikeloTrackerPage() {
   const [search,      setSearch]      = useState('');
   const [filterDone,  setFilterDone]  = useState('all');
 
+  const reloadInventory = useCallback(async () => {
+    const items = await fetchInventoryItems();
+    setInventoryItems(Array.isArray(items) ? items : []);
+    return Array.isArray(items) ? items : [];
+  }, []);
+
   useEffect(() => {
     let active = true;
     fetchInventoryItems().then(items => {
-      if (active) setInventoryItems(items);
+      if (active) setInventoryItems(Array.isArray(items) ? items : []);
     });
-    return () => { active = false; };
-  }, []);
+    const handleInventoryUpdate = event => {
+      if (Array.isArray(event?.detail?.items)) setInventoryItems(event.detail.items);
+      else reloadInventory();
+    };
+    window.addEventListener(INVENTORY_UPDATED_EVENT, handleInventoryUpdate);
+    return () => {
+      active = false;
+      window.removeEventListener(INVENTORY_UPDATED_EVENT, handleInventoryUpdate);
+    };
+  }, [reloadInventory]);
 
   const wfTotal = useMemo(() => calcWikeloFavors(inventoryItems), [inventoryItems]);
 
@@ -464,8 +514,72 @@ export default function WikeloTrackerPage() {
   function handleUpdateItem(mId, updatedItem) {
     persist(missions.map(m => m.id!==mId ? m : {
       ...m,
+      wikelo_delivery_error: null,
       items: (m.items||[]).map(i => i.id===updatedItem.id ? updatedItem : i),
     }));
+  }
+
+  function handleScanItem(mId, item) {
+    // O escaneamento é global por nome: todas as missões com o mesmo item
+    // recebem uma fatia do estoque, sem reutilizar a mesma unidade várias vezes.
+    const updatedMissions = scanWikeloMissions(missions, inventoryItems, item.name);
+    persist(updatedMissions);
+  }
+
+  async function updateInventoryRow(item) {
+    if (window.electronAPI?.inventoryUpdate) return window.electronAPI.inventoryUpdate(item);
+    const current = loadInventory();
+    const next = current.map(row => String(row.id) === String(item.id) ? item : row);
+    localStorage.setItem(INV_KEY, JSON.stringify({ itens: next }));
+    return { success: true };
+  }
+
+  async function deleteInventoryRow(item) {
+    if (window.electronAPI?.inventoryDelete) return window.electronAPI.inventoryDelete(item.id);
+    const current = loadInventory();
+    localStorage.setItem(INV_KEY, JSON.stringify({ itens: current.filter(row => String(row.id) !== String(item.id)) }));
+    return { success: true };
+  }
+
+  async function handleDeliverMission(mission) {
+    const currentMission = missions.find(row => row.id === mission.id) || mission;
+    if (currentMission.wikelo_delivery_status === 'delivered' || currentMission.wikelo_delivered_at) return;
+    if (!window.confirm(`Entregar os itens da missão "${mission.title}" ao Wikelo? O estoque será descontado do Inventário.`)) return;
+
+    const plan = buildWikeloDeliveryPlan(currentMission, inventoryItems);
+    if (!plan.ok) {
+      const reason = plan.alreadyDelivered ? 'Esta missão já foi entregue.' : plan.missing.map(row => `${row.name}: ${row.reason}`).join(' ');
+      persist(missions.map(row => row.id === mission.id ? { ...row, wikelo_delivery_status: 'error', wikelo_delivery_error: reason } : row));
+      return;
+    }
+
+    const snapshots = plan.allocations.map(allocation => inventoryItems.find(item => String(item.id) === String(allocation.inventoryId))).filter(Boolean);
+    try {
+      for (const allocation of plan.allocations) {
+        const row = snapshots.find(item => String(item.id) === String(allocation.inventoryId));
+        if (!row) throw new Error(`Item ${allocation.name} não foi encontrado no Inventário.`);
+        if (allocation.afterQuantity > 0) await updateInventoryRow({ ...row, quantity: allocation.afterQuantity });
+        else await deleteInventoryRow(row);
+      }
+      const nextInventory = applyWikeloDeliveryPlan(inventoryItems, plan);
+      setInventoryItems(nextInventory);
+      publishInventoryUpdate(nextInventory);
+      persist(missions.map(row => row.id === mission.id ? {
+        ...row,
+        wikelo_delivery_status: 'delivered',
+        wikelo_delivered_at: new Date().toISOString(),
+        wikelo_delivery_error: null,
+        wikelo_delivery_plan: plan.allocations,
+      } : row));
+    } catch (error) {
+      // Os snapshots permitem restaurar as linhas já alteradas se alguma operação IPC falhar.
+      for (const snapshot of snapshots) {
+        try { await updateInventoryRow(snapshot); } catch { /* melhor esforço de rollback */ }
+      }
+      const message = error?.message || 'Não foi possível entregar os itens ao Wikelo.';
+      persist(missions.map(row => row.id === mission.id ? { ...row, wikelo_delivery_status: 'error', wikelo_delivery_error: message } : row));
+      await reloadInventory();
+    }
   }
 
   function handleDeleteItem(mId, itemId) {
@@ -586,6 +700,8 @@ export default function WikeloTrackerPage() {
               onAddItem={handleAddItem}
               onDelete={handleDeleteMission}
               onEditTitle={handleEditTitle}
+              onScanItem={handleScanItem}
+              onDeliverMission={handleDeliverMission}
             />
           ))
         )}

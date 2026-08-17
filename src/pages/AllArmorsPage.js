@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Shield } from 'lucide-react';
 import ArmorSetCard from '../components/ArmorSetCard';
 import ArmorSetModal from '../components/ArmorSetModal';
@@ -12,7 +12,7 @@ const SORT_OPTIONS = [
 ];
 const RARITY_ORDER = { Comum:1, Incomum:2, Raro:3, Legendary:4 };
 
-export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes }) {
+export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes, onUpdatePieceQuantity }) {
   const [search,       setSearch]       = useState('');
   const [typeFilter,   setTipoFilter]   = useState('all');
   const [rarityFilter, setRaridadeFilter] = useState('all');
@@ -20,6 +20,10 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
   const [sortBy,       setOrdenarBy]       = useState('name');
   const [selectedSet,  setSelectedSet]  = useState(null);
   const [groupByBase,  setGroupByBase]  = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 48;
+
+  useEffect(() => { setPage(1); }, [search, typeFilter, rarityFilter, statusFilter, sortBy, groupByBase]);
 
   const filtered = useMemo(() => {
     let result = [...sets];
@@ -86,8 +90,11 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
     });
   }, [filtered, groupByBase]);
 
-  const totalPieces = sets.reduce((a,s)=>a+(s.pieces||[]).length, 0);
-  const ownedPieces = sets.reduce((a,s)=>a+(s.pieces||[]).filter(p=>p.owned).length, 0);
+  const totalPieces = useMemo(() => sets.reduce((a,s)=>a+(s.pieces||[]).length, 0), [sets]);
+  const ownedPieces = useMemo(() => sets.reduce((a,s)=>a+(s.pieces||[]).filter(p=>p.owned).length, 0), [sets]);
+  const totalPages = Math.max(1, Math.ceil(displayItens.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleItems = useMemo(() => displayItens.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [displayItens, safePage]);
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
@@ -150,8 +157,9 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
 
       <div style={{ padding:'6px 32px',background:'var(--bg-base)',flexShrink:0 }}>
         <div className="results-info">
-          Exibindo <span>{filtered.length}</span> de {sets.length} sets
+          Exibindo <span>{displayItens.length}</span> de {sets.length} sets
           {groupByBase && <span style={{ marginLeft:8,color:'var(--text-muted)' }}>({displayItens.length} grupos)</span>}
+          {displayItens.length > PAGE_SIZE && <span style={{ marginLeft:8,color:'var(--text-muted)' }}>· página {safePage}/{totalPages}</span>}
         </div>
       </div>
 
@@ -163,14 +171,21 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
             <div className="empty-state-text">Ajuste os filtros para encontrar o que procura.</div>
           </div>
         ) : (
-          <div className="armor-grid">
-            {displayItens.map(item => (
+            <div className="armor-grid">
+            {visibleItems.map(item => (
               <ArmorSetCard
                 key={item.key}
                 set={item.set}
                 onClick={() => setSelectedSet(item.originalSet || item.set)}
               />
             ))}
+          </div>
+        )}
+        {displayItens.length > PAGE_SIZE && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, padding:'16px 0 4px' }}>
+            <button className="filter-chip" disabled={safePage <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}>‹ Anterior</button>
+            <span style={{ color:'var(--text-muted)', fontSize:11, fontFamily:'Share Tech Mono,monospace' }}>{safePage} / {totalPages}</span>
+            <button className="filter-chip" disabled={safePage >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}>Próxima ›</button>
           </div>
         )}
       </div>
@@ -183,6 +198,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
           onTogglePiece={onTogglePiece}
           onTogglePieceWishlist={onTogglePieceWishlist}
           onUpdatePieceNotes={onUpdatePieceNotes}
+          onUpdatePieceQuantity={onUpdatePieceQuantity}
         />
       )}
     </div>

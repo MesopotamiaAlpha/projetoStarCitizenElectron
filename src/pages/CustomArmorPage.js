@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, Edit3, Save, X, Shield, HardHat, Shirt, Dumbbell, Footprints, Backpack, ChevronDown, ChevronUp, AlertTriangle, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { getMissingArmorGroups, getArmorSyncStats } from '../data/uexArmorImport';
+import { getDuplicateArmorGroups, getArmorIdentity } from '../data/armorDedup';
 
 const PIECE_TYPES = ['Helmet','Torso','Arms','Legs','Backpack'];
 const PIECE_ICONS = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
@@ -134,39 +135,74 @@ function UexImportPanel({ sets, onAtualizar, onClose }) {
     [sets, imported]
   );
 
+  function buildImportedPayload(group) {
+    const setData = {
+      base_name: group.base_name,
+      variant_name: 'Base',
+      manufacturer: group.manufacturer,
+      type: 'Médio',
+      category: 'Combat',
+      description: 'Importado automaticamente da UEX API. Confira tipo, raridade e resistências.',
+      lore: '',
+      tags: ['uex-import'],
+      added_version: '',
+      rarity: 'Comum',
+    };
+    const pieces = group.pieces.map(p => ({
+      piece_type: p.piece_type,
+      piece_name: p.name,
+      resistance_physical:0, resistance_energy:0, resistance_distortion:0,
+      resistance_thermal:0, resistance_biochemical:0, resistance_stun:0,
+      mobility_penalty:0, slots:0,
+      is_lootable:false, is_purchasable:true,
+      buy_location:'', how_to_get:'',
+      price_auec: p.price_avg || p.price_buy || p.price_sell || 0,
+      description:'',
+    }));
+    return { setData, pieces };
+  }
+
+  async function importGroup(group) {
+    const { setData, pieces } = buildImportedPayload(group);
+    const result = await api.createCustomSet({ set:setData, pieces });
+    if (!result?.success) throw new Error(result?.error || 'Esta armadura já está cadastrada.');
+    setProvenance('armor', setData.base_name, SOURCES.UEX_API);
+    return group.base_name;
+  }
+
   async function handleImport(group) {
     if (!api) { setError('Importar só funciona no app Electron.'); return; }
     setImporting(group.base_name); setError('');
     try {
-      const setData = {
-        base_name: group.base_name,
-        variant_name: 'Base',
-        manufacturer: group.manufacturer,
-        type: 'Médio', // UEX não informa Light/Médio/Heavy/Special — ajuste se necessário
-        category: 'Combat',
-        description: `Importado automaticamente da UEX API. Confira tipo, raridade e resistências.`,
-        lore: '',
-        tags: ['uex-import'],
-        added_version: '',
-        rarity: 'Comum', // UEX não informa raridade — ajuste se necessário
-      };
-      const pieces = group.pieces.map(p => ({
-        piece_type: p.piece_type,
-        piece_name: p.name,
-        resistance_physical:0, resistance_energy:0, resistance_distortion:0,
-        resistance_thermal:0, resistance_biochemical:0, resistance_stun:0,
-        mobility_penalty:0, slots:0,
-        is_lootable:false, is_purchasable:true,
-        buy_location:'', how_to_get:'',
-        price_auec: p.price_avg || p.price_buy || p.price_sell || 0,
-        description:'',
-      }));
-      await api.createCustomSet({ set:setData, pieces });
-      setProvenance('armor', setData.base_name, SOURCES.UEX_API);
+      await importGroup(group);
       setImported(prev => [...prev, group.base_name]);
       await onAtualizar();
     } catch(e) { setError('Erro ao importar: '+e.message); }
     finally { setImporting(null); }
+  }
+
+  async function handleImportAll() {
+    if (!api) { setError('Importar só funciona no app Electron.'); return; }
+    if (!groups.length) return;
+    setImporting('all'); setError('');
+    const pending = [...groups];
+    const importedNames = [];
+    const failed = [];
+    try {
+      for (const group of pending) {
+        try {
+          const name = await importGroup(group);
+          importedNames.push(name);
+          setImported(previous => [...previous, name]);
+        } catch (error) {
+          failed.push(`${group.base_name}: ${error.message}`);
+        }
+      }
+      await onAtualizar();
+      if (failed.length) setError(`${importedNames.length} importada(s), ${failed.length} com erro: ${failed.join(' · ')}`);
+    } finally {
+      setImporting(null);
+    }
   }
 
   return (
@@ -188,6 +224,18 @@ function UexImportPanel({ sets, onAtualizar, onClose }) {
       {error && (
         <div style={{ display:'flex',alignItems:'center',gap:7,padding:'8px 12px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:6,fontSize:12,color:'var(--accent-red)',marginBottom:12 }}>
           <AlertTriangle size={13}/>{error}
+        </div>
+      )}
+
+      {groups.length > 0 && (
+        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',padding:'11px 13px',marginBottom:12,background:'rgba(52,211,153,0.07)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:8 }}>
+          <div>
+            <div style={{ color:'var(--accent-green)',fontSize:12,fontWeight:800 }}>IMPORTAÇÃO EM LOTE</div>
+            <div style={{ color:'var(--text-muted)',fontSize:11,marginTop:3 }}>{groups.length} armadura{groups.length === 1 ? '' : 's'} ainda não cadastrada{groups.length === 1 ? '' : 's'}.</div>
+          </div>
+          <button onClick={handleImportAll} disabled={!!importing} style={{ display:'inline-flex',alignItems:'center',gap:7,padding:'8px 13px',background:'rgba(52,211,153,0.14)',border:'1px solid rgba(52,211,153,0.4)',borderRadius:6,color:'var(--accent-green)',cursor:importing?'wait':'pointer',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:800,textTransform:'uppercase',opacity:importing && importing !== 'all' ? 0.55 : 1 }}>
+            {importing === 'all' ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/> Importando todas...</> : <><Download size={13}/> Importar todas ({groups.length})</>}
+          </button>
         </div>
       )}
 
@@ -230,9 +278,17 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
   const [pieces,       setPieces]       = useState([emptyPiece('Helmet'),emptyPiece('Torso'),emptyPiece('Arms'),emptyPiece('Legs')]);
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
-  const [deleteConfirm,setDeleteConfirm]= useState(null);
-
+    const [deleteConfirm,setDeleteConfirm]= useState(null);
+  const [duplicateSelection, setDuplicateSelection] = useState([]);
+  const [duplicateBusy, setDuplicateBusy] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState('');
   const customSets = sets.filter(s=>s.is_custom);
+  const duplicateGroups = useMemo(() => getDuplicateArmorGroups(customSets), [customSets]);
+  const duplicateCount = duplicateGroups.reduce((total, group) => total + group.entries.length, 0);
+  useEffect(() => {
+    const removeByDefault = duplicateGroups.flatMap(group => group.entries.slice(1).map(entry => entry.id));
+    setDuplicateSelection(previous => previous.length ? previous.filter(id => removeByDefault.includes(id)) : removeByDefault);
+  }, [duplicateGroups]);
   const api = window.electronAPI;
 
   function startNew() {
@@ -291,6 +347,33 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
     const r = await api.deleteCustomSet(id);
     if (r.success) { setDeleteConfirm(null); await onAtualizar(); }
     else alert(r.error||'Erro ao deletar.');
+  }
+
+  function toggleDuplicate(id) {
+    setDuplicateSelection(previous => previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]);
+  }
+
+  function selectAllDuplicateExtras() {
+    setDuplicateSelection(duplicateGroups.flatMap(group => group.entries.slice(1).map(entry => entry.id)));
+  }
+
+  async function handleDeleteDuplicates() {
+    if (!api || !duplicateSelection.length) return;
+    const selected = duplicateSelection.map(id => customSets.find(set => set.id === id)).filter(Boolean);
+    const confirmed = window.confirm(`Excluir ${selected.length} armadura(s) duplicada(s)? O primeiro registro de cada grupo será preservado automaticamente.`);
+    if (!confirmed) return;
+    setDuplicateBusy(true); setDuplicateNotice('');
+    try {
+      const result = await api.deleteCustomSets(duplicateSelection);
+      if (!result?.success) throw new Error(result?.error || 'Não foi possível apagar as duplicatas.');
+      setDuplicateSelection([]);
+      setDuplicateNotice(`${result.deleted?.length || selected.length} duplicata(s) removida(s).`);
+      await onAtualizar();
+    } catch (e) {
+      setDuplicateNotice(`Erro ao apagar duplicatas: ${e.message}`);
+    } finally {
+      setDuplicateBusy(false);
+    }
   }
 
   const addPiece = () => {
@@ -421,7 +504,39 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
         )}
 
         {!showForm&&(
-          customSets.length===0 ? (
+          <>
+            {duplicateGroups.length > 0 && (
+              <div style={{ marginBottom:18, padding:'14px 16px', background:'rgba(251,113,133,0.06)', border:'1px solid rgba(251,113,133,0.28)', borderRadius:9 }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap', marginBottom:8 }}>
+                  <div>
+                    <div style={{ color:'var(--accent-red)', fontSize:11, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' }}>Duplicatas detectadas</div>
+                    <div style={{ color:'var(--text-muted)', fontSize:11, marginTop:3 }}>{duplicateGroups.length} grupo{duplicateGroups.length === 1 ? '' : 's'} repetido{duplicateGroups.length === 1 ? '' : 's'} · {duplicateCount} registros. O primeiro registro de cada grupo fica preservado.</div>
+                  </div>
+                  <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
+                    <button onClick={selectAllDuplicateExtras} disabled={duplicateBusy} style={{ padding:'6px 9px', background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.28)', borderRadius:5, color:'var(--accent-gold)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Selecionar excedentes</button>
+                    <button onClick={handleDeleteDuplicates} disabled={duplicateBusy || !duplicateSelection.length} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'6px 9px', background:'rgba(251,113,133,0.13)', border:'1px solid rgba(251,113,133,0.38)', borderRadius:5, color:'var(--accent-red)', cursor:duplicateBusy || !duplicateSelection.length ? 'not-allowed' : 'pointer', opacity:duplicateBusy || !duplicateSelection.length ? 0.5 : 1, fontSize:10, fontWeight:800 }}><Trash2 size={11}/> {duplicateBusy ? 'Apagando...' : `Apagar selecionadas (${duplicateSelection.length})`}</button>
+                  </div>
+                </div>
+                {duplicateNotice && <div style={{ marginBottom:8, color:duplicateNotice.startsWith('Erro') ? 'var(--accent-red)' : 'var(--accent-green)', fontSize:11 }}>{duplicateNotice}</div>}
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {duplicateGroups.map(group => (
+                    <div key={group.key} style={{ padding:'8px 10px', background:'rgba(0,0,0,0.12)', border:'1px solid rgba(251,113,133,0.16)', borderRadius:6 }}>
+                      <div style={{ color:'var(--text-secondary)', fontSize:11, fontWeight:800, marginBottom:5 }}>{group.label} · {group.entries.length} registros</div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                        {group.entries.map((entry, index) => (
+                          <label key={entry.id} style={{ display:'flex', alignItems:'center', gap:7, color:'var(--text-muted)', fontSize:10, cursor:index === 0 ? 'not-allowed' : 'pointer', opacity:index === 0 ? 0.6 : 1 }}>
+                            <input type="checkbox" checked={index === 0 ? false : duplicateSelection.includes(entry.id)} disabled={index === 0 || duplicateBusy} onChange={() => toggleDuplicate(entry.id)} />
+                            <span style={{ flex:1 }}>{index === 0 ? 'Preservar' : 'Duplicata'} · ID {entry.id} · {entry.manufacturer || 'Fabricante não informado'}</span>
+                            {index === 0 && <strong style={{ color:'var(--accent-green)', fontSize:9 }}>MANTER</strong>}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {customSets.length===0 ? (
             <div className="empty-state">
               <Shield size={64} className="empty-state-icon"/>
               <div className="empty-state-title">NENHUMA ARMADURA PERSONALIZADA</div>
@@ -491,7 +606,8 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
                 })}
               </div>
             </div>
-          )
+            )}
+          </>
         )}
       </div>
     </div>

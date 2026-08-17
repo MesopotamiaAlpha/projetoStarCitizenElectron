@@ -28,11 +28,12 @@ function ResBar({ label, value, color, Icon }) {
   );
 }
 
-function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isExpanded, onToggleExpand }) {
+function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, onUpdateQuantity, isExpanded, onToggleExpand }) {
   const [editNotas, setEditNotas] = useState(false);
   const [notes,     setNotas]     = useState(piece.notes||'');
   const [saved,     setSaved]     = useState(false);
   const Icon = PIECE_ICONS[piece.piece_type]||Shield;
+  const quantity = Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0);
 
   const handleSave = async () => {
     await onUpdateNotes(piece.id, notes);
@@ -68,6 +69,9 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
           </div>
         </div>
         <div style={{ display:'flex',gap:6,alignItems:'center',flexShrink:0 }}>
+          {quantity > 0 && (
+            <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--accent-green)',fontWeight:800,background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:4,padding:'2px 6px' }}>x{quantity}</span>
+          )}
           {piece.price_auec>0 && (
             <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--accent-gold)' }}>
               {piece.price_auec.toLocaleString()} aUEC
@@ -136,6 +140,16 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
             </div>
           ) : null}
 
+          {/* Quantidade na coleção */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'8px 10px',marginTop:10,background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.18)',borderRadius:6}}>
+            <div><div style={{fontSize:10,fontWeight:800,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Quantidade na coleção</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>Quantas peças você possui.</div></div>
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <button type="button" onClick={()=>onUpdateQuantity?.(piece.id, Math.max(0, quantity - 1))} aria-label="Diminuir quantidade" style={{width:27,height:27,border:'1px solid var(--border-subtle)',borderRadius:4,background:'transparent',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Minus size={12}/></button>
+              <input type="number" min="0" step="1" value={quantity} onChange={e=>onUpdateQuantity?.(piece.id, e.target.value)} aria-label={`Quantidade de ${piece.piece_name}`} style={{width:54,padding:'5px 4px',textAlign:'center',background:'var(--bg-base)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:4,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontWeight:800}} />
+              <button type="button" onClick={()=>onUpdateQuantity?.(piece.id, quantity + 1)} aria-label="Aumentar quantidade" style={{width:27,height:27,border:'1px solid rgba(56,189,248,0.35)',borderRadius:4,background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Plus size={12}/></button>
+            </div>
+          </div>
+
           {/* Actions */}
           <div style={{ display:'flex',gap:8,marginTop:8 }}>
             <button className={`action-btn action-btn-owned ${piece.owned?'active':''}`}
@@ -159,7 +173,7 @@ function PieceCard({ piece, onToggleOwned, onToggleWishlist, onUpdateNotes, isEx
   );
 }
 
-export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes }) {
+export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes, onUpdatePieceQuantity }) {
   const [openPiece, setAbrirPiece] = useState(null);
 
   const liveSet = sets.find(s=>s.id===set.id)||set;
@@ -280,6 +294,7 @@ export default function ArmorSetModal({ set, sets, onClose, onTogglePiece, onTog
                   onToggleOwned={onTogglePiece}
                   onToggleWishlist={onTogglePieceWishlist}
                   onUpdateNotes={onUpdatePieceNotes}
+                  onUpdateQuantity={onUpdatePieceQuantity}
                   isExpanded={openPiece===p.id}
                   onToggleExpand={()=>setAbrirPiece(openPiece===p.id?null:p.id)}
                 />

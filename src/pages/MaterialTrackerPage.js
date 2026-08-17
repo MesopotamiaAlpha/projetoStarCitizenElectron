@@ -7,7 +7,7 @@ import {
 import {
   loadQueue, calcShoppingList, loadMaterialOrder, saveMaterialOrder,
   dequeueBlueprint, updateQueuedQty, clearCompleted, removeManualMaterial,
-  materialKey, normalizeQualityMin, toBase, fromBase,
+  materialKey, normalizeQualityMin, getIngredientQualityMin, toBase, fromBase,
 } from '../data/materialQueue';
 import { loadVault, deductOreEntries, findExactVaultMatches } from '../data/oreVault';
 import { normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber, cargoEquivalentTotal } from '../data/cargoUnits';
@@ -68,7 +68,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
               }}>
                 <strong style={{color:materialColor}}>{m.material_name}</strong>
                 {m.quality_min > 0 && <span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>Q≥{m.quality_min}</span>}
-                : <span style={{color:materialColor,fontWeight:700}}>{m.vaultTotal} {m.vaultUnit||m.unit||'un'}</span>
+                : <span style={{color:materialColor,fontWeight:700}}>{formatCargoNumber(m.vaultTotal, isCargoUnit(m.vaultUnit||m.unit) ? 9 : 3)} {m.vaultUnit||m.unit||'un'}</span>
                 {m.remaining > 0 && <span style={{color:'var(--text-muted)'}}> / {fmtSCU(m.remaining, m.unit).primary} necessário</span>}
               </span>
             );
@@ -86,156 +86,95 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
 // Painel dentro do MaterialRow para usar minério do baú
 function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onVaultChanged }) {
   const [vault, setVault] = useState(() => loadVault());
-  const [pending, setPending] = useState({}); // entryId -> quantidade a usar
 
-  function refresh() { setVault(loadVault()); }
+  function refresh() {
+    setVault(loadVault());
+    onVaultChanged?.();
+  }
 
-  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin).filter(e => {
-    if (!unit) return true;
-    return isCargoUnit(unit) && isCargoUnit(e.unit)
-      ? areCargoUnitsCompatible(e.unit, unit)
-      : e.unit === unit;
+  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin).filter(entry => {
+    const requiredUnit = normalizeCargoUnit(unit || 'un');
+    const entryUnit = normalizeCargoUnit(entry.unit || 'un');
+    return isCargoUnit(requiredUnit) && isCargoUnit(entryUnit)
+      ? areCargoUnitsCompatible(requiredUnit, entryUnit)
+      : entryUnit === requiredUnit;
   }), [vault, materialName, qualityMin, unit]);
-    const quality = getQualityAccent(qualityMin);
+
+  const quality = getQualityAccent(qualityMin);
+  const requiredBase = isCargoUnit(unit) ? toCargoBase(needed, unit) : Number(needed) || 0;
+  const availableBase = matches.reduce((total, entry) => {
+    const entryUnit = normalizeCargoUnit(entry.unit || 'un');
+    return total + (isCargoUnit(unit) && isCargoUnit(entryUnit)
+      ? toCargoBase(Number(entry.quantity) || 0, entryUnit)
+      : Number(entry.quantity) || 0);
+  }, 0);
+  const available = isCargoUnit(unit) ? fromCargoBase(availableBase, unit) : availableBase;
+  const missingBase = Math.max(0, requiredBase - availableBase);
+  const missing = isCargoUnit(unit) ? fromCargoBase(missingBase, unit) : missingBase;
+  const surplusBase = Math.max(0, availableBase - requiredBase);
+  const surplus = isCargoUnit(unit) ? fromCargoBase(surplusBase, unit) : surplusBase;
+  const complete = missingBase <= 1e-9;
 
   if (matches.length === 0) return null;
-
-  const toRequirementBase = value => isCargoUnit(unit) ? toCargoBase(value, unit) : Number(value) || 0;
-  const fromRequirementBase = value => isCargoUnit(unit) ? fromCargoBase(value, unit) : value;
-  const entryToRequirementBase = (entry, value = entry.quantity) => {
-    if (!isCargoUnit(unit) || !isCargoUnit(entry.unit)) return Number(value) || 0;
-    return toCargoBase(value, entry.unit);
-  };
-  const fromRequirementBaseToEntry = (entry, value) => {
-    if (!entry || !isCargoUnit(unit) || !isCargoUnit(entry.unit)) return value;
-    return fromCargoBase(value, entry.unit);
-  };
-  const otherPendingBase = prev => Object.entries(prev).reduce((total, [entryId, quantity]) => {
-    const entry = matches.find(item => String(item.id) === String(entryId));
-    return total + (entry ? entryToRequirementBase(entry, quantity) : 0);
-  }, 0);
-
-  function toggleEntry(id) {
-    setPending(prev => {
-      const next = {...prev};
-      if (next[id] !== undefined) { delete next[id]; }
-      else {
-        const entry = matches.find(item => String(item.id) === String(id));
-        const availableBase = entry ? entryToRequirementBase(entry) : 0;
-        const remainingBase = Math.max(0, toRequirementBase(needed) - otherPendingBase(prev));
-        next[id] = fromRequirementBaseToEntry(entry, Math.min(availableBase, remainingBase));
-      }
-      return next;
-    });
-  }
-  function setQty(id, val) {
-    setPending(prev => {
-      const entry = matches.find(e => String(e.id) === String(id));
-      const requested = Math.max(0, parseCargoInput(val, entry?.unit || unit));
-      const otherBase = otherPendingBase(Object.fromEntries(Object.entries(prev).filter(([entryId]) => String(entryId) !== String(id))));
-      const maxBase = Math.max(0, toRequirementBase(needed) - otherBase);
-      const availableBase = entry ? entryToRequirementBase(entry) : 0;
-      const requestedBase = entry ? entryToRequirementBase(entry, requested) : toRequirementBase(requested);
-      return {...prev, [id]: fromRequirementBaseToEntry(entry, Math.min(availableBase, maxBase, requestedBase)) };
-    });
-  }
-
-  const totalPendingBase = Object.entries(pending).reduce((total, [entryId, quantity]) => {
-    const entry = matches.find(item => String(item.id) === String(entryId));
-    return total + (entry ? entryToRequirementBase(entry, quantity) : 0);
-  }, 0);
-  const totalPending = fromRequirementBase(totalPendingBase);
-
-  function handleConfirm() {
-    const uses = Object.entries(pending)
-      .filter(([,q]) => q > 0)
-      .map(([id, qty]) => ({ id: Number(id), qty }));
-    if (uses.length === 0) return;
-    deductOreEntries(uses.map(({id, qty}) => ({ id, amount: qty })));
-    onVaultChanged();
-    refresh();
-    setPending({});
-  }
 
   return (
     <div style={{
       marginTop:10,
-      background:'rgba(255,200,0,0.04)',
-      border:'1px solid rgba(255,200,0,0.25)',
-      borderRadius:8,
-      padding:'10px 12px',
+      background: complete ? 'rgba(52,211,153,0.055)' : 'rgba(255,200,0,0.045)',
+      border:`1px solid ${complete ? 'rgba(52,211,153,0.35)' : 'rgba(255,200,0,0.3)'}`,
+      borderRadius:9,
+      padding:'12px 13px',
     }}>
-      <div style={{fontSize:10,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8,display:'flex',alignItems:'center',gap:5}}>
-        <Archive size={10}/> Disponível no Baú de Minério{Number(qualityMin) > 0 && <span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>somente Q≥{qualityMin}</span>}
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:8}}>
-        {matches.map(entry => {
-          const isSelected = pending[entry.id] !== undefined;
-          return (
-            <div key={entry.id} style={{
-              display:'flex',alignItems:'center',gap:8,padding:'7px 10px',
-              background: isSelected ? 'rgba(255,200,0,0.08)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${isSelected ? 'rgba(255,200,0,0.4)' : 'var(--border-subtle)'}`,
-              borderRadius:6,transition:'all 0.15s',
-            }}>
-              {/* Checkbox */}
-                <button onClick={() => toggleEntry(entry.id)} style={{
-                width:16,height:16,borderRadius:3,flexShrink:0,cursor:'pointer',
-                border:`2px solid ${isSelected?'var(--accent-gold)':'var(--border-normal)'}`,
-                background:isSelected?'rgba(255,200,0,0.2)':'transparent',
-                display:'flex',alignItems:'center',justifyContent:'center',
-              }}>
-                {isSelected && <div style={{width:7,height:7,borderRadius:1,background:'var(--accent-gold)'}}/>}
-              </button>
-
-              {/* Info da entrada */}
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                  <span style={{fontSize:12,fontWeight:700,color:getMaterialColor(entry.ore_name)}}>{entry.ore_name}</span>
-                  {entry.refined && <span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.2)',fontWeight:700}}>REFINADO</span>}
-                  {entry.quality && (() => { const quality = getQualityAccent(entry.quality); return <span className="material-quality-badge" style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:quality.soft,color:quality.color,border:`1px solid ${quality.border}`,fontWeight:700}}>★ {entry.quality}</span>; })()}
-                  {entry.location && <span style={{fontSize:10,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:2}}><MapPin size={8}/>{entry.location}</span>}
-                </div>
-              </div>
-
-              {/* Quantidade disponível e input */}
-              <div style={{display:'flex',alignItems:'center',gap:7,flexShrink:0}}>
-                <span style={{fontSize:11,color:'var(--text-muted)'}}>Disponível:</span>
-                <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-gold)',fontWeight:700}}>{entry.quantity} {entry.unit}</span>
-                {isSelected && (
-                  <>
-                    <span style={{fontSize:11,color:'var(--text-muted)'}}>Usar:</span>
-                    <input
-                      type="text" inputMode="decimal"
-                      value={pending[entry.id]}
-                      onChange={e => setQty(entry.id, e.target.value)}
-                      placeholder={isCargoUnit(unit) ? `ex: ${unit === 'SCU' ? '1,5' : '150'}` : 'Qtd'}
-                      style={{width:70,padding:'4px 7px',background:'var(--bg-base)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:4,color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace',fontSize:12,outline:'none',textAlign:'center'}}
-                    />
-                    <span style={{fontSize:10,color:'var(--text-muted)'}}>{entry.unit}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Botões de confirmação */}
-      {totalPending > 0 && (
-        <div style={{display:'flex',alignItems:'center',gap:10,justifyContent:'flex-end'}}>
-          <span style={{fontSize:12,color:'var(--text-secondary)'}}>
-            Usar <span style={{fontFamily:'Share Tech Mono,monospace',color:'var(--accent-gold)',fontWeight:700}}>{totalPending}</span> do baú
-            {needed > 0 && <span style={{color:'var(--text-muted)'}}> (precisa de {needed})</span>}
-          </span>
-          <button onClick={() => setPending({})} style={{padding:'5px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
-            Cancelar
-          </button>
-          <button onClick={handleConfirm} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 12px',background:'rgba(255,200,0,0.1)',border:'1px solid rgba(255,200,0,0.4)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
-            <CheckCircle2 size={11}/> Confirmar Uso
-          </button>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:800,color:complete?'var(--accent-green)':'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',display:'flex',alignItems:'center',gap:5}}>
+            <Archive size={11}/> Conferência automática do Baú
+          </div>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,lineHeight:1.4}}>
+            O Tracking já considera automaticamente todo estoque compatível. Esta tela não desconta minério.
+          </div>
         </div>
-      )}
+        <button onClick={refresh} title="Atualizar leitura do Baú" aria-label="Atualizar leitura do Baú" style={{display:'flex',alignItems:'center',gap:4,padding:'5px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>
+          <RefreshCw size={11}/> Atualizar
+        </button>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:7,marginBottom:10}}>
+        {[
+          ['Necessário', needed, 'var(--text-primary)'],
+          ['No Baú', available, 'var(--accent-green)'],
+          [complete ? 'Completo' : 'Falta', complete ? surplus : missing, complete ? 'var(--accent-green)' : 'var(--accent-red)'],
+        ].map(([label, value, color]) => (
+          <div key={label} style={{padding:'7px 8px',background:'rgba(0,0,0,0.12)',border:'1px solid var(--border-subtle)',borderRadius:6,minWidth:0}}>
+            <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>{label}</div>
+            <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:800,color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{formatCargoNumber(value, isCargoUnit(unit) ? 9 : 3)} {unit}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:10,color:complete?'var(--accent-green)':'var(--text-secondary)',padding:'7px 8px',background:complete?'rgba(52,211,153,0.08)':'rgba(56,189,248,0.06)',border:`1px solid ${complete?'rgba(52,211,153,0.22)':'rgba(56,189,248,0.18)'}`,borderRadius:6,marginBottom:9}}>
+        {complete
+          ? `Material completo. ${formatCargoNumber(surplus, isCargoUnit(unit) ? 9 : 3)} ${unit} excedente permanecerá no Baú quando o craft for concluído.`
+          : `Ainda faltam ${formatCargoNumber(missing, isCargoUnit(unit) ? 9 : 3)} ${unit}. Cadastre essa quantidade no Baú e o Tracking atualizará este painel automaticamente.`}
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:5}}>
+        {matches.map(entry => (
+          <div key={entry.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'7px 9px',background:'rgba(255,255,255,0.035)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0,flexWrap:'wrap'}}>
+              <span style={{fontSize:11,fontWeight:700,color:getMaterialColor(entry.ore_name)}}>{entry.ore_name}</span>
+              {entry.refined && <span style={{fontSize:8,padding:'2px 5px',borderRadius:3,background:'rgba(52,211,153,0.12)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.3)',fontWeight:800}}>REFINADO ✓</span>}
+              {entry.quality && (() => { const entryQuality = getQualityAccent(entry.quality); return <span className="material-quality-badge" style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:entryQuality.soft,color:entryQuality.color,border:`1px solid ${entryQuality.border}`,fontWeight:700}}>★ {entry.quality}</span>; })()}
+              {entry.location && <span style={{fontSize:9,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:2}}><MapPin size={8}/>{entry.location}</span>}
+            </div>
+            <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',fontWeight:800,whiteSpace:'nowrap'}}>{formatCargoNumber(entry.quantity, isCargoUnit(entry.unit) ? 9 : 3)} {entry.unit}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:9,color:'var(--text-muted)',marginTop:9,lineHeight:1.4}}>
+        Para consumir o material, use <strong style={{color:'var(--text-secondary)'}}>Concluir blueprint</strong> no card da blueprint. O consumo é feito de uma só vez somente quando todos os materiais estiverem disponíveis.
+      </div>
     </div>
   );
 }
@@ -315,7 +254,7 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
 }
 
 // ── Material row ──────────────────────────────────────────────────────────────
-function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, isManual, onRemoveManual, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
+function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotice, isManual, onRemoveManual, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
   const color    = getMaterialColor(item.material_name);
   const pct      = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : 0;
   const isDone   = item.remaining === 0;
@@ -408,6 +347,7 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, isManua
               needed={item.remaining}
               unit={item.unit}
               onVaultChanged={onVaultChanged}
+              onNotice={onNotice}
             />
           )}
         </div>
@@ -420,7 +360,7 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, isManua
 function buildBlueprintRequirements(bp) {
   const map = {};
   for (const ing of bp.ingredients || []) {
-    const qualityMin = normalizeQualityMin(ing.quality_min);
+    const qualityMin = getIngredientQualityMin(ing);
     const unit = ing.unit || 'un';
     const key = materialKey(ing.material_name, qualityMin);
     if (!map[key]) {
@@ -480,7 +420,7 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
   const bpMaterials = bp.ingredients || [];
   const totalMats   = bpMaterials.length;
   const doneMats    = bpMaterials.filter(ing => {
-    const sl = shoppingList.find(s => s.key === materialKey(ing.material_name, ing.quality_min));
+    const sl = shoppingList.find(s => s.key === materialKey(ing.material_name, getIngredientQualityMin(ing)));
     return sl && sl.remaining === 0;
   }).length;
   const isComplete  = totalMats > 0 && doneMats === totalMats;
@@ -686,8 +626,9 @@ export default function MaterialTrackerPage() {
       // Só deduz depois que todos os requisitos passam na validação.
       // O Baú é a fonte única: não gravar a mesma coleta em collectedMaterials.
       deductOreEntries(plan.usages);
+      dequeueBlueprint(bp.bpId);
       refresh();
-      setActionMessage({ type:'success', text:`Blueprint "${bp.bpName}" concluída. ${plan.usages.length} entrada(s) do Baú foram atualizadas.` });
+      setActionMessage({ type:'success', text:`Blueprint "${bp.bpName}" concluída. ${plan.usages.length} entrada(s) do Baú foram atualizadas e a blueprint saiu da fila.` });
     } catch (e) {
       console.error(e);
       setActionMessage({ type:'error', text:`Não foi possível concluir a blueprint: ${e.message}` });
@@ -839,6 +780,7 @@ export default function MaterialTrackerPage() {
                   expanded={expandedMat===item.key}
                   onToggleExpandir={()=>setExpandiredMat(expandedMat===item.key?null:item.key)}
                   onVaultChanged={handleVaultChanged}
+                  onNotice={message => setActionMessage({ type:'success', text:message })}
                   isManual={item.is_manual}
                   onRemoveManual={item.is_manual ? (name)=>{removeManualMaterial(name);refresh();} : undefined}
                   onDragStart={event => handleDragStart(event, item)}

@@ -1,4 +1,5 @@
 import { unwrapRows, uexInsightFetch } from './uexInsights';
+import { loadUexMiningDB } from './uexMiningDB';
 
 export const MARKET_ALERTS_KEY = 'sc_uex_market_alerts_v1';
 export const MARKET_ALERT_EVENTS_KEY = 'sc_uex_market_alert_events_v1';
@@ -20,6 +21,15 @@ export const MAX_MARKET_ALERT_MAX_RESULTS = 50;
 export const MARKET_ALERT_MANUAL_MATCH_MODES = Object.freeze([
   { value: 'title', label: 'Específica — nome e título', description: 'Procura o termo somente no nome, título ou slug do anúncio.' },
   { value: 'broad', label: 'Ampla — nome, título e descrição', description: 'Também procura o termo dentro da descrição, podendo encontrar itens que usam esse material.' },
+]);
+
+export const MARKET_ALERT_AVAILABILITIES = Object.freeze([
+  { value: '', label: 'Qualquer disponibilidade' },
+  { value: 'immediate', label: 'Imediata' },
+  { value: 'ready_pickup', label: 'Pronto para retirada' },
+  { value: 'on_demand', label: 'Sob demanda' },
+  { value: 'negotiable', label: 'Negociável' },
+  { value: 'reserve_only', label: 'Somente reserva' },
 ]);
 
 export const MARKET_ALERT_SOURCES = Object.freeze([
@@ -157,6 +167,31 @@ export function listingAgeDays(row, now = Date.now()) {
   return Math.max(0, (now - addedAt) / 86400000);
 }
 
+export function listingSellerActivityDateMs(row) {
+  const raw = row?.last_activity || row?.last_activity_at || row?.seller_last_activity || row?.user_last_activity || row?.last_seen_at || row?.last_login || row?.user_last_login;
+  if (!raw) return null;
+  const numeric = numberValue(raw, NaN);
+  if (Number.isFinite(numeric)) return numeric < 100000000000 ? numeric * 1000 : numeric;
+  const parsed = Date.parse(String(raw));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function listingSellerActivityDays(row, now = Date.now()) {
+  const date = listingSellerActivityDateMs(row);
+  return date ? Math.max(0, (now - date) / 86400000) : null;
+}
+
+export function listingStock(row) {
+  return numberValue(row?.in_stock, numberValue(row?.stock, 0));
+}
+
+export function listingOpportunityScore(row, referencePrice = 0) {
+  const price = listingPrice(row);
+  const reference = numberValue(referencePrice, 0);
+  if (!price || !reference || reference <= price) return null;
+  return ((reference - price) / reference) * 100;
+}
+
 export function listingKey(row) {
   const explicit = row?.id || row?.id_listing || row?.listing_id || row?.id_marketplace_listing;
   if (explicit !== null && explicit !== undefined && String(explicit).trim()) return `id:${String(explicit).trim()}`;
@@ -202,6 +237,53 @@ function clampMaxResults(value) {
   return Math.max(MIN_MARKET_ALERT_MAX_RESULTS, Math.min(MAX_MARKET_ALERT_MAX_RESULTS, Math.round(parsed)));
 }
 
+function clampDays(value) {
+  return Math.max(0, Math.min(3650, numberValue(value, 0)));
+}
+
+function normalizeResultSort(value) {
+  return ['price', 'quality', 'value', 'newest'].includes(value) ? value : 'price';
+}
+
+function exactName(value) {
+  return normalizeItemSearch(value);
+}
+
+function rowIds(row = {}) {
+  return [row.id_item, row.item_id, row.id_commodity, row.commodity_id, row.id]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean);
+}
+
+function localMiningMatches(name) {
+  const rows = loadUexMiningDB()?.minerals;
+  if (!Array.isArray(rows)) return [];
+  const normalized = exactName(name);
+  return rows.filter(row => exactName(row.name || row.commodity_name || row.item_name) === normalized);
+}
+
+let remoteCommodityRowsPromise = null;
+async function remoteCommodityMatches(name) {
+  if (!remoteCommodityRowsPromise) {
+    remoteCommodityRowsPromise = uexInsightFetch('commodities')
+      .then(payload => unwrapRows(payload))
+      .catch(error => {
+        remoteCommodityRowsPromise = null;
+        return [];
+      });
+  }
+  const rows = await remoteCommodityRowsPromise;
+  const normalized = exactName(name);
+  return rows.filter(row => exactName(row.name || row.commodity_name || row.item_name) === normalized);
+}
+
+export function resolveMarketAlertItemIds(alert = {}) {
+  const ids = new Set();
+  if (alert.itemId) ids.add(String(alert.itemId).trim());
+  localMiningMatches(alert.itemName).flatMap(rowIds).forEach(id => ids.add(id));
+  return [...ids].filter(Boolean);
+}
+
 export function loadMarketAlertSettings() {
   const stored = readJson(MARKET_ALERT_SETTINGS_KEY, {});
   const intervalMinutes = clampIntervalMinutes(stored?.intervalMinutes);
@@ -239,6 +321,10 @@ export function marketAlertDefaults(overrides = {}) {
   return {
     id: createId(),
     enabled: true,
+    // Controle individual: por padrão, alertas antigos continuam automatizados.
+    // false exclui o alerta somente das verificações automáticas; a pesquisa
+    // manual pelo botão "Verificar agora" continua podendo consultá-lo.
+    automaticEnabled: overrides.automaticEnabled !== false,
     itemId: overrides.itemId ? String(overrides.itemId) : '',
     itemName: String(overrides.itemName || '').trim(),
     itemMode: overrides.itemMode === 'manual' ? 'manual' : 'catalog',
@@ -251,7 +337,14 @@ export function marketAlertDefaults(overrides = {}) {
     priceMode: overrides.priceMode === 'lowest' ? 'lowest' : overrides.priceMode === 'range' ? 'range' : 'limit',
     minPrice: Math.max(0, numberValue(overrides.minPrice, 0)),
     maxPrice: Math.max(0, numberValue(overrides.maxPrice, 0)),
-    maxListingAgeDays: Math.max(0, Math.min(3650, numberValue(overrides.maxListingAgeDays, 0))),
+    maxListingAgeDays: clampDays(overrides.maxListingAgeDays),
+    maxSellerActivityDays: clampDays(overrides.maxSellerActivityDays),
+    qualityKnownOnly: overrides.qualityKnownOnly === true,
+    availability: String(overrides.availability || '').trim(),
+    minListingStock: Math.max(0, Math.round(numberValue(overrides.minListingStock, 0))),
+    maxListingStock: Math.max(0, Math.round(numberValue(overrides.maxListingStock, 0))),
+    referencePrice: Math.max(0, numberValue(overrides.referencePrice, 0)),
+    resultSort: normalizeResultSort(overrides.resultSort),
     maxResults: clampMaxResults(overrides.maxResults),
     lastCheckedAt: null,
     lastMatchAt: null,
@@ -265,6 +358,14 @@ export function marketAlertDefaults(overrides = {}) {
 export function loadMarketAlerts() {
   const rows = readJson(MARKET_ALERTS_KEY, []);
   return Array.isArray(rows) ? rows.map(row => ({ ...marketAlertDefaults(row), ...row, seenKeys: Array.isArray(row.seenKeys) ? row.seenKeys.slice(-MARKET_ALERT_SEEN_KEYS_LIMIT) : [] })) : [];
+}
+
+export function shouldCheckMarketAlertAutomatically(alert) {
+  return alert?.automaticEnabled !== false;
+}
+
+export function filterMarketAlertsForAutomaticCheck(alerts = []) {
+  return (Array.isArray(alerts) ? alerts : []).filter(shouldCheckMarketAlertAutomatically);
 }
 
 export function saveMarketAlerts(alerts) {
@@ -352,8 +453,9 @@ function sourceMatches(alert, listing) {
 }
 
 function qualityMatches(alert, listing) {
-  if (alert.qualityAny) return true;
   const quality = listingQuality1000(listing);
+  if (alert.qualityKnownOnly && quality === null) return false;
+  if (alert.qualityAny) return true;
   if (quality === null) return false;
   return quality >= numberValue(alert.qualityMin, 0) && quality <= numberValue(alert.qualityMax, 1000);
 }
@@ -368,9 +470,23 @@ export function listingMatchesAlert(alert, listing) {
     const ageDays = listingAgeDays(listing);
     if (ageDays === null || ageDays > maxListingAgeDays) return false;
   }
+  const maxSellerActivityDays = numberValue(alert.maxSellerActivityDays, 0);
+  if (maxSellerActivityDays > 0) {
+    const activityDays = listingSellerActivityDays(listing);
+    if (activityDays === null || activityDays > maxSellerActivityDays) return false;
+  }
+  if (alert.availability && String(listing.availability || '').toLowerCase() !== String(alert.availability).toLowerCase()) return false;
+  const stock = listingStock(listing);
+  const minListingStock = numberValue(alert.minListingStock, 0);
+  const maxListingStock = numberValue(alert.maxListingStock, 0);
+  if (minListingStock > 0 && stock < minListingStock) return false;
+  if (maxListingStock > 0 && stock > maxListingStock) return false;
   const price = listingPrice(listing);
   if (price <= 0) return false;
-  if (alert.priceMode === 'limit' && numberValue(alert.maxPrice, 0) > 0 && price > numberValue(alert.maxPrice, 0)) return false;
+  const minPrice = numberValue(alert.minPrice, 0);
+  const maxPrice = numberValue(alert.maxPrice, 0);
+  if ((alert.priceMode === 'lowest' || alert.priceMode === 'limit') && minPrice > 0 && price < minPrice) return false;
+  if (alert.priceMode === 'limit' && maxPrice > 0 && price > maxPrice) return false;
   if (alert.priceMode === 'range') {
     const minPrice = numberValue(alert.minPrice, 0);
     const maxPrice = numberValue(alert.maxPrice, 0);
@@ -380,7 +496,7 @@ export function listingMatchesAlert(alert, listing) {
   return true;
 }
 
-function eventFromListing(alert, listing) {
+function eventFromListing(alert, listing, rank = 0, referencePrice = 0) {
   const quality = listingQuality1000(listing);
   const price = listingPrice(listing);
   const matchReason = alert.itemMode === 'manual'
@@ -404,6 +520,10 @@ function eventFromListing(alert, listing) {
     currency: 'UEC',
     quality,
     listingAgeDays: listingAgeDays(listing),
+    sellerActivityDays: listingSellerActivityDays(listing),
+    stock: listingStock(listing),
+    opportunityScore: listingOpportunityScore(listing, referencePrice),
+    resultRank: rank + 1,
     source: listing.source || '',
     matchMode: alert.itemMode === 'manual' ? normalizeManualMatchMode(alert.manualMatchMode) : 'catalog',
     matchReason: matchReason || 'Correspondência do anúncio',
@@ -414,20 +534,76 @@ function eventFromListing(alert, listing) {
   };
 }
 
+function listingBelongsToAlert(alert, listing, itemIds = []) {
+  const ids = new Set(itemIds.map(String));
+  const listingIds = rowIds(listing);
+  const titleFields = manualMatchFields(listing).title;
+  const nameMatches = containsNormalizedPhrase(titleFields, alert.itemName);
+  if (listingIds.some(id => ids.has(id))) return nameMatches || !titleFields.trim();
+  return nameMatches;
+}
+
+export function sortMarketAlertListings(alert, listings = []) {
+  const rows = [...(Array.isArray(listings) ? listings : [])];
+  const referencePrice = numberValue(alert?.referencePrice, 0);
+  const sort = normalizeResultSort(alert?.resultSort);
+  return rows.sort((a, b) => {
+    if (sort === 'quality') return (listingQuality1000(b) ?? -1) - (listingQuality1000(a) ?? -1) || listingPrice(a) - listingPrice(b);
+    if (sort === 'value') return (listingOpportunityScore(b, referencePrice) ?? -Infinity) - (listingOpportunityScore(a, referencePrice) ?? -Infinity) || listingPrice(a) - listingPrice(b);
+    if (sort === 'newest') return (listingDateAddedMs(b) || 0) - (listingDateAddedMs(a) || 0) || listingPrice(a) - listingPrice(b);
+    return listingPrice(a) - listingPrice(b) || (listingQuality1000(b) ?? -1) - (listingQuality1000(a) ?? -1);
+  });
+}
+
+/**
+ * Seleciona a janela atual de anúncios sem contar os que o usuário removeu.
+ * A exclusão acontece antes do slice para que uma vaga liberada seja ocupada
+ * pelo próximo resultado elegível retornado pela UEX.
+ */
+export function selectMarketAlertMatches(alert, listings = [], dismissedKeys = new Set()) {
+  const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(Array.isArray(dismissedKeys) ? dismissedKeys.map(String) : []);
+  const eligible = (Array.isArray(listings) ? listings : []).filter(listing => !dismissed.has(listingKey(listing)));
+  return sortMarketAlertListings(alert, eligible).slice(0, clampMaxResults(alert?.maxResults));
+}
+
 export async function fetchMarketListingsForAlert(alert) {
-  const itemId = String(alert?.itemId || '').trim();
   const itemName = String(alert?.itemName || '').trim();
-  if (!itemId && !itemName) throw new Error('Selecione um item do catálogo ou informe o nome manualmente.');
-  const params = { operation: 'sell' };
-  if (itemId) params.id_item = itemId;
-  const data = await uexInsightFetch('marketplace_listings', params);
-  const rows = unwrapRows(data);
-  return itemId ? rows : rows.filter(listing => listingMatchesManualItem(alert, listing));
+  const itemIds = resolveMarketAlertItemIds(alert);
+  if (itemName) {
+    const remoteRows = await remoteCommodityMatches(itemName);
+    remoteRows.flatMap(rowIds).forEach(id => {
+      if (!itemIds.includes(id)) itemIds.push(id);
+    });
+  }
+  if (!itemIds.length && !itemName) throw new Error('Selecione um item do catálogo ou informe o nome manualmente.');
+  const rowsByKey = new Map();
+  async function fetchRows(params) {
+    const data = await uexInsightFetch('marketplace_listings', params);
+    unwrapRows(data).forEach(row => rowsByKey.set(listingKey(row), row));
+  }
+
+  // A combinação id_item + operation=sell libera o limite documentado de até
+  // 1.000 anúncios, evitando que a API devolva apenas o primeiro resultado.
+  for (const id of itemIds) await fetchRows({ id_item: id, operation: 'sell' });
+
+  // O fallback cobre commodities que foram salvas no catálogo por nome, mas
+  // ainda não têm o mesmo id local. O retorno sem id é filtrado novamente pelo
+  // título, nunca pela descrição, no modo específico.
+  if (!itemIds.length || localMiningMatches(itemName).length > 0) {
+    await fetchRows({ operation: 'sell' });
+  }
+
+  const rows = Array.from(rowsByKey.values()).filter(listing => {
+    if (alert?.itemMode === 'manual') return Boolean(listingManualMatchReason(alert, listing));
+    return listingBelongsToAlert(alert, listing, itemIds);
+  });
+  return rows;
 }
 
 export async function checkMarketAlerts({ silent = true, automatic = false } = {}) {
   const checkTimestamp = Date.now();
-  const alerts = loadMarketAlerts().filter(row => row.enabled && (row.itemId || String(row.itemName || '').trim()));
+  const configuredAlerts = loadMarketAlerts().filter(row => row.enabled && (row.itemId || String(row.itemName || '').trim()));
+  const alerts = automatic ? filterMarketAlertsForAutomaticCheck(configuredAlerts) : configuredAlerts;
   const settings = loadMarketAlertSettings();
   if (automatic && !settings.automaticEnabled) {
     return { newEvents: [], checkedAt: new Date(checkTimestamp).toISOString(), checkedAlerts: 0, skipped: true, reason: 'A análise automática está desligada.' };
@@ -449,10 +625,8 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
   for (const alert of alerts) {
     try {
       const listings = await fetchMarketListingsForAlert(alert);
-      const matches = listings
-        .filter(listing => listingMatchesAlert(alert, listing))
-        .sort((a, b) => listingPrice(a) - listingPrice(b));
-      const bestMatches = matches.slice(0, clampMaxResults(alert.maxResults));
+      const matches = listings.filter(listing => listingMatchesAlert(alert, listing));
+      const bestMatches = selectMarketAlertMatches(alert, matches, dismissedKeys);
       const target = nextAlerts.find(row => row.id === alert.id);
       if (target) {
         target.lastCheckedAt = checkedAt;
@@ -460,8 +634,8 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
         if (bestMatches.length) target.lastMatchAt = checkedAt;
         target.seenKeys = Array.isArray(target.seenKeys) ? target.seenKeys : [];
       }
-      bestMatches.forEach(listing => {
-        const event = eventFromListing(alert, listing);
+      bestMatches.forEach((listing, index) => {
+        const event = eventFromListing(alert, listing, index, numberValue(alert.referencePrice, 0));
         if (target && target.seenKeys.includes(event.key)) return;
         if (dismissedKeys.has(event.key)) return;
         if (seenKeysThisCheck.has(event.key)) return;

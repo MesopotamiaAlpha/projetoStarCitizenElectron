@@ -6,9 +6,10 @@ import {
   toCargoBase,
   fromCargoBase,
   roundCargo,
+  normalizeCargoQuantity,
   cargoEquivalentTotal,
 } from './cargoUnits';
-import { readJson, writeJson } from '../utils/storage';
+import { readJson, writeJson, dispatchStorageEvent } from '../utils/storage';
 
 const KEY = 'sc_ore_vault_v1';
 
@@ -19,7 +20,11 @@ export function loadVault() {
   if (!value || typeof value !== 'object') return { ...EMPTY_VAULT };
   return { ...value, entries: Array.isArray(value.entries) ? value.entries : [] };
 }
-export function saveVault(v) { return writeJson(KEY, v); }
+export function saveVault(v) {
+  const saved = writeJson(KEY, v);
+  if (saved) dispatchStorageEvent('sc_ore_vault_updated', { vault: v });
+  return saved;
+}
 
 // Adicionar ou atualizar entrada
 export function addOreEntry(entry) {
@@ -31,13 +36,51 @@ export function addOreEntry(entry) {
     ...entry,
     id,
     unit,
-    quantity: isCargoUnit(unit) ? roundCargo(entry.quantity) : Number(entry.quantity) || 0,
+    quantity: normalizeCargoQuantity(entry.quantity, unit),
     updated_at: new Date().toISOString(),
   };
   if (idx >= 0) v.entries[idx] = data;
   else { data.created_at = new Date().toISOString(); v.entries.unshift(data); }
   saveVault(v);
   return v;
+}
+
+// Consome uma quantidade de carga ou unidades de entradas selecionadas.
+// A operação é transacional: se o total selecionado não for suficiente, nenhuma
+// entrada é alterada.
+export function consumeVaultEntries(entryIds = [], quantity, unit = 'un') {
+  const ids = new Set((Array.isArray(entryIds) ? entryIds : [entryIds]).map(id => String(id)));
+  const requested = normalizeCargoQuantity(quantity, unit);
+  const normalizedUnit = normalizeCargoUnit(unit || 'un');
+  if (!ids.size || !Number.isFinite(requested) || requested <= 0) {
+    return { success:false, message:'Quantidade ou entradas do Baú inválidas.' };
+  }
+  const current = loadVault();
+  const selected = current.entries.filter(entry => ids.has(String(entry.id)) && Number(entry.quantity) > 0);
+  if (!selected.length) return { success:false, message:'As entradas vinculadas não existem mais no Baú.' };
+  const cargoMode = isCargoUnit(normalizedUnit);
+  const selectedCompatible = selected.every(entry => cargoMode
+    ? areCargoUnitsCompatible(entry.unit, normalizedUnit)
+    : normalizeCargoUnit(entry.unit || 'un') === normalizedUnit);
+  if (!selectedCompatible) return { success:false, message:'As unidades do vínculo não são compatíveis com a caixa anunciada.' };
+  const requestedBase = cargoMode ? toCargoBase(requested, normalizedUnit) : requested;
+  const availableBase = selected.reduce((total, entry) => total + (cargoMode ? toCargoBase(entry.quantity, entry.unit) : Number(entry.quantity) || 0), 0);
+  if (availableBase + 1e-9 < requestedBase) {
+    return { success:false, message:`Estoque insuficiente no Baú. Disponível: ${cargoMode ? fromCargoBase(availableBase, normalizedUnit) : availableBase} ${normalizedUnit}; necessário: ${requested} ${normalizedUnit}.` };
+  }
+  let remainingBase = requestedBase;
+  const nextEntries = current.entries.map(entry => {
+    if (!ids.has(String(entry.id)) || remainingBase <= 0) return entry;
+    const available = cargoMode ? toCargoBase(entry.quantity, entry.unit) : Number(entry.quantity) || 0;
+    const used = Math.min(available, remainingBase);
+    remainingBase -= used;
+    const nextBase = Math.max(0, available - used);
+    const nextQuantity = cargoMode ? fromCargoBase(nextBase, entry.unit) : nextBase;
+    return { ...entry, quantity: roundCargo(nextQuantity), updated_at: new Date().toISOString() };
+  }).filter(entry => (Number(entry.quantity) || 0) > 0);
+  const vault = { ...current, entries: nextEntries };
+  saveVault(vault);
+  return { success:true, vault, consumed: requested, unit: normalizedUnit, entryIds:[...ids] };
 }
 
 // Transferir parte ou toda uma entrada para outro local, mesclando estoque equivalente.
@@ -137,18 +180,19 @@ export function deductOreEntry(id, amount) {
 export function deductOreEntries(usages = []) {
   const deductions = new Map();
   for (const usage of usages) {
-    const id = Number(usage.id);
+    const id = String(usage.id ?? '').trim();
     const amount = Number(usage.amount);
-    if (Number.isFinite(id) && Number.isFinite(amount) && amount > 0) {
+    if (id && Number.isFinite(amount) && amount > 0) {
       deductions.set(id, (deductions.get(id) || 0) + amount);
     }
   }
   const v = loadVault();
   v.entries = v.entries.map(e => {
-    const amount = deductions.get(Number(e.id)) || 0;
+    const amount = deductions.get(String(e.id ?? '').trim()) || 0;
     if (!amount) return e;
     const remaining = Math.max(0, (Number(e.quantity) || 0) - amount);
-    return { ...e, quantity: remaining, updated_at: new Date().toISOString() };
+    const normalizedUnit = normalizeCargoUnit(e.unit || 'un');
+    return { ...e, quantity: isCargoUnit(normalizedUnit) ? roundCargo(remaining) : remaining, updated_at: new Date().toISOString() };
   }).filter(e => (Number(e.quantity) || 0) > 0); // remove zerados
   saveVault(v);
   return v;

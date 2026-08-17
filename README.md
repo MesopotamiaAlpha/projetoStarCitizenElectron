@@ -134,25 +134,24 @@ A tabela abaixo mostra os identificadores usados em `activePage`, a página rend
 | Armaduras | `all` | `AllArmorsPage.js` | Lista de todas as armaduras, filtros, posse, wishlist e notas. |
 | Armaduras | `collection` | `MyCollectionPage.js` | Coleção do usuário, peças possuídas, sets completos e quantidades. |
 | Armaduras | `custom` | `CustomArmorPage.js` | Cadastro, edição e importação de conjuntos personalizados. |
-| Itens & Crafting | `inventory` | `InventoryPage.js` | Inventário de itens, autocomplete UEX, preço médio, quantidade, locais, scripts, PAF e transferência. |
+| Itens & Crafting | `inventory` | `InventoryPage.js` | Inventário de itens, autocomplete UEX, preço médio, quantidade, locais, localização padrão para novos cadastros, busca global por sistema/local, scripts, PAF e transferência. |
 | Itens & Crafting | `blueprints` | `BlueprintPage.js` | Blueprints, ingredientes, qualidade mínima, SCMDB, posse, wishlist e fila. |
 | Itens & Crafting | `materials` | `MaterialTrackerPage.js` | Lista consolidada, prioridade por arrastar, estoque do baú, qualidade, consumo de blueprint, seletor de coleta cSCU/SCU com conversão automática e reset individual por minério. |
 | Mineração | `mining` | `MiningPage.js` | Guia visual de builds de nave: seleção das peças equipadas e anotações, sem exibição de estatísticas numéricas de potência, alcance, extração ou capacidade. A antiga aba Naves & Módulos foi removida da página. |
 | Mineração | `mininggroup` | `MiningGroupPage.js` | Sessões, grupo de mineração, refino, loot e armazenamento. |
 | Mineração | `orevault` | `OreVaultPage.js` | Baú de minério, quantidade, unidade, qualidade, local, transferência e dedução. |
 | Clã & Missões | `clanvault` | `ClanVaultPage.js` | Estoque compartilhado do clã, responsáveis, consumo e notas. |
-| Clã & Missões | `missions` | `MissionTrackerPage.js` | Missões manuais e AUTO, monitor Game.log, recompensa pendente, reputação, tempo, perdas da carteira, loot com divisão igual/porcentagem/manual, modais de detalhes/edição, estatísticas, histórico, reset protegido e reaproveitamento por templates. |
-| UEX | `uexsales` | `UexSalesPage.js` | Acompanhamento de vendas e anúncios UEX. |
-| UEX | `uexnegotiations` | `UexNegotiationsPage.js` | Negociações, chat, polling, tradução, fechamento e registro de venda. |
-| UEX | `wikelo` | `WikeloTrackerPage.js` | Missões Wikelo, scripts, favors e progresso. |
+| Clã & Missões | `missions` | `MissionTrackerPage.js` | Missões manuais e AUTO, monitor Game.log, recompensa pendente, MG/Council Scrip, ASD Secure Drive, despacho ao local padrão, reputação, tempo, perdas da carteira, loot com divisão igual/porcentagem/manual, botão de distribuição manual no card, modais de detalhes/edição, estatísticas, histórico, reset protegido e reaproveitamento por templates. |
+| UEX | `uexsales` | `UexSalesPage.js` | Acompanhamento de vendas e anúncios UEX, estoque interno vinculado a múltiplos locais do Inventário/Baú de Minério, tendências, comparativos e botão individual para abrir cada anúncio. |
+| UEX | `uexnegotiations` | `UexNegotiationsPage.js` | Negociações, chat, polling, tradução, notificações clicáveis, filtros de status, verificação de anúncio, gerenciador UEX, Spectrum, conclusão com quantidade/valor personalizados e registro de venda. |
+| UEX | `wikelo` | `WikeloTrackerPage.js` | Missões Wikelo, scripts, favors, progresso proporcional, escaneamento, entrega transacional, remoção/reset por item e alocação compartilhada do estoque entre missões repetidas, com origem do local exibida. |
 | UEX | `uexapi` | `UexApiPage.js` | Token, sincronização de itens, locais, mineração, médias UEX, veículos e catálogo local compartilhado com o Hangar. |
 | UEX | `uexinsights` | `UexInsightsPage.js` | Inteligência de mercado, preços por qualidade, histórico, análise de lucro, ranking de oportunidades, frescor, busca/filtros de Refinarias por Commodity e terminal, frota e utilidades informativas. Os Alertas de Compra ficam em uma tela dedicada. |
 | Sistema | `backup` | `BackupPage.js` | Backup seletivo e restauração de categorias do localStorage. |
 | Sistema | `data-directory` | `DataDirectoryPage.js` | Pasta central, troca de diretório e backup completo. |
 | Sistema | `notes` | `NotesPage.js` | Notas livres e textos UEX reutilizáveis. |
 | UEX | `uexalerts` | `MarketAlertsPage.js` | Tela dedicada de Alertas de Compra, com filtros, análise automática, grupos de anúncios, deduplicação e links para ofertas. |
-| Sistema | `locations` | `LocationsAdminPage.js` | Cadastro, edição, ativação e remoção de locais. |
-| Sistema | `mission-admin` | `MissionAdminPage.js` | Administração de facções, tipos de missão e sistemas consumidos pelo Rastreador. |
+| Sistema | `system-admin` | `SystemAdminPage.js` | Tela consolidada com abas de Locais, Missões e Categorias; administra locais, facções, tipos, sistemas, categorias e subcategorias. `LocationsAdminPage.js`, `MissionAdminPage.js` e `InventoryTaxonomyAdminPage.js` funcionam embutidos nessa tela. |
 
 Widgets montados globalmente em `App.js`: `UexNotificationBell` realiza o controle visual das notificações UEX e `CalculatorWidget` fornece a calculadora flutuante. Eles ficam fora do switch de páginas, portanto aparecem em qualquer tela.
 
@@ -969,3 +968,132 @@ Para qualquer mudança visual, prefira classes em `src/App.css` quando o comport
 | Instalador | `npm run build:win` em Windows, com instalação limpa e atualização sobre dados existentes. |
 
 A documentação deve ser atualizada junto com o código. O README é a referência técnica para o próximo programador: o histórico de conversas não deve ser necessário para descobrir onde uma função está implementada, quais dados ela altera ou qual regra precisa ser preservada.
+
+
+## 26. Atualização técnica — funcionalidades recentes
+
+Esta seção registra as alterações mais recentes para que a manutenção futura não dependa do histórico de conversas. As regras descritas aqui devem ser preservadas ao refatorar os componentes.
+
+### 26.1 Inventário global e localização padrão
+
+`src/pages/InventoryPage.js` mantém dois níveis de busca. Quando nenhum sistema está selecionado, a tela inicial exibe o campo **Pesquisa global do Inventário**, junto de **Selecione um Sistema Espacial**. A busca consulta `regularItems`, soma `quantity` e agrupa os resultados por `system` e `location_name`. O resumo global não deve misturar registros do Baú Desconhecido.
+
+A preferência de destino para novos cadastros está em `src/data/inventoryPreferences.js` e usa a chave `sc_inventory_preferences_v1`. Ela armazena `defaultDestination`, com sistema, tipo de local e localização. A preferência deve ser aplicada somente quando um novo item é criado; ao editar um item existente, o sistema não pode sobrescrever o local escolhido pelo usuário.
+
+Os locais devem continuar sendo obtidos da base administrável de `src/data/locations.js`. Não crie uma segunda lista estática dentro do Inventário. Alterações na tela Sistema precisam refletir nos seletores do Inventário, Baú de Minério, transferências, estoque interno UEX e despacho de recompensas.
+
+### 26.2 Sistema consolidado
+
+A entrada atual do menu é `system-admin`, renderizada por `src/pages/SystemAdminPage.js`. Essa tela possui as abas **Locais**, **Missões** e **Categorias**. Os componentes `LocationsAdminPage.js`, `MissionAdminPage.js` e `InventoryTaxonomyAdminPage.js` recebem o modo embutido e reutilizam seus formulários.
+
+Ao corrigir um problema de cadastro de local, verifique tanto o componente embutido quanto o componente original. O botão **Adicionar local** precisa permanecer visível no modo embutido. As categorias e subcategorias são persistidas por `src/data/inventoryTaxonomy.js`, usando `sc_inventory_taxonomy_v1` e eventos `inventory-taxonomy-updated`.
+
+### 26.3 Missões automáticas e recompensas
+
+O Rastreador de Missões está em `src/pages/MissionTrackerPage.js`. O monitor do Game.log fica em `electron/missionWatcher.js`, com integração de eventos em `electron/main.js`, `electron/preload.js`, `src/data/missionAutoMonitor.js` e `src/App.js`.
+
+Os campos de recompensa de missão são normalizados para manter compatibilidade com registros antigos:
+
+| Campo | Valores ou finalidade |
+|---|---|
+| `scrip_type` | `mg_scrip`, `council_scrip` ou vazio. |
+| `scrip_qty` | Quantidade de scrip da missão. |
+| `scrip_dispatched` | Proteção contra crédito duplicado. |
+| `scrip_status` | `pending`, `credited` ou `failed`. |
+| `secure_drive_enabled` | Indica entrega de ASD Secure Drive. |
+| `secure_drive_qty` | Quantidade de ASD Secure Drive. |
+| `secure_drive_dispatched` | Proteção contra despacho duplicado. |
+| `secure_drive_status` | `pending`, `credited` ou `failed`. |
+
+O despacho novo fica em `src/data/missionRewardDispatch.js`. Quando a missão é concluída com sucesso, MG Scrip, Council Scrip e ASD Secure Drive são enviados ao destino salvo em `sc_inventory_preferences_v1`. O módulo deve localizar um registro existente pelo item e pelo destino completo — sistema, tipo de local e localização — e somar a quantidade; caso não exista, deve criar um novo registro.
+
+Missões falhadas, abandonadas ou encerradas sem sucesso não podem creditar recompensas. Se não houver local padrão, a recompensa não deve ser descartada: o despacho deve retornar estado pendente ou falha com motivo legível para o usuário. A operação precisa ser idempotente, pois a conclusão pode chegar por mais de um caminho: monitor automático, alteração manual de status ou reprocessamento do evento.
+
+O Baú Desconhecido (`src/data/unknownVault.js`, chave `sc_unknown_vault_v1`) continua existindo para compatibilidade com dados antigos e para outros fluxos que ainda dependam dele. O novo fluxo de conclusão de missão não deve criar novas recompensas de scrip ou Secure Drive no Baú Desconhecido.
+
+### 26.4 Distribuição de loot
+
+A distribuição é implementada dentro de `src/pages/MissionTrackerPage.js`. Cada card de missão nas abas **Hoje** e **Histórico** possui o botão **Distribuição de Loot**. O botão abre o mesmo modal usado no fechamento manual e deve carregar `mission.loot` quando já existir.
+
+Os três modos suportados são divisão igual, divisão por porcentagem e divisão manual. Ao salvar, somente o campo `loot` da missão correspondente deve ser atualizado. Não confundir essa distribuição com o despacho automático de scrip, que é tratado por `missionRewardDispatch.js`.
+
+### 26.5 Acompanhamento Wikelo
+
+`src/pages/WikeloTrackerPage.js` fornece a interface e `src/data/wikeloInventory.js` concentra as regras de estoque. O percentual geral deve ser calculado proporcionalmente às quantidades coletadas, não apenas pela quantidade de tipos de item concluídos.
+
+O escaneamento deve considerar todas as missões Wikelo que pedem o mesmo item. O estoque disponível deve ser reservado de forma determinística entre as missões, para que uma única unidade não seja exibida como disponível simultaneamente em cinco missões. O resultado precisa preservar a origem do estoque e mostrar o sistema, tipo e local analisados.
+
+Os controles `-` e **Resetar** podem ser usados mesmo quando um item está completo. O reset deve zerar somente a coleta e a contribuição do inventário para aquele item, sem apagar a exigência da missão. A entrega ao Wikelo continua sendo a única operação que consome itens do Inventário, deve exigir confirmação e possuir rollback em caso de erro.
+
+### 26.6 Negociações e notificações UEX
+
+A tela `src/pages/UexNegotiationsPage.js` usa `src/data/uexNegotiations.js` e `src/data/uexNegotiationStatus.js`. O classificador de fechamento deve considerar o fechamento do vendedor e do comprador, inclusive `date_closed` e `date_closed_client`, além dos indicadores alternativos documentados pela API. Não classifique chats antigos como ativos apenas porque uma das datas não veio na resposta.
+
+A lista inicia no filtro **Ativas**, mas mantém filtros para encerradas pela UEX, finalizadas com sucesso, sem acordo e todas. O botão **Verificar anúncio na UEX** conserva a função de abrir o anúncio; **Ir para gerenciador UEX** deve apontar para `https://uexcorp.space/marketplace/manage`; e **Abrir Spectrum** deve apontar para `https://robertsspaceindustries.com/spectrum/community/SC`.
+
+Ao concluir uma venda com sucesso, o modal deve pedir quantidade realmente vendida e valor total recebido. O preço pode ser diferente do anúncio. `src/data/uexSales.js` salva a quantidade, preço unitário e receita total, com proteção contra duplicidade. A validação específica fica em `src/data/uexSales.test.js`.
+
+`src/components/UexNotificationBell.js` consolida alertas de mensagens UEX e alertas de compra. Uma mensagem nova deve carregar o identificador da negociação, ser clicável e abrir diretamente o chat correto via `App.js`. O alerta não deve reaparecer enquanto o usuário estiver no chat correspondente e não deve duplicar uma mensagem recebida por mais de uma fonte.
+
+### 26.7 Meus Itens e anúncios UEX
+
+`src/pages/UexSalesPage.js` renderiza os cards de **Meus Itens**. O helper `getCatalogListingTarget()` prioriza URL direta, slug da listagem e, para registros antigos sem identificador, uma busca pelo título na UEX. Não construa uma URL específica usando apenas o título, pois isso pode abrir um anúncio inexistente ou de outro item.
+
+O estoque interno pode ser vinculado a múltiplos locais do Inventário e, para cargas, ao Baú de Minério. Ao alterar quantidade no Inventário ou no Baú, o card deve refletir a quantidade disponível e o excedente após as unidades anunciadas. A vinculação não deve misturar itens com nomes semelhantes, como Yormandi Tongue e Yormandi Eye.
+
+### 26.8 Backup, migração e novas chaves
+
+Ao adicionar uma nova chave de `localStorage`, inclua-a no fluxo de backup seletivo de `src/data/backupManager.js` quando ela representar dados do usuário. As chaves mais relevantes atualmente são:
+
+| Chave | Módulo ou dado |
+|---|---|
+| `sc_unknown_vault_v1` | Recompensas antigas do Baú Desconhecido. |
+| `sc_missions_v2` | Missões, status, tempo e recompensas. |
+| `sc_inventory_preferences_v1` | Destino padrão de novos itens e recompensas. |
+| `sc_inventory_taxonomy_v1` | Categorias e subcategorias administráveis. |
+| `sc_wikelo_missions_v1` | Missões, progresso e entrega Wikelo. |
+| `sc_uex_market_alerts_v1` | Alertas, grupos, limite, intervalo e automação individual. |
+| `sc_uex_notif_state_v1` | Estado de mensagens já processadas pelo sininho. |
+| `sc_uex_token_v1` | Token UEX local; nunca incluir em backup compartilhável. |
+| `sc_uex_secretkey_v1` | Secret key UEX local; nunca incluir em backup compartilhável. |
+
+Segredos UEX não devem ser gravados em README, testes, logs, backups exportados ou commits. Ao criar ou atualizar um backup, confirme que tokens e secret keys permanecem somente no computador do usuário.
+
+## 27. Fluxo recomendado para manutenção
+
+Antes de alterar uma função, identifique se ela pertence à interface, ao módulo de domínio, ao processo principal ou à ponte IPC. Para uma alteração de UI, comece em `src/pages` ou `src/components` e procure os eventos de armazenamento e os callbacks de `App.js`. Para uma alteração de dados, concentre a regra em `src/data` e escreva testes unitários antes de alterar múltiplas páginas.
+
+Quando a função envolve dados externos, não faça chamadas diretamente em vários componentes. Centralize a normalização e o tratamento de erros no módulo de dados correspondente. Quando a função envolve consumo de estoque, use uma operação idempotente, peça confirmação explícita e implemente rollback. Quando a função envolve uma lista grande, preserve `useMemo`, `useDeferredValue`, paginação ou carregamento progressivo e não remova informações para obter desempenho.
+
+Para erros de compilação como `X is not defined`, `MapPin is not defined`, `Check is not defined` ou `Pickaxe is not defined`, confira primeiro os imports de `lucide-react` no arquivo apontado. Para erros como `Objects are not valid as a React child`, verifique se o JSX está exibindo um objeto inteiro em vez de `.name`, `.label` ou outro campo textual.
+
+Para erros de dados, valide sempre a normalização antes da renderização. Quantidades de carga devem passar por `src/data/cargoUnits.js`; o banco de minério usa a regra de conversão cSCU/SCU documentada em `src/data/scuCalculator.js`, `src/data/oreVault.js` e `src/data/materialQueue.js`. Não faça conversões manuais espalhadas em componentes.
+
+## 28. Validação obrigatória antes de entregar alterações
+
+O comando oficial é:
+
+```powershell
+npm run verify
+```
+
+Ele executa os testes, o build do React e a checagem sintática dos arquivos Electron. A entrega só deve ser considerada pronta quando os três passos passarem. Para depurar separadamente, use:
+
+```powershell
+npm run test
+npm run react-build
+npm run check:electron
+```
+
+Depois de alterar `electron/main.js`, `electron/preload.js` ou `electron/missionWatcher.js`, reinicie o Electron; o hot reload do React não recarrega automaticamente o processo principal. Depois de alterar o diretório de dados, teste uma instalação limpa e uma instalação sobre uma pasta existente. Depois de alterar localStorage ou migrações SQLite, teste tanto banco vazio quanto banco com dados antigos.
+
+A última validação registrada durante esta documentação foi de **15 suítes aprovadas, 72 testes aprovados, build React compilado e checagem Electron aprovada**. Esse número deve ser atualizado sempre que novos testes forem adicionados.
+
+## 29. Referências técnicas
+
+[1]: https://www.electronjs.org/docs/latest/api/context-bridge "Electron — contextBridge"
+[2]: https://sql.js.org/ "sql.js — SQLite compiled to WebAssembly"
+[3]: https://www.electron.build/ "electron-builder — documentação oficial"
+[4]: https://www.electron.build/configuration/nsis "electron-builder — configuração NSIS"
+
+O README deve permanecer sincronizado com o código. Quando uma função mudar de caminho, quando uma chave de armazenamento for criada ou quando uma nova rota for adicionada, atualize este documento na mesma alteração para que o próximo programador consiga manter o projeto sem depender do histórico da equipe.

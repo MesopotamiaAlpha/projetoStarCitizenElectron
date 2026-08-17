@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
-  BarChart3, Filter, RefreshCw, Coins, Minus, Star
+  BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check, Image as ImageIcon,
+  LockKeyhole, UserRound
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
@@ -10,13 +11,37 @@ import { searchUexItems, loadUexItemsDB, getUexItemAveragePrice, normalizeUexNum
 import { getItemMarketPrice, getMarketPriceForName } from '../data/uexMarketDB';
 import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
-import { SCRIPT_RATIO, isScriptItem, calcWikeloFavors } from '../data/wikelo';
+import { SCRIPT_RATIO, isScriptItem, normalizeScriptName, calcWikeloFavors } from '../data/wikelo';
 import { publishInventoryUpdate } from '../data/inventoryEvents';
+import {
+  loadInventoryPreferences,
+  saveInventoryDefaultDestination,
+  clearInventoryDefaultDestination,
+  INVENTORY_PREFERENCES_UPDATED_EVENT,
+} from '../data/inventoryPreferences';
+import {
+  DEFAULT_INVENTORY_TAXONOMY,
+  INVENTORY_TAXONOMY_UPDATED_EVENT,
+  getInventoryCategoryOptions,
+  getInventorySubcategoryOptions,
+  loadInventoryTaxonomy,
+} from '../data/inventoryTaxonomy';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
 const WIKELO_COLOR = '#a29bfe';
+const LEGACY_UNKNOWN_SYSTEM = 'Baú Desconhecido';
+const LEGACY_UNKNOWN_LOCATION_TYPE = 'Baú Desconhecido';
+const LEGACY_UNKNOWN_LOCATION_NAME = 'Sem localização definida';
+
+// Registros antigos permanecem ocultos, mas não são apagados automaticamente.
+function isLegacyUnassignedItem(item) {
+  return Boolean(item?.is_unknown_vault)
+    || String(item?.system || '') === LEGACY_UNKNOWN_SYSTEM
+    || String(item?.location_type || '') === LEGACY_UNKNOWN_LOCATION_TYPE
+    || String(item?.location_name || '') === LEGACY_UNKNOWN_LOCATION_NAME;
+}
 
 function qualityTierFromUexItem(item) {
   if (item?.quality_tier !== undefined && item?.quality_tier !== null && item?.quality_tier !== '') return item.quality_tier;
@@ -55,17 +80,81 @@ export function normalizeCraftStatus(value) {
     try { parsed = JSON.parse(raw); } catch { return []; }
   }
   if (!Array.isArray(parsed)) {
-    if (parsed && typeof parsed === 'object' && ('status' in parsed || 'bonus' in parsed)) parsed = [parsed];
+    if (parsed && typeof parsed === 'object' && ('status' in parsed || 'bonus' in parsed || 'value' in parsed)) parsed = [parsed];
     else return [];
   }
   return parsed.filter(Boolean).map((row, index) => {
-    if (typeof row === 'string') return { id: `craft-${index}-${row}`, status: row, bonus: '' };
+    if (typeof row === 'string') return { id: `craft-${index}-${row}`, status: row, bonus: '', value: '', value_unit: '%' };
+    const legacyBonus = String(row.bonus ?? '');
     return {
       id: row.id ?? `craft-${index}`,
-      status: String(row.status ?? ''),
-      bonus: String(row.bonus ?? ''),
+      status: String(row.status ?? row.name ?? ''),
+      bonus: legacyBonus,
+      value: String(row.value ?? row.amount ?? (legacyBonus ? legacyBonus.replace(/[%]/g, '').replace(/^\+/, '').trim() : '')),
+      value_unit: String(row.value_unit ?? row.unit ?? (legacyBonus.includes('%') ? '%' : 'un')) === '%' ? '%' : 'un',
     };
   });
+}
+
+export function normalizeCraftMaterials(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: row.id ?? `craft-material-${index}`,
+    material: String(row.material ?? row.name ?? row.material_name ?? ''),
+    quality: String(row.quality ?? row.quality_min ?? ''),
+    quantity: String(row.quantity ?? row.amount ?? ''),
+    unit: String(row.unit ?? 'un'),
+  }));
+}
+
+export function normalizeReservations(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: String(row.id ?? `reservation-${index}`),
+    person: String(row.person ?? row.owner ?? row.reserved_for ?? '').trim(),
+    quantity: Math.max(0, Number(row.quantity ?? row.amount) || 0),
+    notes: String(row.notes ?? '').trim(),
+    createdAt: row.createdAt ?? row.created_at ?? null,
+    updatedAt: row.updatedAt ?? row.updated_at ?? null,
+  })).filter(row => row.person && row.quantity > 0);
+}
+
+export function getReservedQuantity(item) {
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  return Math.min(total, normalizeReservations(item?.reservations).reduce((sum, row) => sum + row.quantity, 0));
+}
+
+export function getAvailableQuantity(item) {
+  return Math.max(0, (Number(item?.quantity) || 0) - getReservedQuantity(item));
+}
+
+export function normalizeCraftAttachments(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: row.id ?? `craft-attachment-${index}`,
+    name: String(row.name ?? row.filename ?? 'Imagem craftada'),
+    type: String(row.type ?? 'image/*'),
+    dataUrl: String(row.dataUrl ?? row.data ?? ''),
+    addedAt: row.addedAt ?? null,
+  })).filter(row => row.dataUrl);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,21 +502,9 @@ const LOCATIONS_STATIC = {
   },
 };
 
-const CATEGORIES = {
-  'Arma Pessoal': ['Rifle de Assalto','Rifle de Sniper','Espingarda (Shotgun)','SMG','Pistola','Lança-granadas','Lança-foguetes','Arma Melee','Munição'],
-  'Acessório de Arma': ['Mira/Scope','Supressor','Lanterna Tática','Carregador','Underbarrel','Empunhadura'],
-  'Armadura FPS': ['Capacete','Torso','Braços','Pernas','Mochila','Set Completo','Undersuit'],
-  'Roupa': ['Chapéu / Boné','Jaqueta','Camisa','Calça','Calçado','Luvas','Óculos','Macacão'],
-  'Componente de Nave': ['Arma de Nave','Escudo','Propulsor Quântico','Planta de Energia','Cooler','Thruster','Radar/Avionics','Módulo de Mining','Módulo de Salvage','Módulo de Fabricação'],
-  'Utilitário': ['Medpen','Stimpak','Multi-Tool','Extrator de Mining','Faca / Multifaca','Tractor Beam','Docking Collar','Scanner','Gadget'],
-  'Recurso / Minério': ['Quantainium','Bexalite','Taranite','Borase','Laranite','Agricium','Titanium','Copper','Iron','Gold','Corundum','Hephaestanite','Dolivine'],
-  'Commodity': ['Processed Food','Medical Supplies','Stims','Agricultural Supplies','Hydrogen Fuel','Quantum Fuel','Waste','Scrap','Altruciatoxin','Neon','Widow','WiDoW','GreenGro','SLAM'],
-  'Blueprint': ['Blueprint de Arma','Blueprint de Armadura','Blueprint de Componente','Blueprint de Munição','Blueprint de Utilitário'],
-  'Decoração / Flair': ['Trdeéu','Pintura de Nave','Decalque','Item de Hangar','Livro / Lore','Objeto Colecionável'],
-  'Consumível': ['Bebida','Comida','Remédio','Explosivo','Sinalizador'],
-  'Contrabando': ['Droga ilegal','Arma proibida','Item Contrabandoeado'],
-  'Miscellaneous': ['Container','Item Desconhecido','Outro'],
-};
+// Mapa padrão usado somente para regras de auto-classificação da UEX.
+// Os seletores do Inventário usam taxonomy, que é administrável na tela Sistema.
+const CATEGORIES = DEFAULT_INVENTORY_TAXONOMY;
 
 const CONDITIONS  = ['Novo','Excelente','Bom','Usado','Danificado','Destruído'];
 const UNITS       = ['un','SCU','cSCU','mSCU','kg','l','stack'];
@@ -517,7 +594,7 @@ function inventoryStackKey(item) {
     String(item.name || '').trim().toLowerCase(), item.category || '', item.subcategory || '',
     item.unit || 'un', item.size || '', item.grade || '', item.manufacturer || '',
     item.condition || '', Number(item.value_auec) || 0, item.is_contraband ? 1 : 0,
-    item.is_crafted ? 1 : 0, JSON.stringify(item.craft_status || []), item.notes || '',
+    item.is_crafted ? 1 : 0, JSON.stringify(item.craft_materials || []), JSON.stringify(item.craft_status || []), JSON.stringify(item.craft_attachments || []), item.notes || '',
     item.container || '',
   ].join('::');
 }
@@ -531,15 +608,18 @@ const emptyItem = () => ({
   container:'', quantity:0, unit:'un',
   size:'', grade:'', manufacturer:'', condition:'Bom',
   value_auec:0, is_contraband:false, notes:'',
-  is_crafted:false, craft_status:[],
+  is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], reservations:[],
 });
 
-function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
+function newCraftMaterialRow() { return { id: Date.now()+Math.random(), material:'', quality:'', quantity:'', unit:'un' }; }
+function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'', value:'', value_unit:'%' }; }
 
-function ItemForm({ initial, onSave, onCancelar }) {
+function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation = null }) {
   const [data, setData] = useState(() => {
-    const base = initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem();
-    return { ...base, craft_status: normalizeCraftStatus(base.craft_status) };
+    const base = initial
+      ? { is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], ...initial }
+      : { ...emptyItem(), ...(defaultLocation || {}) };
+    return { ...base, craft_materials: normalizeCraftMaterials(base.craft_materials), craft_status: normalizeCraftStatus(base.craft_status), craft_attachments: normalizeCraftAttachments(base.craft_attachments) };
   });
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -551,6 +631,25 @@ function ItemForm({ initial, onSave, onCancelar }) {
   }, []);
 
   const set = (k,v) => setData(p=>({...p,[k]:v}));
+
+  function updateCraftMaterial(index, patch) {
+    set('craft_materials', data.craft_materials.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+  function updateCraftStatus(index, patch) {
+    set('craft_status', data.craft_status.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+  function handleCraftImageFiles(event) {
+    const files = Array.from(event.target.files || []).filter(file => file.type.startsWith('image/'));
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const attachment = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: file.name, type: file.type, dataUrl: String(reader.result || ''), addedAt: new Date().toISOString() };
+        setData(previous => ({ ...previous, craft_attachments: [...(previous.craft_attachments || []), attachment] }));
+      };
+      reader.readAsDataURL(file);
+    });
+    event.target.value = '';
+  }
 
   // Autocomplete: buscar sugestões ao digitar o nome
   function handleNameChange(val) {
@@ -625,7 +724,7 @@ function ItemForm({ initial, onSave, onCancelar }) {
       if (category) {
         updates.category = category;
         // Só sobrescreve subcategoria se o mapeamento encontrou uma correspondente na lista local
-        if (subcategory && (CATEGORIES[category]||[]).includes(subcategory)) updates.subcategory = subcategory;
+        if (subcategory && getInventorySubcategoryOptions(category, '', taxonomy).some(option => option.name === subcategory)) updates.subcategory = subcategory;
       }
     }
     if (fields.includes('size')         && uexItem.size)         updates.size = uexItem.size;
@@ -656,7 +755,8 @@ function ItemForm({ initial, onSave, onCancelar }) {
     : locationTiposFromBase;
   const locationOptions = data.system && data.location_type && LOCATIONS[data.system]?.[data.location_type]
     ? LOCATIONS[data.system][data.location_type] : [];
-  const subcatOptions = CATEGORIES[data.category] || [];
+  const categoryOptions = getInventoryCategoryOptions(data.category, taxonomy);
+  const subcatOptions = getInventorySubcategoryOptions(data.category, data.subcategory || '', taxonomy);
 
   // Modo de digitação manual do local — estado próprio, independente de data.location_name,
   // pra não conflitar com o valor do <select> conforme o usuário digita.
@@ -838,14 +938,14 @@ function ItemForm({ initial, onSave, onCancelar }) {
         <div>
           <label style={LS}>Categoria</label>
           <select style={SS} value={data.category} onChange={e=>{set('category',e.target.value);set('subcategory','');}}>
-            {Object.keys(CATEGORIES).map(c=><option key={c} value={c}>{c}</option>)}
+            {categoryOptions.map(category=><option key={category.id} value={category.name}>{category.name}</option>)}
           </select>
         </div>
         <div>
           <label style={LS}>Subcategoria</label>
           <select style={SS} value={data.subcategory} onChange={e=>set('subcategory',e.target.value)}>
             <option value="">— selecione —</option>
-            {subcatOptions.map(s=><option key={s} value={s}>{s}</option>)}
+            {subcatOptions.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
         </div>
       </div>
@@ -946,27 +1046,43 @@ function ItemForm({ initial, onSave, onCancelar }) {
 
         {data.is_crafted && (
           <div style={{ padding:'12px 14px', background:'rgba(251,191,36,0.04)', border:'1px solid rgba(251,191,36,0.15)', borderRadius:6 }}>
-            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>Status do Craft</div>
-            {data.craft_status.map((row,i) => (
-              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:6 }}>
-                <input style={IS} value={row.status} onChange={e=>{
-                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,status:e.target.value} : r);
-                  set('craft_status', rows);
-                }} placeholder="Status (ex: Potência do laser)"/>
-                <input style={IS} value={row.bonus} onChange={e=>{
-                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,bonus:e.target.value} : r);
-                  set('craft_status', rows);
-                }} placeholder="Bônus (ex: +15%)"/>
-                <button onClick={()=>set('craft_status', data.craft_status.filter((_,j)=>j!==i))}
-                  style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                  <X size={13}/>
-                </button>
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>⚒️ Dados do craft</div>
+            <div style={{ fontSize:10,color:'var(--text-muted)',marginBottom:12 }}>Adicione somente os materiais e alterações que este item realmente possui.</div>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Materiais necessários</div>
+            {data.craft_materials.map((row,i) => (
+              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1.5fr .7fr .8fr .7fr auto',gap:7,marginBottom:6,alignItems:'center' }}>
+                <input style={IS} value={row.material} onChange={e=>updateCraftMaterial(i,{material:e.target.value})} placeholder="Minério / material"/>
+                <input style={IS} value={row.quality} onChange={e=>updateCraftMaterial(i,{quality:e.target.value})} placeholder="Qualidade" inputMode="numeric"/>
+                <input style={IS} value={row.quantity} onChange={e=>updateCraftMaterial(i,{quantity:e.target.value})} placeholder="Quantidade" inputMode="decimal"/>
+                <select style={SS} value={row.unit} onChange={e=>updateCraftMaterial(i,{unit:e.target.value})}>
+                  <option value="un">un</option><option value="SCU">SCU</option><option value="cSCU">cSCU</option><option value="kg">kg</option>
+                </select>
+                <button type="button" onClick={()=>set('craft_materials', data.craft_materials.filter((_,j)=>j!==i))} title="Remover material" style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><X size={13}/></button>
               </div>
             ))}
-            <button onClick={()=>set('craft_status', [...data.craft_status, newCraftStatusRow()])}
-              style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:data.craft_status.length?4:0 }}>
-              <Plus size={12}/> + Status
-            </button>
+            <button type="button" onClick={()=>set('craft_materials', [...data.craft_materials, newCraftMaterialRow()])} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginBottom:14 }}><Plus size={12}/> Adicionar minério</button>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Alterações de status</div>
+            {data.craft_status.map((row,i) => (
+              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1.3fr .8fr .65fr auto',gap:7,marginBottom:6,alignItems:'center' }}>
+                <input style={IS} value={row.status} onChange={e=>updateCraftStatus(i,{status:e.target.value})} placeholder="Status (ex: Potência)"/>
+                <input style={IS} value={row.value} onChange={e=>updateCraftStatus(i,{value:e.target.value,bonus:e.target.value ? `${e.target.value}${row.value_unit === '%' ? '%' : ''}` : ''})} placeholder="Valor aumentado" inputMode="decimal"/>
+                <select style={SS} value={row.value_unit} onChange={e=>updateCraftStatus(i,{value_unit:e.target.value,bonus:row.value ? `${row.value}${e.target.value === '%' ? '%' : ''}` : ''})}><option value="%">%</option><option value="un">un</option></select>
+                <button type="button" onClick={()=>set('craft_status', data.craft_status.filter((_,j)=>j!==i))} title="Remover status" style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><X size={13}/></button>
+              </div>
+            ))}
+            <button type="button" onClick={()=>set('craft_status', [...data.craft_status, newCraftStatusRow()])} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginBottom:14 }}><Plus size={12}/> Adicionar status</button>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Imagens do craft</div>
+            <div style={{ fontSize:10,color:'var(--text-muted)',marginBottom:8 }}>Anexe prints da tela do jogo ou referências deste item.</div>
+            <label style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'7px 11px',border:'1px solid rgba(167,139,250,0.35)',background:'rgba(167,139,250,0.08)',borderRadius:5,color:'#c4b5fd',fontSize:11,fontWeight:700,cursor:'pointer' }}><ImageIcon size={14}/> Adicionar imagem<input type="file" accept="image/*" multiple onChange={handleCraftImageFiles} style={{ display:'none' }}/></label>
+            {data.craft_attachments.length > 0 && <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginTop:10 }}>
+              {data.craft_attachments.map(image => <div key={image.id} style={{ position:'relative',border:'1px solid rgba(167,139,250,0.3)',borderRadius:6,overflow:'hidden',background:'var(--bg-base)' }}>
+                <img src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{ display:'block',width:'100%',height:82,objectFit:'cover',cursor:'pointer' }}/>
+                <div style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 6px' }}><span style={{ flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:9,color:'var(--text-secondary)' }}>{image.name}</span><button type="button" onClick={()=>set('craft_attachments', data.craft_attachments.filter(item=>item.id!==image.id))} title="Remover imagem" style={{ border:0,background:'transparent',color:'var(--accent-red)',cursor:'pointer',padding:2 }}><Trash2 size={12}/></button></div>
+              </div>)}
+            </div>}
           </div>
         )}
       </div>
@@ -1083,13 +1199,75 @@ function PafPanel({ item, allItems }) {
   );
 }
 
+function ReservedPanel({ item, onSave }) {
+  const reservations = normalizeReservations(item?.reservations);
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  const reserved = getReservedQuantity(item);
+  const available = getAvailableQuantity(item);
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [person, setPerson] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+
+  function resetForm() {
+    setEditingId(null); setPerson(''); setQuantity(''); setNotes(''); setError('');
+  }
+
+  function beginEdit(row) {
+    setEditingId(row.id); setPerson(row.person); setQuantity(String(row.quantity)); setNotes(row.notes || ''); setError(''); setOpen(true);
+  }
+
+  function submit() {
+    const cleanPerson = person.trim();
+    const amount = Number(String(quantity).replace(',', '.'));
+    if (!cleanPerson) { setError('Informe o nome da pessoa.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setError('A quantidade deve ser maior que zero.'); return; }
+    const withoutCurrent = reservations.filter(row => row.id !== editingId);
+    const usedByOthers = withoutCurrent.reduce((sum, row) => sum + row.quantity, 0);
+    if (usedByOthers + amount > total) {
+      setError(`A reserva total não pode passar de ${total} ${item.unit || 'un'}. Restam ${Math.max(0, total - usedByOthers)} ${item.unit || 'un'} para reservar.`);
+      return;
+    }
+    const now = new Date().toISOString();
+    const nextRow = { id: editingId || `reservation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, person: cleanPerson, quantity: amount, notes: notes.trim(), createdAt: editingId ? (reservations.find(row => row.id === editingId)?.createdAt || now) : now, updatedAt: now };
+    onSave([...withoutCurrent, nextRow]);
+    resetForm(); setOpen(false);
+  }
+
+  function remove(id) {
+    onSave(reservations.filter(row => row.id !== id));
+    if (editingId === id) resetForm();
+  }
+
+  return (
+    <section style={{marginBottom:14,padding:'11px 12px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.24)',borderRadius:7}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:7}}><LockKeyhole size={14} style={{color:'var(--accent-gold)'}}/><div><div style={{fontSize:10,fontWeight:800,color:'var(--accent-gold)',letterSpacing:'0.08em'}}>RESERVADO</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>Itens de outras pessoas não entram no seu saldo livre.</div></div></div>
+        <button type="button" onClick={()=>{setOpen(value=>!value);setError('');}} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 9px',background:open?'rgba(251,191,36,0.16)':'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.32)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:10,fontWeight:800}}><Plus size={11}/> {open ? 'Fechar' : 'Adicionar reserva'}</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:7,marginTop:10}}>
+        <div style={{padding:'7px 8px',background:'rgba(255,255,255,0.03)',borderRadius:5}}><div style={{fontSize:8,color:'var(--text-muted)',fontWeight:700}}>TOTAL</div><strong style={{fontSize:12,color:'var(--text-primary)'}}>{total} {item.unit || 'un'}</strong></div>
+        <div style={{padding:'7px 8px',background:'rgba(251,191,36,0.08)',borderRadius:5}}><div style={{fontSize:8,color:'var(--accent-gold)',fontWeight:700}}>RESERVADO</div><strong style={{fontSize:12,color:'var(--accent-gold)'}}>{reserved} {item.unit || 'un'}</strong></div>
+        <div style={{padding:'7px 8px',background:'rgba(52,211,153,0.08)',borderRadius:5}}><div style={{fontSize:8,color:'var(--accent-green)',fontWeight:700}}>LIVRE PARA USO</div><strong style={{fontSize:12,color:'var(--accent-green)'}}>{available} {item.unit || 'un'}</strong></div>
+      </div>
+      {reservations.length > 0 && <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:10}}>{reservations.map(row=><div key={row.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(251,191,36,0.14)',borderRadius:5}}><UserRound size={12} style={{color:'var(--accent-gold)',flexShrink:0}}/><div style={{minWidth:0,flex:1}}><div style={{fontSize:11,color:'var(--text-primary)',fontWeight:700}}>{row.person} <span style={{color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace'}}>· {row.quantity} {item.unit || 'un'}</span></div>{row.notes && <div style={{fontSize:9,color:'var(--text-muted)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.notes}</div>}</div><button type="button" onClick={()=>beginEdit(row)} title="Editar reserva" style={{border:0,background:'transparent',color:'var(--accent-primary)',cursor:'pointer',padding:3}}><Edit3 size={12}/></button><button type="button" onClick={()=>remove(row.id)} title="Remover reserva" style={{border:0,background:'transparent',color:'var(--accent-red)',cursor:'pointer',padding:3}}><Trash2 size={12}/></button></div>)}</div>}
+      {open && <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(251,191,36,0.18)',display:'grid',gridTemplateColumns:'1.2fr .7fr 1.3fr auto',gap:7,alignItems:'end'}}><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>PESSOA<input value={person} onChange={event=>setPerson(event.target.value)} placeholder="Nome da pessoa" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>QUANTIDADE<input type="number" min="0" max={total} step="any" value={quantity} onChange={event=>setQuantity(event.target.value)} placeholder="0" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>OBSERVAÇÃO<input value={notes} onChange={event=>setNotes(event.target.value)} placeholder="Opcional" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><button type="button" onClick={submit} style={{display:'flex',alignItems:'center',gap:4,padding:'7px 9px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:4,color:'var(--accent-green)',cursor:'pointer',fontSize:10,fontWeight:800}}><Save size={11}/> Salvar</button></div>}
+      {error && <div style={{marginTop:7,color:'var(--accent-red)',fontSize:10}}>{error}</div>}
+    </section>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ItemCard — card visual com modal de detalhes
 // ─────────────────────────────────────────────────────────────────────────────
-function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer }) {
+const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer, onReservationUpdate }) {
   const [showDetail, setShowDetail] = useState(false);
   const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
   const craftStatus = normalizeCraftStatus(item.craft_status);
+  const craftMaterials = normalizeCraftMaterials(item.craft_materials);
+  const craftAttachments = normalizeCraftAttachments(item.craft_attachments);
   const [showTransfer, setShowTransfer] = useState(false);
   const [delConf,    setDelConf]    = useState(false);
   const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
@@ -1098,6 +1276,8 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
   const isPaf    = isPafItem(displayName);
   const favors   = isScript ? Math.floor((item.quantity||0) / SCRIPT_RATIO) : 0;
   const resto    = isScript ? (item.quantity||0) % SCRIPT_RATIO : 0;
+  const reservedQuantity = getReservedQuantity(item);
+  const availableQuantity = getAvailableQuantity(item);
   const totalVal = (item.value_auec||0) * (item.quantity||1);
 
   return (
@@ -1117,6 +1297,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
         {/* Linha 1: nome + badges */}
         <div className="inventory-item-card-header" style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
           <span className="inventory-item-card-title" style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{displayName}</span>
+          {reservedQuantity > 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>🔒 {reservedQuantity} RESERVADO</span>}
           {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {item.is_crafted ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>⚒ CRAFT</span> : null}
@@ -1140,7 +1321,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
 
         {/* Linha 4: qty + valor */}
         <div className="inventory-item-card-footer" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto'}}>
-          <button onClick={e=>{e.stopPropagation();setShowTransfer(true);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 7px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:4,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:9,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}>
+          <button onClick={e=>{e.stopPropagation();setShowTransfer(true);}} disabled={availableQuantity<=0} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 7px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:4,color:'var(--accent-primary)',cursor:availableQuantity>0?'pointer':'not-allowed',fontSize:9,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:availableQuantity>0?1:0.5}}>
             <MapPin size={10}/> Transferir
           </button>
           <div className="inventory-item-card-quantity" style={{display:'flex',alignItems:'center',gap:7,marginLeft:'auto'}}>
@@ -1163,7 +1344,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
       {showTransfer && (
         <TransferModal
           itemName={displayName}
-          quantity={item.quantity}
+          quantity={availableQuantity}
           unit={item.unit}
           destinations={transferDestinations}
           currentKey={`${item.system}::${item.location_type}::${item.location_name}`}
@@ -1202,6 +1383,8 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
 
             <QuantityAdjuster item={item} onUpdate={onScriptUpdate}/>
 
+            <ReservedPanel item={item} onSave={reservations => onReservationUpdate(item, reservations)} />
+
             {/* Grid de atributos */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
               {[
@@ -1236,6 +1419,15 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
               </div>
             )}
 
+            {item.is_crafted && (craftMaterials.length > 0 || craftStatus.length > 0 || craftAttachments.length > 0) && (
+              <div style={{marginBottom:14,padding:'10px 12px',background:'rgba(251,191,36,0.04)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6}}>
+                <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>⚒️ Dados do craft</div>
+                {craftMaterials.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>MATERIAIS</div>{craftMaterials.map(material=><div key={material.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{material.material || 'Material não informado'}</span><span>{material.quantity || '—'} {material.unit}{material.quality ? ` · Q${material.quality}` : ''}</span></div>)}</div>}
+                {craftStatus.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>STATUS</div>{craftStatus.map(status=><div key={status.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{status.status || 'Status não informado'}</span><span>{status.value || status.bonus || '—'}{status.value ? ` ${status.value_unit}` : ''}</span></div>)}</div>}
+                {craftAttachments.length > 0 && <div><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:5}}>IMAGENS ({craftAttachments.length})</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{craftAttachments.map(image=><img key={image.id} src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{width:64,height:48,objectFit:'cover',borderRadius:4,border:'1px solid rgba(167,139,250,0.35)',cursor:'pointer'}}/>)}</div></div>}
+              </div>
+            )}
+
             {item.notes && (
               <div style={{marginBottom:14,padding:'8px 12px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
                 <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Observações</div>
@@ -1258,7 +1450,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
 
             {/* Deletar */}
                 <div style={{display:'flex',justifyContent:'flex-end',gap:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
-                  <button onClick={()=>{setShowTransfer(true);setShowDetail(false);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}><MapPin size={11}/> Transferir para...</button>
+                  <button onClick={()=>{setShowTransfer(true);setShowDetail(false);}} disabled={availableQuantity<=0} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',cursor:availableQuantity>0?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:availableQuantity>0?1:0.5}}><MapPin size={11}/> Transferir para...</button>
               {delConf ? (
                 <>
                   <span style={{fontSize:12,color:'var(--accent-red)',alignSelf:'center'}}>Confirmar exclusão?</span>
@@ -1276,7 +1468,7 @@ function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDe
       )}
     </>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Page
@@ -1288,6 +1480,8 @@ export default function InventoryPage() {
   const [loading,      setLoading]      = useState(true);
   const [showForm,     setShowForm]     = useState(false);
   const [editItem,     setEditItem]     = useState(null);
+  const [showDefaultLocation, setShowDefaultLocation] = useState(false);
+  const [defaultLocation, setDefaultLocation] = useState(() => loadInventoryPreferences().defaultDestination);
   const [search,       setSearch]       = useState('');
   // Navegação hierárquica
   const [selSystem,    setSelSystem]    = useState(null); // null = tela de sistemas
@@ -1295,6 +1489,17 @@ export default function InventoryPage() {
   const [filterCat,    setFilterCat]    = useState('all');
   const [sortBy,       setSortBy]       = useState('name');
   const [viewMode,     setViewMode]     = useState('grid'); // grid | list
+
+  const [taxonomy, setTaxonomy] = useState(() => loadInventoryTaxonomy());
+  useEffect(() => {
+    const refreshTaxonomy = event => setTaxonomy(Array.isArray(event?.detail) ? event.detail : loadInventoryTaxonomy());
+    window.addEventListener(INVENTORY_TAXONOMY_UPDATED_EVENT, refreshTaxonomy);
+    window.addEventListener('storage', refreshTaxonomy);
+    return () => {
+      window.removeEventListener(INVENTORY_TAXONOMY_UPDATED_EVENT, refreshTaxonomy);
+      window.removeEventListener('storage', refreshTaxonomy);
+    };
+  }, []);
 
   const [locationsVersion, setLocationsVersion] = useState(0);
   useEffect(() => {
@@ -1307,6 +1512,27 @@ export default function InventoryPage() {
     () => buildManagedLocationOptions(),
     [locationsVersion]
   );
+
+  useEffect(() => {
+    const refreshPreferences = event => {
+      const next = event?.detail || loadInventoryPreferences();
+      setDefaultLocation(next.defaultDestination || null);
+    };
+    window.addEventListener(INVENTORY_PREFERENCES_UPDATED_EVENT, refreshPreferences);
+    window.addEventListener('storage', refreshPreferences);
+    return () => {
+      window.removeEventListener(INVENTORY_PREFERENCES_UPDATED_EVENT, refreshPreferences);
+      window.removeEventListener('storage', refreshPreferences);
+    };
+  }, []);
+
+  function handleDefaultLocationChange(key) {
+    const selected = transferDestinations.find(option => option.key === key) || null;
+    const next = selected ? { system: selected.system, location_type: selected.location_type, location_name: selected.location_name } : null;
+    setDefaultLocation(next);
+    if (next) saveInventoryDefaultDestination(next);
+    else clearInventoryDefaultDestination();
+  }
 
   const invAPI = useMemo(() => {
     if (window.electronAPI) {
@@ -1329,6 +1555,7 @@ export default function InventoryPage() {
         ...item,
         name: normalizeUexItemName(item.name),
         craft_status: normalizeCraftStatus(item.craft_status),
+        reservations: normalizeReservations(item.reservations),
       }));
       itensRef.current = normalized;
       setItens(normalized);
@@ -1339,30 +1566,56 @@ export default function InventoryPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  async function handleSave(data) {
+  const handleEditItem = useCallback((item) => {
+    setEditItem(item);
+    setShowForm(false);
+  }, []);
+
+  const handleSave = useCallback(async (data) => {
     const normalizedData = {
     ...data,
     name: normalizeUexItemName(data.name),
     craft_status: normalizeCraftStatus(data.craft_status),
+    reservations: normalizeReservations(data.reservations),
   };
     if (normalizedData.id) await invAPI.update(normalizedData);
     else { await invAPI.create(normalizedData); setProvenance('item', normalizedData.name, SOURCES.MANUAL); }
     setShowForm(false); setEditItem(null);
     const refreshed = await loadData();
     publishInventoryUpdate(refreshed);
-  }
-  async function handleDelete(id) {
+  }, [invAPI, loadData]);
+  const handleDelete = useCallback(async (id) => {
     await invAPI.delete(id);
     const refreshed = await loadData();
     publishInventoryUpdate(refreshed);
-  }
+  }, [invAPI, loadData]);
 
-  async function handleTransfer(item, { destination, quantity }) {
-    const sourceQuantity = Math.max(0, Number(item.quantity) || 0);
+  const handleReservationUpdate = useCallback(async (item, reservations) => {
+    const normalizedReservations = normalizeReservations(reservations);
+    const total = Math.max(0, Number(item.quantity) || 0);
+    const reserved = normalizedReservations.reduce((sum, row) => sum + row.quantity, 0);
+    if (reserved > total) return;
+    const updatedItem = { ...item, reservations: normalizedReservations };
+    const nextItems = itensRef.current.map(entry => entry.id === item.id ? updatedItem : entry);
+    itensRef.current = nextItems;
+    setItens(nextItems);
+    try {
+      await invAPI.update(updatedItem);
+      publishInventoryUpdate(nextItems);
+    } catch (error) {
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
+      console.error('Erro ao atualizar reserva do inventário:', error);
+    }
+  }, [invAPI, loadData]);
+
+  const handleTransfer = useCallback(async (item, { destination, quantity }) => {
+    const sourceQuantity = getAvailableQuantity(item);
     const amount = Math.max(0, Number(quantity) || 0);
     if (!destination || amount <= 0 || amount > sourceQuantity) return;
 
-    const sourceRemaining = sourceQuantity - amount;
+    const totalSourceQuantity = Math.max(0, Number(item.quantity) || 0);
+    const sourceRemaining = totalSourceQuantity - amount;
     const destinationFields = {
       system: destination.system,
       location_type: destination.location_type,
@@ -1379,7 +1632,8 @@ export default function InventoryPage() {
 
     const original = { ...item };
     try {
-      if (sourceRemaining === 0 && !target) {
+                    if (sourceRemaining === 0 && !target && getReservedQuantity(item) === 0) {
+
         // Movimento integral sem duplicata: preserva o id e todos os metadados.
         await invAPI.update({ ...item, ...destinationFields });
       } else if (target) {
@@ -1397,7 +1651,7 @@ export default function InventoryPage() {
         // Movimento parcial: reduz a origem e cria uma entrada equivalente no destino.
         await invAPI.update({ ...item, quantity:sourceRemaining });
         try {
-          const transferred = { ...item, ...destinationFields, quantity:amount };
+          const transferred = { ...item, ...destinationFields, quantity:amount, reservations:[] };
           delete transferred.id;
           delete transferred.created_at;
           delete transferred.updated_at;
@@ -1414,9 +1668,9 @@ export default function InventoryPage() {
       const refreshed = await loadData();
       publishInventoryUpdate(refreshed);
     }
-  }
+  }, [invAPI, loadData]);
 
-  async function handleScriptUpdate(id, newQty) {
+  const handleScriptUpdate = useCallback(async (id, newQty) => {
     const current = itensRef.current.find(i => i.id === id);
     if (!current) return;
 
@@ -1436,21 +1690,22 @@ export default function InventoryPage() {
       publishInventoryUpdate(refreshed);
       console.error('Erro ao atualizar quantidade de script:', e);
     }
-  }
+  }, [invAPI, loadData]);
 
   // ── Derivados para navegação ──
+  const regularItems = useMemo(() => itens.filter(item => !isLegacyUnassignedItem(item)), [itens]);
   // Sistemas que têm itens
   const systemsWithItems = useMemo(() => {
     const counts = {};
-    itens.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
+    regularItems.forEach(i => { counts[i.system] = (counts[i.system]||0)+1; });
     const allSystems = [...new Set([...SYSTEMS, ...Object.keys(counts)])];
     return allSystems.map(s => ({ name:s, count:counts[s]||0 }));
-  }, [itens]);
+  }, [regularItems]);
 
   // Locais dentro do sistema selecionado que têm itens
   const locationsInSystem = useMemo(() => {
     if (!selSystem) return [];
-    const inSys = itens.filter(i => i.system === selSystem);
+    const inSys = regularItems.filter(i => i.system === selSystem);
     const map = {};
     inSys.forEach(i => {
       const loc = i.location_name || 'Desconhecido';
@@ -1460,11 +1715,11 @@ export default function InventoryPage() {
       map[loc].totalValue += (i.value_auec||0)*(i.quantity||1);
     });
     return Object.values(map).sort((a,b) => b.count - a.count);
-  }, [itens, selSystem]);
+  }, [regularItems, selSystem]);
 
   // Itens filtrados para exibição
   const displayItems = useMemo(() => {
-    let res = [...itens];
+    let res = [...regularItems];
     if (selSystem)   res = res.filter(i => i.system === selSystem);
     if (selLocation) res = res.filter(i => i.location_name === selLocation);
     if (search.trim()) {
@@ -1487,11 +1742,40 @@ export default function InventoryPage() {
       }
     });
     return res;
-  }, [itens, selSystem, selLocation, search, filterCat, sortBy]);
+  }, [regularItems, selSystem, selLocation, search, filterCat, sortBy]);
 
   const totalValor     = itens.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const catList        = [...new Set(displayItems.map(i=>i.category))].sort();
+
+  const consolidatedSearch = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return null;
+    const matches = regularItems.filter(item => String(item?.name || '').toLocaleLowerCase().includes(query));
+    const totalQuantity = matches.reduce((sum, item) => sum + Math.max(0, Number(item?.quantity) || 0), 0);
+    const systemsMap = new Map();
+    matches.forEach(item => {
+      const system = String(item?.system || 'Sistema não informado').trim() || 'Sistema não informado';
+      const location = String(item?.location_name || 'Local não informado').trim() || 'Local não informado';
+      if (!systemsMap.has(system)) systemsMap.set(system, { system, quantity: 0, locations: new Map() });
+      const systemGroup = systemsMap.get(system);
+      const quantity = Math.max(0, Number(item?.quantity) || 0);
+      systemGroup.quantity += quantity;
+      if (!systemGroup.locations.has(location)) systemGroup.locations.set(location, { location, quantity: 0, records: 0, names: new Set() });
+      const locationGroup = systemGroup.locations.get(location);
+      locationGroup.quantity += quantity;
+      locationGroup.records += 1;
+      locationGroup.names.add(item.name);
+    });
+    return {
+      matches,
+      totalQuantity,
+      totalRecords: matches.length,
+      systems: [...systemsMap.values()]
+        .map(group => ({ ...group, locations: [...group.locations.values()].sort((a, b) => b.quantity - a.quantity || a.location.localeCompare(b.location)) }))
+        .sort((a, b) => b.quantity - a.quantity || a.system.localeCompare(b.system)),
+    };
+  }, [regularItems, search]);
 
   const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
@@ -1511,17 +1795,34 @@ export default function InventoryPage() {
             {itens.length} item{itens.length!==1?'s':''} · {totalValor.toLocaleString('pt-BR')} aUEC total
           </div>
         </div>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowDefaultLocation(value=>!value)} title="Definir o local preenchido automaticamente em novos itens" style={{display:'flex',alignItems:'center',gap:6,padding:'8px 11px',background:defaultLocation?'rgba(52,211,153,0.09)':'rgba(255,255,255,0.03)',border:`1px solid ${defaultLocation?'rgba(52,211,153,0.35)':'var(--border-subtle)'}`,borderRadius:7,color:defaultLocation?'var(--accent-green)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+            <MapPin size={13}/> {defaultLocation ? 'Local padrão ativo' : 'Definir local padrão'}
+          </button>
           <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
             <Plus size={14}/> Novo Item
           </button>
         </div>
       </div>
 
+      {showDefaultLocation && (
+        <div style={{margin:'0 24px 12px',padding:'12px 14px',background:'rgba(52,211,153,0.05)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:8,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <div style={{flex:'1 1 260px',minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:800,color:'var(--accent-green)',textTransform:'uppercase',letterSpacing:'0.07em'}}>Local padrão para novos itens</div>
+            <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:3}}>O local será preenchido automaticamente ao registrar um item novo. Você poderá alterá-lo no próprio cadastro.</div>
+          </div>
+          <select value={defaultLocation ? `${defaultLocation.system}::${defaultLocation.location_type}::${defaultLocation.location_name}` : ''} onChange={event=>handleDefaultLocationChange(event.target.value)} style={{...SS,flex:'1 1 260px',minWidth:220}}>
+            <option value="">Sem local padrão</option>
+            {transferDestinations.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}
+          </select>
+          {defaultLocation && <button type="button" onClick={()=>handleDefaultLocationChange('')} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'6px 9px',background:'transparent',border:'1px solid rgba(251,113,133,0.25)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}><X size={11}/> Limpar</button>}
+        </div>
+      )}
+
       {/* Formulário */}
       {(showForm||editItem) && (
         <div style={{padding:'0 24px',overflow:'auto',maxHeight:'60vh',flexShrink:0}}>
-          <ItemForm initial={editItem||undefined} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
+          <ItemForm initial={editItem||undefined} defaultLocation={editItem ? null : defaultLocation} taxonomy={taxonomy} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
         </div>
       )}
 
@@ -1555,6 +1856,53 @@ export default function InventoryPage() {
 
       {/* ── Conteúdo principal ── */}
       <div className="page-body">
+
+        {consolidatedSearch && (
+          <section style={{ marginBottom: 18, padding: '14px 16px', background: 'linear-gradient(135deg, rgba(56,189,248,0.10), rgba(52,211,153,0.045))', border: '1px solid rgba(56,189,248,0.28)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12, flexWrap:'wrap', marginBottom:12 }}>
+              <div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:11, fontWeight:800, letterSpacing:'0.07em' }}><Search size={14}/> RESUMO DA BUSCA GLOBAL</div>
+                <div style={{ marginTop:4, color:'var(--text-secondary)', fontSize:11 }}>Resultados para <strong style={{ color:'var(--text-primary)' }}>{search.trim()}</strong> em todos os sistemas e locais.</div>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <div style={{ padding:'7px 10px', background:'rgba(56,189,248,0.10)', border:'1px solid rgba(56,189,248,0.22)', borderRadius:6 }}><div style={{ color:'var(--text-muted)', fontSize:9, textTransform:'uppercase', fontWeight:800 }}>Quantidade total</div><strong style={{ display:'block', marginTop:2, color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:17 }}>{consolidatedSearch.totalQuantity}</strong></div>
+                <div style={{ padding:'7px 10px', background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6 }}><div style={{ color:'var(--text-muted)', fontSize:9, textTransform:'uppercase', fontWeight:800 }}>Registros</div><strong style={{ display:'block', marginTop:2, color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:17 }}>{consolidatedSearch.totalRecords}</strong></div>
+              </div>
+            </div>
+            {consolidatedSearch.matches.length === 0 ? (
+              <div style={{ padding:'12px 10px', border:'1px dashed rgba(56,189,248,0.25)', borderRadius:7, color:'var(--text-muted)', fontSize:11 }}>Nenhum item com esse nome foi encontrado no Inventário.</div>
+            ) : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))', gap:8 }}>
+                {consolidatedSearch.systems.map(group => (
+                  <div key={group.system} style={{ padding:'10px 11px', background:'rgba(7,12,24,0.28)', border:'1px solid var(--border-subtle)', borderLeft:`3px solid ${SYSTEM_COLORS[group.system] || 'var(--accent-primary)'}`, borderRadius:7 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:7 }}><strong style={{ color: SYSTEM_COLORS[group.system] || 'var(--accent-primary)', fontSize:12 }}>{group.system}</strong><span style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:15, fontWeight:800 }}>{group.quantity}</span></div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                      {group.locations.map(location => (
+                        <div key={`${group.system}-${location.location}`} style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, padding:'6px 7px', background:'rgba(255,255,255,0.025)', borderRadius:5 }}>
+                          <div style={{ minWidth:0 }}><div style={{ display:'flex', alignItems:'center', gap:4, color:'var(--text-secondary)', fontSize:10, fontWeight:700 }}><MapPin size={10} style={{ color:'var(--accent-primary)', flexShrink:0 }}/><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{location.location}</span></div><div style={{ marginTop:3, color:'var(--text-muted)', fontSize:9, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[...location.names].join(' · ')}</div></div>
+                          <span style={{ flexShrink:0, color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:12, fontWeight:800 }}>{location.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Busca global na tela inicial de sistemas */}
+        {!selSystem && !selLocation && (
+          <div style={{ marginBottom:18, padding:'12px 14px', background:'rgba(56,189,248,0.045)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:10, fontWeight:800, letterSpacing:'0.07em' }}><Search size={13}/> PESQUISA GLOBAL DO INVENTÁRIO</div>
+            <div style={{ position:'relative' }}>
+              <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
+              <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Pesquisar item em todos os sistemas e locais..." aria-label="Pesquisar item em todos os sistemas e locais" style={{ width:'100%', boxSizing:'border-box', padding:'10px 36px 10px 31px', background:'var(--bg-base)', border:'1px solid var(--border-normal)', borderRadius:6, color:'var(--text-primary)', fontSize:12, outline:'none' }}/>
+              {search && <button type="button" onClick={()=>setSearch('')} title="Limpar pesquisa" aria-label="Limpar pesquisa" style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', border:'none', borderRadius:4, background:'rgba(255,255,255,0.06)', color:'var(--text-muted)', cursor:'pointer' }}>×</button>}
+            </div>
+            <div style={{ marginTop:6, color:'var(--text-muted)', fontSize:10 }}>A busca soma todos os registros correspondentes e mostra a distribuição por sistema e local, incluindo Stanton, Nyx e Pyro.</div>
+          </div>
+        )}
 
         {/* NÍVEL 1 — Seleção de sistema */}
         {!selSystem && !search.trim() && (
@@ -1694,12 +2042,13 @@ export default function InventoryPage() {
               <div className="inventory-items-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
                 {displayItems.map(item=>(
                   <ItemCard key={item.id} item={item}
-                    onEdit={i=>{setEditItem(i);setShowForm(false);}}
+                    onEdit={handleEditItem}
                     onDelete={handleDelete}
                     onScriptUpdate={handleScriptUpdate}
                     allItems={itens}
                     transferDestinations={transferDestinations}
-                    onTransfer={handleTransfer}/>
+                    onTransfer={handleTransfer}
+                    onReservationUpdate={handleReservationUpdate}/>
                 ))}
               </div>
             ) : (
@@ -1715,7 +2064,8 @@ export default function InventoryPage() {
                       onScriptUpdate={handleScriptUpdate}
                       allItems={itens}
                       transferDestinations={transferDestinations}
-                      onTransfer={handleTransfer}/>
+                      onTransfer={handleTransfer}
+                    onReservationUpdate={handleReservationUpdate}/>
                   );
                 })}
               </div>
@@ -1737,8 +2087,10 @@ export default function InventoryPage() {
                   onScriptUpdate={handleScriptUpdate}
                   allItems={itens}
                   transferDestinations={transferDestinations}
-                  onTransfer={handleTransfer}/>
+                                        onTransfer={handleTransfer}
+                      onReservationUpdate={handleReservationUpdate}/>
                 ))}
+
             </div>
           </div>
         )}
