@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Plus, Trash2, Edit3, Save, X, Search, CheckCircle2,
   Star, Package, ChevronDown, ChevronUp, AlertTriangle,
-  Minus, RefreshCw, Archive, Lightbulb, ScanLine, Truck
+  Minus, RefreshCw, Archive, Lightbulb, ScanLine, Truck, RotateCcw
 } from 'lucide-react';
 import { searchUexItems } from '../data/uexItemsDB';
 import { calcWikeloFavors } from '../data/wikelo';
@@ -12,7 +12,7 @@ import {
   buildWikeloDeliveryPlan,
   getInventoryItemQuantity,
   getWikeloMissionProgress,
-  scanWikeloItem,
+  scanWikeloMissions,
 } from '../data/wikeloInventory';
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -269,8 +269,22 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventory
             <ScanLine size={11}/> Escanear seus itens
           </button>
           <button onClick={()=>setEditMode(true)}
- style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+ style={{ width:24, height:24, borderRadius:4, border:'1px solid var(--border-normal)', background:'rgba(56,189,248,0.06)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }} title="Editar item">
             <Edit3 size={10}/>
+          </button>
+          <button
+            onClick={() => onUpdate(missionId, { ...item, collected: Math.max(0, qty - 1), from_inventory: Math.min(fromInv, Math.max(0, qty - 1)), inventory_scanned_at: null })}
+            style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,113,133,0.25)', background:'rgba(251,113,133,0.06)', color:'var(--accent-red)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+            title="Remover uma unidade coletada"
+          >
+            <Minus size={10}/>
+          </button>
+          <button
+            onClick={() => onUpdate(missionId, { ...item, collected: 0, from_inventory: 0, inventory_available: 0, inventory_reserved_for_wikelo: 0, inventory_source_locations: [], inventory_source_location: '', inventory_scanned_at: null })}
+            style={{ width:24, height:24, borderRadius:4, border:'1px solid rgba(251,191,36,0.25)', background:'rgba(251,191,36,0.06)', color:'var(--accent-gold)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+            title="Zerar quantidade coletada deste item"
+          >
+            <RotateCcw size={10}/>
           </button>
           {delConf ? (
             <>
@@ -286,8 +300,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventory
       </div>
 
       {/* Controles de +/- coleta */}
-      {!isDone && (
-        <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:24 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:24 }}>
           <div style={{ display:'flex', borderRadius:4, overflow:'hidden', border:'1px solid var(--border-subtle)' }}>
             <button onClick={()=>setAdjMode('add')} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.15)':'transparent', border:'none', borderRight:'1px solid var(--border-subtle)', color:adjMode==='add'?'var(--accent-green)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>+ Coletei</button>
             <button onClick={()=>setAdjMode('sub')} style={{ padding:'3px 8px', background:adjMode==='sub'?'rgba(251,113,133,0.12)':'transparent', border:'none', color:adjMode==='sub'?'var(--accent-red)':'var(--text-muted)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif' }}>− Remover</button>
@@ -304,9 +317,12 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventory
             placeholder="outro" style={{ width:60, padding:'3px 7px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:4, color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:10, outline:'none', textAlign:'center' }}/>
           <button onClick={applyAdj} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)', border:`1px solid ${adjMode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>OK</button>
         </div>
-      )}
-      {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo!</div>}
-      {item.inventory_scanned_at && <div style={{ paddingLeft:24, marginTop:3, fontSize:9, color: scannedAvailable >= needed ? 'var(--accent-green)' : 'var(--text-muted)' }}>Escaneado: {scannedAvailable} disponível no Inventário · {new Date(item.inventory_scanned_at).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}</div>}
+      {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo! Use − Remover ou o botão de reset se precisar corrigir.</div>}
+      {item.inventory_scanned_at && <div style={{ paddingLeft:24, marginTop:3, fontSize:9, color: scannedAvailable >= needed ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+        <div>Escaneado: {scannedAvailable} disponível no Inventário · {new Date(item.inventory_scanned_at).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}</div>
+        <div style={{ marginTop:3, color:'var(--accent-primary)', fontWeight:700 }}>📍 Estoque analisado: {item.inventory_source_location || 'Local não informado'}</div>
+        {Number(item.inventory_reserved_for_wikelo) > 0 && <div style={{ marginTop:2, color:'var(--accent-gold)' }}>Reserva compartilhada para o Wikelo: {item.inventory_reserved_for_wikelo} {item.unit || 'un'}</div>}
+      </div>}
     </div>
   );
 }
@@ -504,8 +520,10 @@ export default function WikeloTrackerPage() {
   }
 
   function handleScanItem(mId, item) {
-    const updatedItem = scanWikeloItem(item, inventoryItems);
-    handleUpdateItem(mId, updatedItem);
+    // O escaneamento é global por nome: todas as missões com o mesmo item
+    // recebem uma fatia do estoque, sem reutilizar a mesma unidade várias vezes.
+    const updatedMissions = scanWikeloMissions(missions, inventoryItems, item.name);
+    persist(updatedMissions);
   }
 
   async function updateInventoryRow(item) {

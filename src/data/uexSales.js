@@ -61,7 +61,7 @@ function negotiationHash(negotiation) {
   return textValue(negotiation?.hash, negotiation?.negotiation_hash, negotiation?.id);
 }
 
-export function buildNegotiationSale(negotiation) {
+export function buildNegotiationSale(negotiation, overrides = {}) {
   const title = textValue(
     negotiation?.listing_title,
     negotiation?.item_name,
@@ -70,6 +70,8 @@ export function buildNegotiationSale(negotiation) {
     negotiation?.name,
   );
   const quantity = Math.max(1, Math.round(numericValue(
+    overrides?.quantity,
+    overrides?.qty,
     negotiation?.deal_quantity,
     negotiation?.quantity,
     negotiation?.qty,
@@ -83,8 +85,10 @@ export function buildNegotiationSale(negotiation) {
     negotiation?.item_price,
   );
   const dealValue = numericValue(negotiation?.deal_value, negotiation?.agreed_price, negotiation?.total_price);
-  const price = listedPrice || (dealValue ? dealValue / quantity : 0);
-  const totalRevenue = dealValue || price * quantity;
+  const overrideTotal = numericValue(overrides?.totalRevenue, overrides?.total_price, overrides?.value);
+  const overrideUnitPrice = numericValue(overrides?.unitPrice, overrides?.price);
+  const price = overrideUnitPrice || (overrideTotal ? overrideTotal / quantity : listedPrice || (dealValue ? dealValue / quantity : 0));
+  const totalRevenue = overrideTotal || dealValue || price * quantity;
   const seller = isListingAdvertiser(negotiation);
   const buyer = seller
     ? textValue(negotiation?.client_username, negotiation?.buyer_username, negotiation?.buyer)
@@ -175,8 +179,8 @@ function buildCatalogEntry(existing, sale) {
   };
 }
 
-export function registerNegotiationSale(negotiation) {
-  const sale = buildNegotiationSale(negotiation);
+export function registerNegotiationSale(negotiation, overrides = {}) {
+  const sale = buildNegotiationSale(negotiation, overrides);
   if (!sale.source_negotiation_hash) throw new Error('A negociação não possui hash identificador.');
   if (!sale.title) throw new Error('A negociação não informa o nome do item.');
   if (sale.total_revenue <= 0 || sale.price <= 0) throw new Error('A negociação não informa um preço válido para registrar a venda.');

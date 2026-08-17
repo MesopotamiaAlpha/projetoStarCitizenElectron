@@ -1,6 +1,6 @@
 {
   "name": "companheiro-emoto",
-  "version": "1.3.2",
+  "version": "1.4.2",
   "description": "Companheiro Emoto — Star Citizen Companion App",
   "author": "Companheiro Emoto",
   "main": "electron/main.js",

@@ -1,4 +1,4 @@
-import { dispatchMissionScrip, markMissionScripFailed, isMissionScripFailureStatus } from './unknownVault';
+import { markMissionScripFailed, isMissionScripFailureStatus } from './unknownVault';
 
 const STORAGE_KEY = 'sc_mission_auto_monitor_v1';
 export const MISSION_AUTO_MONITOR_UPDATED_EVENT = 'sc_mission_auto_monitor_updated';
@@ -221,6 +221,7 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
     bug_description: '', created_at: iso, completed_at: null, wallet_out_at: null,
     objectives: [], auto: true, source: 'game_log', watcher_guid: guid || null,
     scrip_type: null, scrip_qty: 0, scrip_dispatched: false, scrip_dispatch_error: '',
+    secure_drive_enabled: false, secure_drive_qty: 0, secure_drive_dispatched: false, secure_drive_status: null, secure_drive_dispatch_error: '',
     contract_definition_id: event.contractDefinitionId || null, external_generator: event.generator || null,
     auto_started_at: iso, auto_ended_at: null, duration_sec: computedDurationSec, timer_elapsed: computedDurationSec * 1000, auto_blueprints: [], auto_last_reason: '',
   };
@@ -254,12 +255,10 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
     next.timer_elapsed = next.duration_sec * 1000;
     next.auto_last_reason = event.reason || event.completionLabel || '';
 
-    // Scrip só é recebido quando a missão é concluída com sucesso. A rotina
-    // compartilhada usa a própria missão/GUID como chave idempotente.
-    if (event.type === 'mission_complete') {
-      const dispatched = dispatchMissionScrip(next);
-      next = dispatched.mission || next;
-    } else if (isMissionScripFailureStatus(next.status)) {
+    // As recompensas de scrip e Secure Drive são creditadas pelo App no
+    // Inventário padrão, pois a API local do SQLite é assíncrona. Em falha,
+    // mantemos o estado da recompensa para uma nova tentativa.
+    if (event.type === 'mission_ended' && isMissionScripFailureStatus(next.status)) {
       const failed = markMissionScripFailed(next, event.reason || event.completionLabel || 'Missão não concluída.');
       next = failed.mission || next;
     }
@@ -267,6 +266,15 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   if (index >= 0) missions[index] = next; else missions.unshift(next);
   localStorage.setItem('sc_missions_v2', JSON.stringify(missions));
   return next;
+}
+
+export function updateStoredMissionRecord(mission) {
+  if (!mission?.id) return mission;
+  let missions = [];
+  try { missions = JSON.parse(localStorage.getItem('sc_missions_v2') || '[]'); } catch { missions = []; }
+  const next = (Array.isArray(missions) ? missions : []).map(item => String(item.id) === String(mission.id) ? mission : item);
+  localStorage.setItem('sc_missions_v2', JSON.stringify(next));
+  return mission;
 }
 
 export function clearMissionAutoMonitorEvents() {

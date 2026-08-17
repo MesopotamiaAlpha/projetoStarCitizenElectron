@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { BellRing, ClipboardCheck, Copy, MessageSquare, RefreshCw, ArrowLeft, ExternalLink, AlertTriangle, Key, Send, CheckCircle2, XCircle, Languages, BookOpen, Coins, Filter } from 'lucide-react';
 import {
   loadToken, loadUsername, fetchNegotiations, fetchNegotiationMessages, sendNegotiationMessage,
   getNegotiationMessageSender, isOwnNegotiationMessage,
@@ -119,6 +119,58 @@ function negotiationAmount(negotiation) {
   return amount === null || amount === undefined || amount === '' ? '—' : `${amount} ${negotiation.unit || ''} ${negotiation.deal_value_currency || negotiation.currency || ''}`.trim();
 }
 
+function numericInputValue(value) {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
+  const initialQuantity = Math.max(1, Math.round(numericInputValue(negotiation?.deal_quantity || negotiation?.quantity || 1)));
+  const initialTotal = numericInputValue(negotiation?.deal_value || negotiation?.total_price || (numericInputValue(negotiation?.price) * initialQuantity));
+  const [quantity, setQuantity] = useState(String(initialQuantity));
+  const [totalRevenue, setTotalRevenue] = useState(initialTotal > 0 ? String(initialTotal) : '');
+  const [error, setError] = useState('');
+  const qty = numericInputValue(quantity);
+  const total = numericInputValue(totalRevenue);
+  const unitPrice = qty > 0 && total > 0 ? total / qty : 0;
+
+  function submit(event) {
+    event.preventDefault();
+    if (!Number.isFinite(qty) || qty <= 0) { setError('Informe uma quantidade maior que zero.'); return; }
+    if (!Number.isFinite(total) || total <= 0) { setError('Informe um valor total maior que zero.'); return; }
+    onConfirm({ quantity: Math.round(qty), totalRevenue: total });
+  }
+
+  const fieldStyle = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 14, outline: 'none' };
+  return (
+    <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, background: 'rgba(0,0,0,0.76)' }} onMouseDown={event => { if (event.target === event.currentTarget && !saving) onCancel(); }}>
+      <form onSubmit={submit} style={{ width: '100%', maxWidth: 470, background: 'var(--bg-card)', border: '1px solid rgba(52,211,153,0.38)', borderRadius: 12, padding: 20, boxShadow: '0 24px 80px rgba(0,0,0,0.62)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-green)', fontFamily: 'Michroma,sans-serif', fontSize: 13, fontWeight: 800 }}><Coins size={16} /> CONCLUIR VENDA</div>
+            <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.5 }}>Informe o que foi realmente vendido. A quantidade pode ser maior que a quantidade do anúncio.</div>
+          </div>
+          <button type="button" onClick={onCancel} disabled={saving} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 5, color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ padding: '9px 11px', marginBottom: 14, background: 'rgba(56,189,248,0.06)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 7 }}>
+          <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 800 }}>{negotiation?.listing_title || 'Item da negociação'}</div>
+          <div style={{ marginTop: 3, color: 'var(--text-muted)', fontSize: 10 }}>Comprador: @{negotiation?.client_username || 'não informado'}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Quantidade vendida<input autoFocus type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={{ ...fieldStyle, marginTop: 5 }} /></label>
+          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Valor total<input type="number" min="0.01" step="0.01" value={totalRevenue} onChange={event => setTotalRevenue(event.target.value)} placeholder="Ex.: 400000" style={{ ...fieldStyle, marginTop: 5 }} /></label>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 12, padding: '9px 11px', background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.18)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 11 }}><span>Valor unitário calculado</span><strong style={{ color: 'var(--accent-green)', fontFamily: 'Share Tech Mono,monospace' }}>{unitPrice > 0 ? `${unitPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div>
+        {error && <div style={{ marginTop: 10, color: 'var(--accent-red)', fontSize: 11 }}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" onClick={onCancel} disabled={saving} style={{ padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>Cancelar</button>
+          <button type="submit" disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 13px', background: 'rgba(52,211,153,0.13)', border: '1px solid rgba(52,211,153,0.35)', borderRadius: 6, color: 'var(--accent-green)', cursor: saving ? 'wait' : 'pointer', fontSize: 11, fontWeight: 800 }}>{saving ? 'Registrando...' : 'Confirmar e registrar venda'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function NegotiationThread({ negotiation, onBack }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -144,6 +196,7 @@ function NegotiationThread({ negotiation, onBack }) {
   const [quickTextCopiedId, setQuickTextCopiedId] = useState('');
   const [closure, setClosure] = useState(() => getNegotiationClosure(negotiation.hash));
   const [closing, setClosing] = useState(false);
+  const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [closeError, setCloseError] = useState('');
   const myUsername = loadUsername();
   const apiClosedAt = getNegotiationClosedAt(negotiation);
@@ -339,13 +392,13 @@ function NegotiationThread({ negotiation, onBack }) {
     }
   }
 
-  function handleCloseNegotiation(status) {
+  function handleCloseNegotiation(status, saleOverrides = {}) {
     if (closing || closure) return;
     setClosing(true);
     setCloseError('');
     try {
       let result = null;
-      if (status === 'success') result = registerNegotiationSale(negotiation);
+      if (status === 'success') result = registerNegotiationSale(negotiation, saleOverrides);
       const savedClosure = closeNegotiation(negotiation.hash, status, {
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
@@ -353,6 +406,7 @@ function NegotiationThread({ negotiation, onBack }) {
         vaultConsumption: result?.vaultConsumption || null,
       });
       setClosure({ ...savedClosure, sale: result?.sale || null });
+      setSaleModalOpen(false);
     } catch (e) {
       setCloseError(e.message || 'Não foi possível registrar o encerramento local.');
     } finally {
@@ -365,6 +419,7 @@ function NegotiationThread({ negotiation, onBack }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {saleModalOpen && <SaleCompletionModal negotiation={negotiation} saving={closing} onCancel={() => setSaleModalOpen(false)} onConfirm={values => handleCloseNegotiation('success', values)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <ArrowLeft size={14} /> Voltar
@@ -375,10 +430,13 @@ function NegotiationThread({ negotiation, onBack }) {
         <div style={{ marginLeft: 'auto', position:'relative', display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', justifyContent:'flex-end' }}>
           {negotiationListingUrl && (
             <a href={negotiationListingUrl} target="_blank" rel="noreferrer" data-help="Abra o anúncio correspondente na UEX para revisar ou finalizar a venda diretamente no site." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
-              Finalizar venda na UEX <ExternalLink size={11} />
+              Verificar anúncio na UEX <ExternalLink size={11} />
             </a>
           )}
-          <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'var(--accent-primary)', textDecoration:'none' }}>
+          <a href="https://uexcorp.space/marketplace/manage" target="_blank" rel="noreferrer" data-help="Abra o gerenciador de anúncios da UEX para administrar seus anúncios." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.32)', borderRadius:6, color:'var(--accent-gold)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+            Ir para gerenciador UEX <ExternalLink size={11} />
+          </a>
+          <a href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noreferrer" style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.32)', borderRadius:6, color:'var(--accent-primary)', fontSize:10, fontWeight:800, textDecoration:'none', textTransform:'uppercase', whiteSpace:'nowrap' }}>
             Abrir Spectrum <ExternalLink size={11} />
           </a>
           <button type="button" onClick={() => setQuickTextsOpen(opened => !opened)} data-help="Abra seus textos UEX salvos para copiar uma resposta sem sair desta negociação." style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 9px', background:quickTextsOpen?'rgba(167,139,250,0.16)':'rgba(167,139,250,0.09)', border:`1px solid ${quickTextsOpen?'rgba(167,139,250,0.5)':'rgba(167,139,250,0.32)'}`, borderRadius:6, color:'var(--accent-purple)', cursor:'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase' }}>
@@ -423,7 +481,7 @@ function NegotiationThread({ negotiation, onBack }) {
         <div style={{ marginBottom:10, padding:'9px 11px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
           <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:8 }}>Registrar resultado local da negociação. Isso não envia nenhuma ação para a UEX.</div>
           <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
-            <button type="button" onClick={()=>handleCloseNegotiation('success')} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> {closing?'Registrando...':'Concluir com sucesso e registrar venda'}</button>
+            <button type="button" onClick={()=>setSaleModalOpen(true)} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Concluir com sucesso e registrar venda</button>
             <button type="button" onClick={()=>handleCloseNegotiation('failed')} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.28)', borderRadius:6, color:'var(--accent-red)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><XCircle size={12}/> Encerrar sem sucesso</button>
           </div>
           {closeError && <div style={{ marginTop:8, color:'var(--accent-red)', fontSize:10, lineHeight:1.4 }}>{closeError}</div>}
@@ -564,7 +622,7 @@ function NegotiationThread({ negotiation, onBack }) {
   );
 }
 
-export default function UexNegotiationsPage() {
+export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed }) {
   const [negotiations, setNegotiations] = useState([]);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState('');
@@ -583,6 +641,38 @@ export default function UexNegotiationsPage() {
   }, [hasToken]);
 
   useEffect(() => { load(); }, [load]);
+
+  const [statusFilter, setStatusFilter] = useState('active');
+
+  const getNegotiationListStatus = useCallback((negotiation) => {
+    const closure = getNegotiationClosure(negotiation.hash);
+    if (closure?.status === 'success') return 'success';
+    if (closure?.status === 'failed') return 'failed';
+    if (isNegotiationClosed(negotiation)) return 'closed';
+    return 'active';
+  }, []);
+
+  const filteredNegotiations = useMemo(() => {
+    if (statusFilter === 'all') return negotiations;
+    return negotiations.filter(negotiation => getNegotiationListStatus(negotiation) === statusFilter);
+  }, [negotiations, statusFilter, getNegotiationListStatus]);
+
+  const statusCounts = useMemo(() => negotiations.reduce((counts, negotiation) => {
+    const status = getNegotiationListStatus(negotiation);
+    counts[status] = (counts[status] || 0) + 1;
+    counts.all += 1;
+    return counts;
+  }, { all: 0, active: 0, closed: 0, success: 0, failed: 0 }), [negotiations, getNegotiationListStatus]);
+
+  useEffect(() => {
+    const target = String(targetNegotiationHash || '').trim();
+    if (!target || !negotiations.length) return;
+    const match = negotiations.find(negotiation => String(negotiation.hash || negotiation.id || '').trim() === target);
+    if (match) {
+      setSelected(match);
+      onTargetNegotiationConsumed?.();
+    }
+  }, [targetNegotiationHash, negotiations, onTargetNegotiationConsumed]);
 
   if (!hasToken) {
     return (
@@ -604,7 +694,7 @@ export default function UexNegotiationsPage() {
           <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <MessageSquare size={18} style={{ color: 'var(--accent-primary)' }} /> NEGOCIAÇÕES UEX
           </div>
-          <div className="page-subtitle">{negotiations.length} negociação{negotiations.length !== 1 ? 'ões' : ''} encontrada{negotiations.length !== 1 ? 's' : ''}</div>
+          <div className="page-subtitle">{filteredNegotiations.length} de {negotiations.length} negociação{negotiations.length !== 1 ? 'ões' : ''} exibida{filteredNegotiations.length !== 1 ? 's' : ''}</div>
         </div>
         <button onClick={load} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.35)', borderRadius: 7, color: 'var(--accent-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
           <RefreshCw size={13} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> Atualizar
@@ -612,6 +702,19 @@ export default function UexNegotiationsPage() {
       </div>
 
       <div className="page-body" style={{ padding: 24, height: '100%' }}>
+        {!selected && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}><Filter size={13} /> Mostrar</div>
+            <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} style={{ padding: '7px 28px 7px 9px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 11, fontWeight: 700, outline: 'none' }}>
+              <option value="active">Ativas ({statusCounts.active || 0})</option>
+              <option value="closed">Encerradas pela UEX ({statusCounts.closed || 0})</option>
+              <option value="success">Finalizadas com sucesso ({statusCounts.success || 0})</option>
+              <option value="failed">Sem acordo / sem sucesso ({statusCounts.failed || 0})</option>
+              <option value="all">Todas ({statusCounts.all || 0})</option>
+            </select>
+            <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Negociações antigas ficam ocultas por padrão.</span>
+          </div>
+        )}
         {error && (
           <div style={{ display: 'flex', gap: 8, padding: 12, background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.25)', borderRadius: 6, color: 'var(--accent-red)', fontSize: 12, marginBottom: 14 }}>
             <AlertTriangle size={14} /> {error}
@@ -626,7 +729,10 @@ export default function UexNegotiationsPage() {
             {!loading && negotiations.length === 0 && !error && (
               <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Nenhuma negociação encontrada na sua conta UEX.</div>
             )}
-            {negotiations.map(n => {
+            {!loading && negotiations.length > 0 && filteredNegotiations.length === 0 && (
+              <div style={{ padding: '28px 14px', color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', background: 'var(--bg-panel)', border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>Nenhuma negociação corresponde ao filtro selecionado.</div>
+            )}
+            {filteredNegotiations.map(n => {
               const palette = negotiationColor(n);
               const counterparty = negotiationCounterparty(n);
               const localClosure = getNegotiationClosure(n.hash);

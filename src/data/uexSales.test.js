@@ -6,6 +6,20 @@ beforeEach(() => {
 });
 
 describe('uexSales vault integration', () => {
+  test('aplica quantidade e valor total informados ao concluir uma negociação', () => {
+    const sale = buildNegotiationSale({
+      hash: 'custom-sale-1',
+      listing_title: 'Gold',
+      price: 100000,
+      client_username: 'Buyer',
+      is_listing_advertiser: 1,
+    }, { quantity: 4, totalRevenue: 900000 });
+
+    expect(sale.qty).toBe(4);
+    expect(sale.total_revenue).toBe(900000);
+    expect(sale.price).toBe(225000);
+  });
+
   test('salva o fechamento date_closed_client quando a conta é compradora', () => {
     const sale = buildNegotiationSale({
       hash: 'buyer-closed-1',

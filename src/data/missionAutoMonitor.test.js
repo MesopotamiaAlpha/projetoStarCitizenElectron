@@ -90,7 +90,7 @@ describe('recompensa histórica do Monitor Automático', () => {
     expect(ended.timer_elapsed).toBe(450000);
   });
 
-  test('envia MG Scrip para o Baú Desconhecido ao concluir automaticamente', () => {
+  test('mantém a recompensa para despacho no Inventário padrão ao concluir automaticamente', () => {
     upsertAutomaticMissionRecord({
       type: 'mission_start',
       guid: 'scrip-guid',
@@ -115,10 +115,9 @@ describe('recompensa histórica do Monitor Automático', () => {
       endTs: Date.parse('2026-08-15T10:12:00.000Z'),
     }, ['Outro']);
 
-    expect(completed.scrip_dispatched).toBe(true);
-    expect(loadUnknownVault().items).toHaveLength(1);
-    expect(loadUnknownVault().items[0].name).toBe('MG Scrip');
-    expect(loadUnknownVault().items[0].quantity).toBe(12);
+    expect(completed.scrip_dispatched).toBe(false);
+    expect(completed.scrip_status).toBeUndefined();
+    expect(loadUnknownVault().items).toHaveLength(0);
 
     const repeated = upsertAutomaticMissionRecord({
       type: 'mission_complete',
@@ -126,8 +125,8 @@ describe('recompensa histórica do Monitor Automático', () => {
       debugName: 'Desafio de Combate - Cenário 5',
       endTs: Date.parse('2026-08-15T10:12:00.000Z'),
     }, ['Outro']);
-    expect(repeated.scrip_dispatched).toBe(true);
-    expect(loadUnknownVault().items).toHaveLength(1);
+    expect(repeated.scrip_dispatched).toBe(false);
+    expect(loadUnknownVault().items).toHaveLength(0);
   });
 
   test('marca como falha o scrip de uma missão encerrada sem sucesso', () => {

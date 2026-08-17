@@ -30,10 +30,71 @@ export function scanWikeloItem(item, inventoryItems = []) {
   };
 }
 
+function inventoryLocationLabel(item) {
+  const location = String(item?.location_name || item?.location || '').trim();
+  const system = String(item?.system || '').trim();
+  const type = String(item?.location_type || item?.type || '').trim();
+  const place = location || 'Local não informado';
+  return [place, system, type].filter(Boolean).join(' · ');
+}
+
+function getInventorySources(name, inventoryItems = []) {
+  const target = normalizedName(name);
+  const sources = inventoryItems
+    .filter(item => normalizedName(item?.name) === target && Number(item?.quantity) > 0)
+    .map(item => ({
+      id: item.id,
+      label: inventoryLocationLabel(item),
+      quantity: Math.max(0, Number(item.quantity) || 0),
+    }));
+  const labels = [...new Set(sources.map(source => source.label))];
+  return { sources, labels };
+}
+
 export function scanWikeloMission(mission, inventoryItems = []) {
   const items = (mission?.items || []).map(item => scanWikeloItem(item, inventoryItems));
   const complete = items.length > 0 && items.every(item => (Number(item.collected) || 0) >= (Number(item.needed) || 1));
   return { ...mission, items, inventory_scanned_at: new Date().toISOString(), inventory_scan_complete: complete };
+}
+
+// Escaneia um item em todas as missões e reserva o estoque compartilhado em ordem
+// determinística. Assim, uma única unidade não aparece como disponível para várias
+// missões simultaneamente: cada missão recebe somente o saldo ainda não reservado.
+export function scanWikeloMissions(missions = [], inventoryItems = [], targetName = '') {
+  const target = normalizedName(targetName);
+  const reservations = new Map();
+  const scannedAt = new Date().toISOString();
+  const sourceInfo = getInventorySources(targetName, inventoryItems);
+
+  return (Array.isArray(missions) ? missions : []).map(mission => {
+    let changed = false;
+    const items = (mission?.items || []).map(item => {
+      if (!target || normalizedName(item?.name) !== target) return item;
+      changed = true;
+      const needed = Math.max(0, Number(item?.needed) || 0);
+      const previousCollected = Math.max(0, Number(item?.collected) || 0);
+      const previousInventoryContribution = Math.max(0, Number(item?.from_inventory) || 0);
+      const manualCollected = Math.max(0, previousCollected - previousInventoryContribution);
+      const alreadyReserved = reservations.get(target) || 0;
+      const availableForThisMission = Math.max(0, sourceInfo.sources.reduce((sum, source) => sum + source.quantity, 0) - alreadyReserved);
+      const inventoryContribution = Math.min(availableForThisMission, Math.max(0, needed - manualCollected));
+      reservations.set(target, alreadyReserved + inventoryContribution);
+      const collected = Math.min(needed, manualCollected + inventoryContribution);
+      return {
+        ...item,
+        collected,
+        from_inventory: inventoryContribution,
+        inventory_available: sourceInfo.sources.reduce((sum, source) => sum + source.quantity, 0),
+        inventory_reserved_for_wikelo: alreadyReserved + inventoryContribution,
+        inventory_source_locations: sourceInfo.labels,
+        inventory_source_location: sourceInfo.labels.join(' | '),
+        inventory_scanned_at: scannedAt,
+      };
+    });
+    if (!changed) return mission;
+    const complete = items.length > 0 && items.every(item => (Number(item.collected) || 0) >= (Number(item.needed) || 1));
+    return { ...mission, items, inventory_scanned_at: scannedAt, inventory_scan_complete: complete };
+  });
 }
 
 export function buildWikeloDeliveryPlan(mission, inventoryItems = []) {
@@ -96,7 +157,14 @@ export function getWikeloMissionProgress(mission) {
   const items = mission?.items || [];
   const total = items.length;
   const completed = items.filter(item => (Number(item.collected) || 0) >= (Number(item.needed) || 1)).length;
-  return { total, completed, percent: total > 0 ? Math.round((completed / total) * 100) : 0, complete: total > 0 && completed === total };
+  const totalNeeded = items.reduce((sum, item) => sum + Math.max(0, Number(item?.needed) || 0), 0);
+  const totalCollected = items.reduce((sum, item) => {
+    const needed = Math.max(0, Number(item?.needed) || 0);
+    const collected = Math.max(0, Number(item?.collected) || 0);
+    return sum + Math.min(collected, needed);
+  }, 0);
+  const percent = totalNeeded > 0 ? Math.min(100, Math.round((totalCollected / totalNeeded) * 100)) : 0;
+  return { total, completed, totalNeeded, totalCollected, percent, complete: total > 0 && completed === total };
 }
 
 export { normalizedName };

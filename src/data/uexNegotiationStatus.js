@@ -6,11 +6,29 @@
 const CLOSURE_FIELDS = Object.freeze([
   'date_closed',
   'date_closed_client',
+  'date_closed_buyer',
+  'date_closed_seller',
   'dateClosed',
   'dateClosedClient',
+  'dateClosedBuyer',
+  'dateClosedSeller',
   'closed_at',
   'closedAt',
+  'closed_date',
+  'closedDate',
 ]);
+
+const CLOSURE_FLAG_FIELDS = Object.freeze([
+  'closed',
+  'is_closed',
+  'isClosed',
+  'completed',
+  'is_completed',
+  'isCompleted',
+]);
+
+const STATUS_FIELDS = Object.freeze(['status', 'deal_status', 'negotiation_status', 'state']);
+const CLOSED_STATUS_VALUES = new Set(['closed', 'completed', 'complete', 'success', 'successful', 'failed', 'cancelled', 'canceled', 'ended', 'expired', 'rejected', 'declined']);
 
 function normalizeTimestamp(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -39,13 +57,39 @@ export function getNegotiationClosedAt(negotiation) {
   return timestamps.length ? Math.max(...timestamps) : null;
 }
 
+function isTruthyClosureFlag(value) {
+  if (value === true || value === 1) return true;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'closed', 'completed', 'complete'].includes(normalized);
+}
+
+function hasClosedStatus(negotiation) {
+  return STATUS_FIELDS.some(field => CLOSED_STATUS_VALUES.has(String(negotiation?.[field] ?? '').trim().toLowerCase()));
+}
+
+function hasFinalDealValue(negotiation) {
+  // A `deal_value` não é o preço inicial: a documentação da UEX informa que
+  // este campo é preenchido pelo lado pagador no fechamento bem-sucedido.
+  return negotiation?.deal_value !== null
+    && negotiation?.deal_value !== undefined
+    && String(negotiation.deal_value).trim() !== '';
+}
+
 export function isNegotiationClosed(negotiation) {
-  return getNegotiationClosedAt(negotiation) !== null;
+  if (getNegotiationClosedAt(negotiation) !== null) return true;
+  if (CLOSURE_FLAG_FIELDS.some(field => isTruthyClosureFlag(negotiation?.[field]))) return true;
+  if (hasClosedStatus(negotiation)) return true;
+  return hasFinalDealValue(negotiation);
 }
 
 export function getNegotiationClosureField(negotiation) {
-  const candidates = CLOSURE_FIELDS.filter(field => normalizeTimestamp(negotiation?.[field]) !== null);
-  return candidates[0] || null;
+  const dateField = CLOSURE_FIELDS.find(field => normalizeTimestamp(negotiation?.[field]) !== null);
+  if (dateField) return dateField;
+  const flagField = CLOSURE_FLAG_FIELDS.find(field => isTruthyClosureFlag(negotiation?.[field]));
+  if (flagField) return flagField;
+  const statusField = STATUS_FIELDS.find(field => CLOSED_STATUS_VALUES.has(String(negotiation?.[field] ?? '').trim().toLowerCase()));
+  if (statusField) return statusField;
+  return hasFinalDealValue(negotiation) ? 'deal_value' : null;
 }
 
 export default isNegotiationClosed;

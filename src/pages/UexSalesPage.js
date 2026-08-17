@@ -85,6 +85,27 @@ function normalizeInventoryName(value) {
   return normalizeUexItemName(value).toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function getCatalogListingTarget(item = {}) {
+  const directUrl = [
+    item.listing_url,
+    item.listingUrl,
+    item.source_listing_url,
+    item.sourceListingUrl,
+    item.url,
+    item.link,
+  ].map(value => String(value || '').trim()).find(value => /^https?:\/\//i.test(value));
+  if (directUrl) return { url: directUrl, exact: true };
+
+  const slug = item.listing_slug || item.listingSlug || item.source_listing_slug || item.sourceListingSlug || item.slug;
+  if (slug) return { url: buildUexListingUrl(slug), exact: true };
+
+  const title = String(item.title || '').trim();
+  return {
+    url: title ? `https://uexcorp.space/marketplace/home/?search=${encodeURIComponent(title)}` : 'https://uexcorp.space/marketplace/',
+    exact: false,
+  };
+}
+
 function normalizeMarketSlug(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -680,6 +701,7 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
   const itemSales = sales.filter(s => s.title?.toLowerCase() === item.title?.toLowerCase() && s.type === 'sold');
   const totalSold = itemSales.reduce((a,s) => a + (s.total_revenue || 0), 0);
   const qtyListed = item.in_stock || 0;
+  const listingTarget = getCatalogListingTarget(item);
 
   // Dados de tendência da UEX: correspondência exata por ID, slug ou nome.
   // Nunca usar apenas o primeiro termo do título, pois isso mistura itens como
@@ -743,6 +765,9 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
 
         {/* Ações */}
         <div style={{ display:'flex', gap:4, flexShrink:0 }} onClick={e=>e.stopPropagation()}>
+          <a href={listingTarget.url} target="_blank" rel="noreferrer" aria-label={listingTarget.exact ? 'Ver anúncio na UEX' : 'Pesquisar item na UEX'} title={listingTarget.exact ? 'Ver este anúncio diretamente na UEX' : 'Anúncio sem URL direta; pesquisar item na UEX'} style={{ width:26, height:26, borderRadius:4, border:'1px solid rgba(56,189,248,0.28)', background:'rgba(56,189,248,0.08)', color:'var(--accent-primary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', textDecoration:'none' }}>
+            <ExternalLink size={11}/>
+          </a>
           {delConf ? (
             <>
               <button onClick={() => onDelete(item.id)} style={{ padding:'3px 7px', background:'rgba(251,113,133,0.15)', border:'1px solid rgba(251,113,133,0.4)', borderRadius:3, color:'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700 }}>Sim</button>
@@ -780,6 +805,13 @@ function CatalogItemCard({ item, sales, onEditStock, onDelete, trendData, trendD
                     <span style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace' }}>{v}</span>
                   </div>
                 ))}
+              </div>
+
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Atalho do anúncio</div>
+                <a href={listingTarget.url} target="_blank" rel="noreferrer" onClick={event=>event.stopPropagation()} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 9px', background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.28)', borderRadius:5, color:'var(--accent-primary)', fontSize:10, fontWeight:700, textDecoration:'none' }} title={listingTarget.exact ? 'Abrir este anúncio diretamente na UEX' : 'Pesquisar este item na UEX'}>
+                  <ExternalLink size={11}/> {listingTarget.exact ? 'Ver anúncio na UEX' : 'Pesquisar na UEX'}
+                </a>
               </div>
 
               {/* Controle de estoque interno */}

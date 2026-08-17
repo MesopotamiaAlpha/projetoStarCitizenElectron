@@ -4,6 +4,7 @@ import {
   getInventoryItemQuantity,
   getWikeloMissionProgress,
   scanWikeloItem,
+  scanWikeloMissions,
 } from './wikeloInventory';
 
 describe('escaneamento e entrega de itens do Wikelo', () => {
@@ -31,12 +32,26 @@ describe('escaneamento e entrega de itens do Wikelo', () => {
     expect(item.inventory_available).toBe(2);
   });
 
+  test('distribui o mesmo estoque entre várias missões sem reutilizar a mesma unidade', () => {
+    const missions = [
+      { id: 'm1', items: [{ id: 'medal-1', name: 'Medal', needed: 1, collected: 0 }] },
+      { id: 'm2', items: [{ id: 'medal-2', name: 'Medal', needed: 1, collected: 0 }] },
+      { id: 'm3', items: [{ id: 'medal-3', name: 'Medal', needed: 1, collected: 0 }] },
+    ];
+    const scanned = scanWikeloMissions(missions, [{ id: 10, name: 'Medal', quantity: 1, location_name: 'New Babbage', system: 'Stanton', location_type: 'Cidade' }], 'Medal');
+
+    expect(scanned.map(mission => mission.items[0].from_inventory)).toEqual([1, 0, 0]);
+    expect(scanned.map(mission => mission.items[0].collected)).toEqual([1, 0, 0]);
+    expect(scanned[0].items[0].inventory_source_location).toContain('New Babbage');
+    expect(scanned[1].items[0].inventory_reserved_for_wikelo).toBe(1);
+  });
+
   test('calcula progresso e libera completude somente quando todos os itens estão completos', () => {
     const pending = { items: [{ needed: 2, collected: 2 }, { needed: 5, collected: 4 }] };
     const complete = { items: [{ needed: 2, collected: 2 }, { needed: 5, collected: 5 }] };
 
-    expect(getWikeloMissionProgress(pending)).toEqual({ total: 2, completed: 1, percent: 50, complete: false });
-    expect(getWikeloMissionProgress(complete)).toEqual({ total: 2, completed: 2, percent: 100, complete: true });
+    expect(getWikeloMissionProgress(pending)).toEqual({ total: 2, completed: 1, totalNeeded: 7, totalCollected: 6, percent: 86, complete: false });
+    expect(getWikeloMissionProgress(complete)).toEqual({ total: 2, completed: 2, totalNeeded: 7, totalCollected: 7, percent: 100, complete: true });
   });
 
   test('monta plano distribuído entre locais e aplica consumo somente ao confirmar', () => {

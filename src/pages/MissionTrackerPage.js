@@ -8,7 +8,8 @@ import {
   saveMissionAutoMonitor,
   setMissionAutoMonitorStatus,
 } from '../data/missionAutoMonitor';
-import { dispatchMissionScrip, markMissionScripFailed, isMissionScripFailureStatus, getMissionScripStatus, missionScripStatusLabel, normalizeScripType, scripTypeToName } from '../data/unknownVault';
+import { markMissionScripFailed, isMissionScripFailureStatus, getMissionScripStatus, missionScripStatusLabel, normalizeScripType, scripTypeToName } from '../data/unknownVault';
+import { dispatchMissionRewardsToDefaultInventory, SECURE_DRIVE_ITEM_NAME, getMissionRewardStatus } from '../data/missionRewardDispatch';
 import {
   Plus, Trash2, Check, CheckCircle2, Clock, AlertTriangle,
   Search, MapPin, Users, Package, Crosshair, Edit3, X, Save,
@@ -691,6 +692,7 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary, missionCatalog }
       created_at:localISOString(),completed_at:null,
       objectives:[],timer_elapsed:0,
       scrip_type:null,scrip_qty:0,scrip_dispatched:false,scrip_dispatch_error:'',
+      secure_drive_enabled:false,secure_drive_qty:0,secure_drive_dispatched:false,secure_drive_status:null,secure_drive_dispatch_error:'',
     };
     return initial
       ? {...defaults,...initial,objectives:initial.objectives?.map(o=>({...o}))||[],scrip_type:normalizeScripType(initial.scrip_type)}
@@ -796,20 +798,35 @@ function MissionForm({ initial, onSave, onCancelar, objLibrary, missionCatalog }
         <div><label style={LS}>Reputação</label><input style={IS} type="number" min="0" value={data.reputation_gain||0} onChange={e=>set('reputation_gain',Number(e.target.value))}/></div>
       </div>
 
-      {/* Recompensa de scrip */}
-      <div style={{marginBottom:12,padding:'10px 12px',background:data.scrip_type?'rgba(162,155,254,0.07)':'rgba(255,255,255,0.02)',border:`1px solid ${data.scrip_type?'rgba(162,155,254,0.28)':'var(--border-subtle)'}`,borderRadius:7}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
-          <button type="button" onClick={()=>{if(data.scrip_dispatched)return;set('scrip_type',data.scrip_type?null:'mg_scrip');if(data.scrip_type)set('scrip_qty',0);}} style={{display:'flex',alignItems:'center',gap:7,background:'none',border:'none',padding:0,cursor:data.scrip_dispatched?'not-allowed':'pointer',color:data.scrip_type?'#a29bfe':'var(--text-secondary)',opacity:data.scrip_dispatched?0.75:1}}>
-            <span style={{width:16,height:16,borderRadius:4,border:`2px solid ${data.scrip_type?'#a29bfe':'var(--border-normal)'}`,background:data.scrip_type?'rgba(162,155,254,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>{data.scrip_type&&<Check size={11}/>}</span>
-            <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.07em'}}>Entrega Scrip?</span>
-          </button>
-          {data.scrip_dispatched&&<span style={{fontSize:10,padding:'3px 7px',borderRadius:4,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)',fontWeight:700}}><CheckCircle2 size={10} style={{verticalAlign:'-2px'}}/> Enviado ao Baú Desconhecido</span>}
+      {/* Recompensas de missão: scrip e ASD Secure Drive */}
+      <div style={{marginBottom:12,padding:'10px 12px',background:(data.scrip_type||data.secure_drive_enabled)?'rgba(162,155,254,0.07)':'rgba(255,255,255,0.02)',border:`1px solid ${(data.scrip_type||data.secure_drive_enabled)?'rgba(162,155,254,0.28)':'var(--border-subtle)'}`,borderRadius:7}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:10}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+              <button type="button" onClick={()=>{if(data.scrip_dispatched)return;set('scrip_type',data.scrip_type?null:'mg_scrip');if(data.scrip_type)set('scrip_qty',0);}} style={{display:'flex',alignItems:'center',gap:7,background:'none',border:'none',padding:0,cursor:data.scrip_dispatched?'not-allowed':'pointer',color:data.scrip_type?'#a29bfe':'var(--text-secondary)',opacity:data.scrip_dispatched?0.75:1}}>
+                <span style={{width:16,height:16,borderRadius:4,border:`2px solid ${data.scrip_type?'#a29bfe':'var(--border-normal)'}`,background:data.scrip_type?'rgba(162,155,254,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>{data.scrip_type&&<Check size={11}/>}</span>
+                <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.07em'}}>Entrega Scrip?</span>
+              </button>
+              {data.scrip_dispatched&&<span style={{fontSize:10,padding:'3px 7px',borderRadius:4,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)',fontWeight:700}}><CheckCircle2 size={10} style={{verticalAlign:'-2px'}}/> Enviado ao inventário padrão</span>}
+            </div>
+            {data.scrip_type&&<div style={{display:'grid',gridTemplateColumns:'minmax(150px,1fr) minmax(100px,140px)',gap:8,marginTop:9}}>
+              <div><label style={{...LS,color:'#a29bfe'}}>Tipo de Scrip</label><select style={{...SS,borderColor:'rgba(162,155,254,0.35)'}} value={data.scrip_type} disabled={data.scrip_dispatched} onChange={e=>set('scrip_type',normalizeScripType(e.target.value))}><option value="mg_scrip">MG Scrip</option><option value="council_scrip">Council Scrip</option></select></div>
+              <div><label style={{...LS,color:'#a29bfe'}}>Quantidade</label><input style={{...IS,borderColor:'rgba(162,155,254,0.35)',fontFamily:'Share Tech Mono,monospace'}} type="number" min="1" step="1" value={data.scrip_qty||''} disabled={data.scrip_dispatched} onChange={e=>set('scrip_qty',Math.max(0,Math.floor(Number(e.target.value)||0)))} placeholder="ex: 12"/></div>
+            </div>}
+            {data.scrip_dispatch_error&&<div style={{marginTop:7,fontSize:10,color:'var(--accent-red)',display:'flex',alignItems:'center',gap:5}}><AlertTriangle size={11}/> {data.scrip_dispatch_error}</div>}
+          </div>
+          <div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+              <button type="button" onClick={()=>{if(data.secure_drive_dispatched)return;set('secure_drive_enabled',!data.secure_drive_enabled);if(data.secure_drive_enabled)set('secure_drive_qty',0);}} style={{display:'flex',alignItems:'center',gap:7,background:'none',border:'none',padding:0,cursor:data.secure_drive_dispatched?'not-allowed':'pointer',color:data.secure_drive_enabled?'#38bdf8':'var(--text-secondary)',opacity:data.secure_drive_dispatched?0.75:1}}>
+                <span style={{width:16,height:16,borderRadius:4,border:`2px solid ${data.secure_drive_enabled?'#38bdf8':'var(--border-normal)'}`,background:data.secure_drive_enabled?'rgba(56,189,248,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>{data.secure_drive_enabled&&<Check size={11}/>}</span>
+                <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.07em'}}>Entrega Secure Drive?</span>
+              </button>
+              {data.secure_drive_dispatched&&<span style={{fontSize:10,padding:'3px 7px',borderRadius:4,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)',fontWeight:700}}><CheckCircle2 size={10} style={{verticalAlign:'-2px'}}/> Enviado ao inventário padrão</span>}
+            </div>
+            {data.secure_drive_enabled&&<div style={{marginTop:9}}><label style={{...LS,color:'#38bdf8'}}>Quantidade de {SECURE_DRIVE_ITEM_NAME}</label><input style={{...IS,borderColor:'rgba(56,189,248,0.35)',fontFamily:'Share Tech Mono,monospace'}} type="number" min="1" step="1" value={data.secure_drive_qty||''} disabled={data.secure_drive_dispatched} onChange={e=>set('secure_drive_qty',Math.max(0,Math.floor(Number(e.target.value)||0)))} placeholder="ex: 1"/></div>}
+            {data.secure_drive_dispatch_error&&<div style={{marginTop:7,fontSize:10,color:'var(--accent-red)',display:'flex',alignItems:'center',gap:5}}><AlertTriangle size={11}/> {data.secure_drive_dispatch_error}</div>}
+          </div>
         </div>
-        {data.scrip_type&&<div style={{display:'grid',gridTemplateColumns:'minmax(150px,1fr) minmax(120px,180px)',gap:8,marginTop:9}}>
-          <div><label style={{...LS,color:'#a29bfe'}}>Tipo de Scrip</label><select style={{...SS,borderColor:'rgba(162,155,254,0.35)'}} value={data.scrip_type} disabled={data.scrip_dispatched} onChange={e=>set('scrip_type',normalizeScripType(e.target.value))}><option value="mg_scrip">MG Scrip</option><option value="council_scrip">Council Scrip</option></select></div>
-          <div><label style={{...LS,color:'#a29bfe'}}>Quantidade</label><input style={{...IS,borderColor:'rgba(162,155,254,0.35)',fontFamily:'Share Tech Mono,monospace'}} type="number" min="1" step="1" value={data.scrip_qty||''} disabled={data.scrip_dispatched} onChange={e=>set('scrip_qty',Math.max(0,Math.floor(Number(e.target.value)||0)))} placeholder="ex: 12"/></div>
-        </div>}
-        {data.scrip_dispatch_error&&<div style={{marginTop:7,fontSize:10,color:'var(--accent-red)',display:'flex',alignItems:'center',gap:5}}><AlertTriangle size={11}/> {data.scrip_dispatch_error}</div>}
       </div>
 
       {/* Objectives */}
@@ -1226,6 +1243,11 @@ function automaticMissionFromEvent(event, missionCatalog) {
     scrip_qty: 0,
     scrip_dispatched: false,
     scrip_dispatch_error: '',
+    secure_drive_enabled: false,
+    secure_drive_qty: 0,
+    secure_drive_dispatched: false,
+    secure_drive_status: null,
+    secure_drive_dispatch_error: '',
     auto: true,
     source: 'game_log',
     watcher_guid: event?.guid || null,
@@ -1272,15 +1294,14 @@ function upsertAutomaticMission(missions, event, missionCatalog) {
     next.duration_sec = Number(event.durationSec) || next.duration_sec || 0;
     next.timer_elapsed = next.duration_sec * 1000;
     next.auto_last_reason = event.reason || event.completionLabel || '';
-    if (event.type === 'mission_complete') next = dispatchMissionScrip(next).mission || next;
-    else if (isMissionScripFailureStatus(next.status)) next = markMissionScripFailed(next, event.reason || event.completionLabel || 'Missão não concluída.').mission || next;
+    if (event.type === 'mission_ended' && isMissionScripFailureStatus(next.status)) next = markMissionScripFailed(next, event.reason || event.completionLabel || 'Missão não concluída.').mission || next;
   }
   if (index < 0) return [next, ...missions];
   return missions.map((mission, position) => position === index ? next : mission);
 }
 
 // ── Mission Card ──────────────────────────────────────────────────────────────
-function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onRewardQuickSave, onOpenDetails }) {
+function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onRewardQuickSave, onOpenDetails, onOpenLoot }) {
   const [expanded,setExpandired]=useState(false);
   const [quickRewardOpen,setQuickRewardOpen]=useState(false);
   const [quickReward,setQuickReward]=useState('');
@@ -1293,6 +1314,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
   const rewardPending = hasPendingAutoReward(mission);
   const statusSurface = STATUS_SURFACES[mission.status] || { background:'var(--bg-card)', border:'var(--border-subtle)' };
   const scripStatus = getMissionScripStatus(mission);
+  const secureDriveStatus = getMissionRewardStatus(mission, 'secure_drive');
 
   function startClock() {
     clearInterval(tickRef.current);
@@ -1340,6 +1362,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
             {mission.loot&&<span style={{fontSize:9,padding:'1px 5px',borderRadius:3,background:'rgba(52,211,153,0.1)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.25)'}}>🎁 Loot</span>}
             {mission.auto&&<span className="mission-auto-badge"><Tag size={9}/> AUTO</span>}
             {scripStatus&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:3,background:scripStatus==='credited'?'rgba(52,211,153,0.12)':scripStatus==='failed'?'rgba(239,68,68,0.12)':'rgba(251,191,36,0.12)',color:scripStatus==='credited'?'#34d399':scripStatus==='failed'?'#ef4444':'#fbbf24',border:`1px solid ${scripStatus==='credited'?'rgba(52,211,153,0.3)':scripStatus==='failed'?'rgba(239,68,68,0.3)':'rgba(251,191,36,0.3)'}`}}><Star size={9} style={{verticalAlign:'-1px'}}/> {scripTypeToName(mission.scrip_type)} ×{Number(mission.scrip_qty)} · {missionScripStatusLabel(scripStatus)}</span>}
+            {secureDriveStatus&&<span style={{fontSize:9,fontWeight:700,padding:'1px 6px',borderRadius:3,background:secureDriveStatus==='credited'?'rgba(52,211,153,0.12)':secureDriveStatus==='failed'?'rgba(239,68,68,0.12)':'rgba(56,189,248,0.12)',color:secureDriveStatus==='credited'?'#34d399':secureDriveStatus==='failed'?'#ef4444':'#38bdf8',border:`1px solid ${secureDriveStatus==='credited'?'rgba(52,211,153,0.3)':secureDriveStatus==='failed'?'rgba(239,68,68,0.3)':'rgba(56,189,248,0.3)'}`}}><Package size={9} style={{verticalAlign:'-1px'}}/> ASD Secure Drive ×{Number(mission.secure_drive_qty)} · {secureDriveStatus==='credited'?'CREDITADO':secureDriveStatus==='failed'?'FALHA':'PENDENTE'}</span>}
             {rewardPending&&<span className="mission-reward-pending-badge"><DollarSign size={9}/> AUEC PENDENTE</span>}
           </div>
           <div style={{display:'flex',gap:10,fontSize:10,color:'var(--text-muted)',flexWrap:'wrap'}}>
@@ -1376,7 +1399,8 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
               value={mission.status} onChange={e=>{e.stopPropagation();onStatusChange(mission.id,e.target.value);}}>
               {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
-            <button onClick={e=>{e.stopPropagation();onEdit(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={10}/></button>
+            <button type="button" title="Abrir distribuição de loot" onClick={e=>{e.stopPropagation();onOpenLoot?.(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid rgba(52,211,153,0.3)',background:'rgba(52,211,153,0.08)',color:'var(--accent-green)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Gift size={11}/></button>
+            <button type="button" title="Editar missão" onClick={e=>{e.stopPropagation();onEdit(mission);}} style={{width:24,height:24,borderRadius:4,border:'1px solid var(--border-normal)',background:'rgba(56,189,248,0.08)',color:'var(--accent-primary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><Edit3 size={10}/></button>
             {delConf?(
               <div style={{display:'flex',gap:3,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
                 <button onClick={()=>onDelete(mission.id)} style={{padding:'2px 6px',background:'rgba(251,113,133,0.15)',border:'1px solid rgba(251,113,133,0.4)',borderRadius:3,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}>Sim</button>
@@ -1431,6 +1455,7 @@ function MissionDetailsModal({ mission, onClose, onEdit }) {
   const isOut = isWalletOut(mission);
   const isCost = isOut || rawReward < 0;
   const scripStatus = getMissionScripStatus(mission);
+  const secureDriveStatus = getMissionRewardStatus(mission, 'secure_drive');
   const lootMembers = mission.loot?.members || [];
   return (
     <div className="mission-modal-overlay" role="dialog" aria-modal="true" aria-label="Detalhes da missão" onMouseDown={onClose}>
@@ -1939,7 +1964,7 @@ function ReuseModal({ missions, onSelect, onDelete, onClose, missionTypes }) {
 }
 
 // ── TAB 1: Today's missions ───────────────────────────────────────────────────
-function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onAddLoss, onRemoveLoss, objLibrary, onLootSave, onLootUpdate, missionCatalog }) {
+function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onAddLoss, onRemoveLoss, objLibrary, onLootSave, onLootUpdate, onOpenLoot, missionCatalog }) {
   const [showForm,setShowForm]     = useState(false);
   const [editM,setEditM]           = useState(null);
   const [filterStatus,setFilter]   = useState('all');
@@ -2083,6 +2108,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
                 onEdit={m=>{setEditM(m);setShowForm(false);}}
                 onDelete={onDelete} onStatusChange={handleStatusChange} onClockUpdate={onClockUpdate}
                 onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
+                onOpenLoot={onOpenLoot}
                 onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'manual',auto_reward_source:'manual',auto_reward_filled_at:new Date().toISOString()})}
                 onOpenDetails={setDetailM}/>
             </div>
@@ -2095,7 +2121,7 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 }
 
 // ── TAB 2: History ────────────────────────────────────────────────────────────
-function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, objLibrary, missionCatalog }) {
+function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onOpenLoot, objLibrary, missionCatalog }) {
   const [editM, setEditM] = useState(null);
   const [detailM, setDetailM] = useState(null);
   const [pendingOnly, setPendingOnly] = useState(false);
@@ -2226,6 +2252,7 @@ function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onCloc
                     onStatusChange={onStatusChange}
                     onClockUpdate={onClockUpdate}
                     onLootUpdate={(loot)=>onLootUpdate(m.id, loot)}
+                    onOpenLoot={onOpenLoot}
                     onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'manual',auto_reward_source:'manual',auto_reward_filled_at:new Date().toISOString()})}
                     onOpenDetails={setDetailM}/>
                 ))
@@ -2503,16 +2530,20 @@ export default function MissionTrackerPage() {
   function persistMissions(updated){setMissions(updated);save(MISSIONS_KEY,updated);}
   function persistLosses(updated) {setLosses(updated);save(LOSSES_KEY,updated);}
 
-  function handleSave(m) {
+  async function handleSave(m) {
     if(m.objectives?.length>0) addToLib(m.objectives.map(o=>o.text));
-    const scripResult = m.status === 'Completed'
-      ? dispatchMissionScrip(m)
-      : isMissionScripFailureStatus(m.status)
-        ? markMissionScripFailed(m, `Missão marcada como ${m.status}.`)
-        : { mission: m };
-    const normalizedMission = scripResult.mission || m;
-    const updated=missions.some(x=>x.id===normalizedMission.id)?missions.map(x=>x.id===normalizedMission.id?normalizedMission:x):[normalizedMission,...missions];
+    const statusResult = isMissionScripFailureStatus(m.status)
+      ? markMissionScripFailed(m, `Missão marcada como ${m.status}.`)
+      : { mission: m };
+    let normalizedMission = statusResult.mission || m;
+    let updated=missions.some(x=>x.id===normalizedMission.id)?missions.map(x=>x.id===normalizedMission.id?normalizedMission:x):[normalizedMission,...missions];
     persistMissions(updated);
+    if (normalizedMission.status === 'Completed') {
+      const rewardResult = await dispatchMissionRewardsToDefaultInventory(normalizedMission);
+      normalizedMission = rewardResult.mission || normalizedMission;
+      updated = updated.map(item => item.id === normalizedMission.id ? normalizedMission : item);
+      persistMissions(updated);
+    }
   }
   function handleDelete(id)           { persistMissions(missions.filter(m=>m.id!==id)); }
 
@@ -2527,7 +2558,7 @@ export default function MissionTrackerPage() {
     window.dispatchEvent(new CustomEvent('sc_missions_reset', { detail: { removedMissions: missions.length, removedLosses: losses.length, activeMissions: active.length, activeAutoMissions: autoActive.length } }));
   }
 
-  function handleStatusChange(id, status) {
+  async function handleStatusChange(id, status) {
     const mission = missions.find(m => m.id === id);
     const changedMission = mission ? {
       ...mission,
@@ -2536,16 +2567,17 @@ export default function MissionTrackerPage() {
       wallet_out_at: status === 'Saiu da carteira' ? localISOString() : null,
       objectives: status === 'Completed' ? (mission.objectives||[]).map(o=>({...o,done:true})) : mission.objectives,
     } : null;
-    const statusResult = status === 'Completed' && changedMission
-      ? dispatchMissionScrip(changedMission)
-      : isMissionScripFailureStatus(status) && changedMission
-        ? markMissionScripFailed(changedMission, `Missão marcada como ${status}.`)
-        : { mission: changedMission };
-    const updatedMission = statusResult.mission || changedMission;
-    const updated = missions.map(m => m.id === id ? (updatedMission || m) : m);
+    const statusResult = isMissionScripFailureStatus(status) && changedMission
+      ? markMissionScripFailed(changedMission, `Missão marcada como ${status}.`)
+      : { mission: changedMission };
+    let updatedMission = statusResult.mission || changedMission;
+    let updated = missions.map(m => m.id === id ? (updatedMission || m) : m);
     persistMissions(updated);
-    // Ao completar, abrir modal de loot depois de persistir o estado do scrip.
     if (status === 'Completed' && updatedMission) {
+      const rewardResult = await dispatchMissionRewardsToDefaultInventory(updatedMission);
+      updatedMission = rewardResult.mission || updatedMission;
+      updated = updated.map(item => item.id === id ? updatedMission : item);
+      persistMissions(updated);
       setLootMission({ ...updatedMission, status: 'Completed' });
     }
   }
@@ -2590,6 +2622,7 @@ export default function MissionTrackerPage() {
       {lootMission&&(
         <LootDistributionModal
           mission={lootMission}
+          initialLoot={lootMission.loot}
           onSave={handleLootSave}
           onSkip={handleLootSkip}
         />
@@ -2635,11 +2668,11 @@ export default function MissionTrackerPage() {
             onSave={handleSave} onDelete={handleDelete}
             onStatusChange={handleStatusChange} onClockUpdate={handleClockUpdate}
             onAddLoss={handleAddLoss} onRemoveLoss={handleRemoveLoss}
-            objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate} missionCatalog={missionCatalog}/>
+            objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate} onOpenLoot={setLootMission} missionCatalog={missionCatalog}/>
         )}
         {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}
           onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange}
-          onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} objLibrary={objLibrary} missionCatalog={missionCatalog}/>}
+          onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} onOpenLoot={setLootMission} objLibrary={objLibrary} missionCatalog={missionCatalog}/>}
                 {activeTab==='stats'&&<StatsTab missions={missions} losses={losses} onReset={handleResetStatisticsAndHistory}/>}
 
       </div>

@@ -14,6 +14,12 @@ import { SCRIPT_RATIO, isScriptItem, normalizeScriptName, calcWikeloFavors } fro
 import { loadUnknownVault, removeFromUnknownVault, UNKNOWN_VAULT_UPDATED_EVENT } from '../data/unknownVault';
 import { publishInventoryUpdate } from '../data/inventoryEvents';
 import {
+  loadInventoryPreferences,
+  saveInventoryDefaultDestination,
+  clearInventoryDefaultDestination,
+  INVENTORY_PREFERENCES_UPDATED_EVENT,
+} from '../data/inventoryPreferences';
+import {
   DEFAULT_INVENTORY_TAXONOMY,
   INVENTORY_TAXONOMY_UPDATED_EVENT,
   getInventoryCategoryOptions,
@@ -542,9 +548,11 @@ const emptyItem = () => ({
 
 function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
 
-function ItemForm({ initial, onSave, onCancelar, taxonomy = [] }) {
+function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation = null }) {
   const [data, setData] = useState(() => {
-    const base = initial ? { is_crafted:false, craft_status:[], ...initial } : emptyItem();
+    const base = initial
+      ? { is_crafted:false, craft_status:[], ...initial }
+      : { ...emptyItem(), ...(defaultLocation || {}) };
     return { ...base, craft_status: normalizeCraftStatus(base.craft_status) };
   });
   const [error, setError]     = useState('');
@@ -1356,6 +1364,8 @@ export default function InventoryPage() {
   const [loading,      setLoading]      = useState(true);
   const [showForm,     setShowForm]     = useState(false);
   const [editItem,     setEditItem]     = useState(null);
+  const [showDefaultLocation, setShowDefaultLocation] = useState(false);
+  const [defaultLocation, setDefaultLocation] = useState(() => loadInventoryPreferences().defaultDestination);
   const [search,       setSearch]       = useState('');
   // Navegação hierárquica
   const [selSystem,    setSelSystem]    = useState(null); // null = tela de sistemas
@@ -1386,6 +1396,27 @@ export default function InventoryPage() {
     () => buildManagedLocationOptions(),
     [locationsVersion]
   );
+
+  useEffect(() => {
+    const refreshPreferences = event => {
+      const next = event?.detail || loadInventoryPreferences();
+      setDefaultLocation(next.defaultDestination || null);
+    };
+    window.addEventListener(INVENTORY_PREFERENCES_UPDATED_EVENT, refreshPreferences);
+    window.addEventListener('storage', refreshPreferences);
+    return () => {
+      window.removeEventListener(INVENTORY_PREFERENCES_UPDATED_EVENT, refreshPreferences);
+      window.removeEventListener('storage', refreshPreferences);
+    };
+  }, []);
+
+  function handleDefaultLocationChange(key) {
+    const selected = transferDestinations.find(option => option.key === key) || null;
+    const next = selected ? { system: selected.system, location_type: selected.location_type, location_name: selected.location_name } : null;
+    setDefaultLocation(next);
+    if (next) saveInventoryDefaultDestination(next);
+    else clearInventoryDefaultDestination();
+  }
 
   const invAPI = useMemo(() => {
     if (window.electronAPI) {
@@ -1638,6 +1669,35 @@ export default function InventoryPage() {
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const catList        = [...new Set(displayItems.map(i=>i.category))].sort();
 
+  const consolidatedSearch = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return null;
+    const matches = regularItems.filter(item => String(item?.name || '').toLocaleLowerCase().includes(query));
+    const totalQuantity = matches.reduce((sum, item) => sum + Math.max(0, Number(item?.quantity) || 0), 0);
+    const systemsMap = new Map();
+    matches.forEach(item => {
+      const system = String(item?.system || 'Sistema não informado').trim() || 'Sistema não informado';
+      const location = String(item?.location_name || 'Local não informado').trim() || 'Local não informado';
+      if (!systemsMap.has(system)) systemsMap.set(system, { system, quantity: 0, locations: new Map() });
+      const systemGroup = systemsMap.get(system);
+      const quantity = Math.max(0, Number(item?.quantity) || 0);
+      systemGroup.quantity += quantity;
+      if (!systemGroup.locations.has(location)) systemGroup.locations.set(location, { location, quantity: 0, records: 0, names: new Set() });
+      const locationGroup = systemGroup.locations.get(location);
+      locationGroup.quantity += quantity;
+      locationGroup.records += 1;
+      locationGroup.names.add(item.name);
+    });
+    return {
+      matches,
+      totalQuantity,
+      totalRecords: matches.length,
+      systems: [...systemsMap.values()]
+        .map(group => ({ ...group, locations: [...group.locations.values()].sort((a, b) => b.quantity - a.quantity || a.location.localeCompare(b.location)) }))
+        .sort((a, b) => b.quantity - a.quantity || a.system.localeCompare(b.system)),
+    };
+  }, [regularItems, search]);
+
   const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 
   if (loading) return (
@@ -1656,17 +1716,34 @@ export default function InventoryPage() {
             {itens.length} item{itens.length!==1?'s':''} · {totalValor.toLocaleString('pt-BR')} aUEC total
           </div>
         </div>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowDefaultLocation(value=>!value)} title="Definir o local preenchido automaticamente em novos itens" style={{display:'flex',alignItems:'center',gap:6,padding:'8px 11px',background:defaultLocation?'rgba(52,211,153,0.09)':'rgba(255,255,255,0.03)',border:`1px solid ${defaultLocation?'rgba(52,211,153,0.35)':'var(--border-subtle)'}`,borderRadius:7,color:defaultLocation?'var(--accent-green)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+            <MapPin size={13}/> {defaultLocation ? 'Local padrão ativo' : 'Definir local padrão'}
+          </button>
           <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
             <Plus size={14}/> Novo Item
           </button>
         </div>
       </div>
 
+      {showDefaultLocation && (
+        <div style={{margin:'0 24px 12px',padding:'12px 14px',background:'rgba(52,211,153,0.05)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:8,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <div style={{flex:'1 1 260px',minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:800,color:'var(--accent-green)',textTransform:'uppercase',letterSpacing:'0.07em'}}>Local padrão para novos itens</div>
+            <div style={{fontSize:11,color:'var(--text-secondary)',marginTop:3}}>O local será preenchido automaticamente ao registrar um item novo. Você poderá alterá-lo no próprio cadastro.</div>
+          </div>
+          <select value={defaultLocation ? `${defaultLocation.system}::${defaultLocation.location_type}::${defaultLocation.location_name}` : ''} onChange={event=>handleDefaultLocationChange(event.target.value)} style={{...SS,flex:'1 1 260px',minWidth:220}}>
+            <option value="">Sem local padrão</option>
+            {transferDestinations.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}
+          </select>
+          {defaultLocation && <button type="button" onClick={()=>handleDefaultLocationChange('')} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'6px 9px',background:'transparent',border:'1px solid rgba(251,113,133,0.25)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:10,fontWeight:700}}><X size={11}/> Limpar</button>}
+        </div>
+      )}
+
       {/* Formulário */}
       {(showForm||editItem) && (
         <div style={{padding:'0 24px',overflow:'auto',maxHeight:'60vh',flexShrink:0}}>
-          <ItemForm initial={editItem||undefined} taxonomy={taxonomy} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
+          <ItemForm initial={editItem||undefined} defaultLocation={editItem ? null : defaultLocation} taxonomy={taxonomy} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
         </div>
       )}
 
@@ -1702,6 +1779,53 @@ export default function InventoryPage() {
 
       {/* ── Conteúdo principal ── */}
       <div className="page-body">
+
+        {consolidatedSearch && (
+          <section style={{ marginBottom: 18, padding: '14px 16px', background: 'linear-gradient(135deg, rgba(56,189,248,0.10), rgba(52,211,153,0.045))', border: '1px solid rgba(56,189,248,0.28)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12, flexWrap:'wrap', marginBottom:12 }}>
+              <div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:11, fontWeight:800, letterSpacing:'0.07em' }}><Search size={14}/> RESUMO DA BUSCA GLOBAL</div>
+                <div style={{ marginTop:4, color:'var(--text-secondary)', fontSize:11 }}>Resultados para <strong style={{ color:'var(--text-primary)' }}>{search.trim()}</strong> em todos os sistemas e locais.</div>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <div style={{ padding:'7px 10px', background:'rgba(56,189,248,0.10)', border:'1px solid rgba(56,189,248,0.22)', borderRadius:6 }}><div style={{ color:'var(--text-muted)', fontSize:9, textTransform:'uppercase', fontWeight:800 }}>Quantidade total</div><strong style={{ display:'block', marginTop:2, color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:17 }}>{consolidatedSearch.totalQuantity}</strong></div>
+                <div style={{ padding:'7px 10px', background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.2)', borderRadius:6 }}><div style={{ color:'var(--text-muted)', fontSize:9, textTransform:'uppercase', fontWeight:800 }}>Registros</div><strong style={{ display:'block', marginTop:2, color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:17 }}>{consolidatedSearch.totalRecords}</strong></div>
+              </div>
+            </div>
+            {consolidatedSearch.matches.length === 0 ? (
+              <div style={{ padding:'12px 10px', border:'1px dashed rgba(56,189,248,0.25)', borderRadius:7, color:'var(--text-muted)', fontSize:11 }}>Nenhum item com esse nome foi encontrado no Inventário.</div>
+            ) : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))', gap:8 }}>
+                {consolidatedSearch.systems.map(group => (
+                  <div key={group.system} style={{ padding:'10px 11px', background:'rgba(7,12,24,0.28)', border:'1px solid var(--border-subtle)', borderLeft:`3px solid ${SYSTEM_COLORS[group.system] || 'var(--accent-primary)'}`, borderRadius:7 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:7 }}><strong style={{ color: SYSTEM_COLORS[group.system] || 'var(--accent-primary)', fontSize:12 }}>{group.system}</strong><span style={{ color:'var(--text-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:15, fontWeight:800 }}>{group.quantity}</span></div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                      {group.locations.map(location => (
+                        <div key={`${group.system}-${location.location}`} style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:8, padding:'6px 7px', background:'rgba(255,255,255,0.025)', borderRadius:5 }}>
+                          <div style={{ minWidth:0 }}><div style={{ display:'flex', alignItems:'center', gap:4, color:'var(--text-secondary)', fontSize:10, fontWeight:700 }}><MapPin size={10} style={{ color:'var(--accent-primary)', flexShrink:0 }}/><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{location.location}</span></div><div style={{ marginTop:3, color:'var(--text-muted)', fontSize:9, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[...location.names].join(' · ')}</div></div>
+                          <span style={{ flexShrink:0, color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:12, fontWeight:800 }}>{location.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Busca global na tela inicial de sistemas */}
+        {!selSystem && !selLocation && (
+          <div style={{ marginBottom:18, padding:'12px 14px', background:'rgba(56,189,248,0.045)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7, color:'var(--accent-primary)', fontFamily:'Michroma,sans-serif', fontSize:10, fontWeight:800, letterSpacing:'0.07em' }}><Search size={13}/> PESQUISA GLOBAL DO INVENTÁRIO</div>
+            <div style={{ position:'relative' }}>
+              <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
+              <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Pesquisar item em todos os sistemas e locais..." aria-label="Pesquisar item em todos os sistemas e locais" style={{ width:'100%', boxSizing:'border-box', padding:'10px 36px 10px 31px', background:'var(--bg-base)', border:'1px solid var(--border-normal)', borderRadius:6, color:'var(--text-primary)', fontSize:12, outline:'none' }}/>
+              {search && <button type="button" onClick={()=>setSearch('')} title="Limpar pesquisa" aria-label="Limpar pesquisa" style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', border:'none', borderRadius:4, background:'rgba(255,255,255,0.06)', color:'var(--text-muted)', cursor:'pointer' }}>×</button>}
+            </div>
+            <div style={{ marginTop:6, color:'var(--text-muted)', fontSize:10 }}>A busca soma todos os registros correspondentes e mostra a distribuição por sistema e local, incluindo Stanton, Nyx e Pyro.</div>
+          </div>
+        )}
 
         {/* NÍVEL 1 — Seleção de sistema */}
         {!selSystem && !search.trim() && (

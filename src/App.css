@@ -6463,15 +6463,52 @@ button[class*="add"]:hover {
 }
 
 .uex-notification-item {
+  margin: 7px 8px;
+  padding: 11px 12px !important;
+  border: 1px solid rgba(122,144,176,.16) !important;
+  border-radius: 9px;
+  background: linear-gradient(115deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
   animation: emotoListItemIn 280ms var(--ease-emoto-soft) both;
+  transition: transform var(--motion-fast, 150ms) ease, border-color var(--motion-fast, 150ms) ease, background var(--motion-fast, 150ms) ease, box-shadow var(--motion-fast, 150ms) ease;
 }
 
 .uex-notification-item:hover {
-  background: rgba(56,189,248,.06);
+  background: linear-gradient(115deg, rgba(56,189,248,.11), rgba(56,189,248,.035));
+  border-color: rgba(56,189,248,.4) !important;
+  box-shadow: 0 7px 18px rgba(0,0,0,.18), 0 0 0 1px rgba(56,189,248,.06);
+  transform: translateY(-1px);
 }
 
 .uex-notification-item.is-market-alert {
-  box-shadow: inset 2px 0 0 var(--accent-gold);
+  border-color: rgba(251,191,36,.26) !important;
+  background: linear-gradient(115deg, rgba(251,191,36,.09), rgba(251,191,36,.025));
+  box-shadow: inset 3px 0 0 var(--accent-gold);
+}
+
+.uex-notification-item.is-market-alert:hover {
+  border-color: rgba(251,191,36,.52) !important;
+  box-shadow: inset 3px 0 0 var(--accent-gold), 0 7px 18px rgba(0,0,0,.18);
+}
+
+.uex-notification-item:has(.uex-notification-message-link) {
+  border-color: rgba(56,189,248,.3) !important;
+  background: linear-gradient(105deg, rgba(56,189,248,.12), rgba(56,189,248,.035) 62%, transparent);
+  box-shadow: inset 3px 0 0 rgba(56,189,248,.85), 0 0 18px rgba(56,189,248,.035);
+}
+
+.uex-notification-message-link {
+  border-radius: 6px !important;
+  outline: none;
+  transition: color var(--motion-fast, 150ms) ease, transform var(--motion-fast, 150ms) ease;
+}
+
+.uex-notification-message-link:hover {
+  color: var(--text-primary) !important;
+  transform: translateX(2px);
+}
+
+.uex-notification-message-link:focus-visible {
+  box-shadow: 0 0 0 2px rgba(56,189,248,.5);
 }
 
 .uex-notification-refresh:hover {

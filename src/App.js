@@ -29,7 +29,8 @@ import CalculatorWidget from './components/CalculatorWidget';
 import ContextHelpOverlay from './components/ContextHelpOverlay';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
-import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord } from './data/missionAutoMonitor';
+import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
+import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
@@ -198,6 +199,7 @@ const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [pendingNegotiationHash, setPendingNegotiationHash] = useState('');
   const [sets,       setSets]       = useState([]);
   const [stats,      setStats]      = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -215,10 +217,14 @@ export default function App() {
   useEffect(() => {
     const api = window.electronAPI;
     if (!api?.onMissionMonitorEvent || !api?.onMissionMonitorStatus) return undefined;
-    const cleanEvent = api.onMissionMonitorEvent(event => {
+    const cleanEvent = api.onMissionMonitorEvent(async event => {
       const catalog = loadMissionAdmin();
       const typeNames = getMissionAdminOptions('types', '', catalog).map(option => option.name);
-      upsertAutomaticMissionRecord(event, typeNames);
+      const mission = upsertAutomaticMissionRecord(event, typeNames);
+      if (event?.type === 'mission_complete' && mission) {
+        const rewardResult = await dispatchMissionRewardsToDefaultInventory(mission);
+        updateStoredMissionRecord(rewardResult.mission || mission);
+      }
       appendMissionAutoMonitorEvent(event);
     });
     const cleanStatus = api.onMissionMonitorStatus(status => setMissionAutoMonitorStatus(status));
@@ -244,7 +250,12 @@ export default function App() {
     });
   }
 
-  function goToPage(pageId) {
+  function goToPage(pageId, options = {}) {
+    if (pageId === 'uexnegotiations') {
+      setPendingNegotiationHash(String(options?.negotiationHash || '').trim());
+    } else {
+      setPendingNegotiationHash('');
+    }
     setActivePage(pageId);
     // Garante que a seção da página escolhida esteja aberta
     const group = NAV_GROUPS.find(g => g.pages.some(p => p.id === pageId));
@@ -353,7 +364,12 @@ export default function App() {
           {activePage==='missions'   && <MissionTrackerPage />}
           {activePage==='orevault'   && <OreVaultPage />}
           {activePage==='uexsales'   && <UexSalesPage />}
-          {activePage==='uexnegotiations' && <UexNegotiationsPage />}
+          {activePage==='uexnegotiations' && (
+            <UexNegotiationsPage
+              targetNegotiationHash={pendingNegotiationHash}
+              onTargetNegotiationConsumed={() => setPendingNegotiationHash('')}
+            />
+          )}
           {activePage==='wikelo'     && <WikeloTrackerPage />}
           {activePage==='uexapi'     && <UexApiPage />}
           {activePage==='uexinsights' && <UexInsightsPage onNavigate={goToPage} />}

@@ -202,6 +202,19 @@ export default function LocationsAdminPage({ embedded = false } = {}) {
       </div>}
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: embedded ? '0 8px 20px' : '0 32px 24px' }}>
+        {embedded && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '2px 0 4px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--text-primary)', fontFamily: 'Michroma,sans-serif', fontSize: 12, fontWeight: 700 }}>
+                <Globe2 size={15} style={{ color: 'var(--accent-primary)' }} /> LOCAIS ADMINISTRADOS
+              </div>
+              <div style={{ marginTop: 4, color: 'var(--text-muted)', fontSize: 10 }}>Adicione ou ajuste os locais usados pelos seletores do aplicativo.</div>
+            </div>
+            <button type="button" onClick={beginCreate} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 6, color: 'var(--accent-green)', cursor: 'pointer', fontFamily: '"Exo 2",sans-serif', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>
+              <Plus size={13} /> Adicionar local
+            </button>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(110px, 1fr))', gap: 9, marginBottom: 14 }}>
           {[['Locais cadastrados', stats.total, 'var(--accent-primary)'], ['Ativos', stats.active, 'var(--accent-green)'], ['Inativos', stats.inactive, 'var(--accent-red)'], ['Sistemas', stats.systems, 'var(--accent-purple)'], ['Tipos', stats.types, 'var(--accent-gold)']].map(([label, value, color]) => <div key={label} style={{ padding: '11px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 7 }}><div style={{ color: 'var(--text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</div><div style={{ marginTop: 4, color, fontFamily: 'Share Tech Mono,monospace', fontSize: 21, fontWeight: 700 }}>{value}</div></div>)}
         </div>
