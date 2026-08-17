@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateCustomPiece:  (id, piece)  => ipcRenderer.invoke('update-custom-piece', { pieceId:id, piece }),
   addPieceToSet:      (id, piece)  => ipcRenderer.invoke('add-piece-to-set', { setId:id, piece }),
   deleteCustomSet:    (id)         => ipcRenderer.invoke('delete-custom-set', id),
+  getDuplicateCustomSets: ()        => ipcRenderer.invoke('get-duplicate-custom-sets'),
+  deleteCustomSets:   (ids)        => ipcRenderer.invoke('delete-custom-sets', ids),
   deleteCustomPiece:  (id)         => ipcRenderer.invoke('delete-custom-piece', id),
   // Inventory
   inventoryGetAll:    ()           => ipcRenderer.invoke('inventory-get-all'),

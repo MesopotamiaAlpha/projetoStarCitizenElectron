@@ -1,4 +1,4 @@
-import { consumeVaultEntries, loadVault, saveVault } from './oreVault';
+import { consumeVaultEntries, deductOreEntries, loadVault, saveVault } from './oreVault';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -29,6 +29,12 @@ describe('oreVault consumption', () => {
     const result = consumeVaultEntries(['iron'], 54, 'cSCU');
     expect(result.success).toBe(false);
     expect(loadVault().entries[0].quantity).toBe(53);
+  });
+
+  test('arredonda o saldo após consumo parcial de carga', () => {
+    saveVault({ entries: [{ id: 'lindinium', ore_name: 'Lindinium', quantity: 78.4, unit: 'cSCU', quality: '900', location: 'New Babbage' }] });
+    deductOreEntries([{ id: 'lindinium', amount: 31.6 }]);
+    expect(loadVault().entries[0].quantity).toBe(46.8);
   });
 });
 

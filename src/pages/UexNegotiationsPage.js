@@ -120,25 +120,37 @@ function negotiationAmount(negotiation) {
 }
 
 function numericInputValue(value) {
-  const parsed = Number(String(value ?? '').replace(',', '.'));
+  let text = String(value ?? '').trim().replace(/[^0-9,.-]/g, '');
+  if (!text) return 0;
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    text = comma > dot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (comma >= 0) {
+    text = text.replace(',', '.');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    text = text.replace(/\./g, '');
+  }
+  const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
   const initialQuantity = Math.max(1, Math.round(numericInputValue(negotiation?.deal_quantity || negotiation?.quantity || 1)));
   const initialTotal = numericInputValue(negotiation?.deal_value || negotiation?.total_price || (numericInputValue(negotiation?.price) * initialQuantity));
+  const initialUnitPrice = numericInputValue(negotiation?.unit_price || negotiation?.unitPrice || negotiation?.price) || (initialTotal > 0 ? initialTotal / initialQuantity : 0);
   const [quantity, setQuantity] = useState(String(initialQuantity));
-  const [totalRevenue, setTotalRevenue] = useState(initialTotal > 0 ? String(initialTotal) : '');
+  const [unitPriceInput, setUnitPriceInput] = useState(initialUnitPrice > 0 ? String(initialUnitPrice) : '');
   const [error, setError] = useState('');
   const qty = numericInputValue(quantity);
-  const total = numericInputValue(totalRevenue);
-  const unitPrice = qty > 0 && total > 0 ? total / qty : 0;
+  const unitPrice = numericInputValue(unitPriceInput);
+  const total = qty > 0 && unitPrice > 0 ? qty * unitPrice : 0;
 
   function submit(event) {
     event.preventDefault();
     if (!Number.isFinite(qty) || qty <= 0) { setError('Informe uma quantidade maior que zero.'); return; }
-    if (!Number.isFinite(total) || total <= 0) { setError('Informe um valor total maior que zero.'); return; }
-    onConfirm({ quantity: Math.round(qty), totalRevenue: total });
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) { setError('Informe um valor unitário maior que zero.'); return; }
+    onConfirm({ quantity: Math.round(qty), unitPrice, totalRevenue: total });
   }
 
   const fieldStyle = { width: '100%', boxSizing: 'border-box', padding: '9px 10px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: 'Share Tech Mono,monospace', fontSize: 14, outline: 'none' };
@@ -158,9 +170,9 @@ function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Quantidade vendida<input autoFocus type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} style={{ ...fieldStyle, marginTop: 5 }} /></label>
-          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Valor total<input type="number" min="0.01" step="0.01" value={totalRevenue} onChange={event => setTotalRevenue(event.target.value)} placeholder="Ex.: 400000" style={{ ...fieldStyle, marginTop: 5 }} /></label>
+          <label style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Valor unitário<input type="number" min="0.01" step="0.01" value={unitPriceInput} onChange={event => setUnitPriceInput(event.target.value)} placeholder="Ex.: 400000" style={{ ...fieldStyle, marginTop: 5 }} /></label>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 12, padding: '9px 11px', background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.18)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 11 }}><span>Valor unitário calculado</span><strong style={{ color: 'var(--accent-green)', fontFamily: 'Share Tech Mono,monospace' }}>{unitPrice > 0 ? `${unitPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 12, padding: '9px 11px', background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.18)', borderRadius: 7, color: 'var(--text-secondary)', fontSize: 11 }}><div style={{ display:'flex', justifyContent:'space-between', gap:10 }}><span>Valor unitário</span><strong style={{ color: 'var(--text-secondary)', fontFamily: 'Share Tech Mono,monospace' }}>{unitPrice > 0 ? `${unitPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div><div style={{ display:'flex', justifyContent:'space-between', gap:10 }}><span>Total calculado ({qty > 0 ? qty : 0} × unitário)</span><strong style={{ color: 'var(--accent-green)', fontFamily: 'Share Tech Mono,monospace' }}>{total > 0 ? `${total.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} aUEC` : '—'}</strong></div></div>
         {error && <div style={{ marginTop: 10, color: 'var(--accent-red)', fontSize: 11 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button type="button" onClick={onCancel} disabled={saving} style={{ padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>Cancelar</button>
@@ -201,12 +213,15 @@ function NegotiationThread({ negotiation, onBack }) {
   const myUsername = loadUsername();
   const apiClosedAt = getNegotiationClosedAt(negotiation);
   const isClosed = isNegotiationClosed(negotiation) || !!closure;
+  const isMyListing = Number(negotiation.is_listing_advertiser) === 1 || negotiation.is_listing_advertiser === true;
+  const isBuyer = !isMyListing;
   const messagesEndRef = React.useRef(null);
   const knownMessageIdsRef = React.useRef(new Set());
   const firstLoadRef = React.useRef(true);
   const pollingRef = React.useRef(false);
   const requestRef = React.useRef(false);
   const translationRequestRef = React.useRef(0);
+  const englishManualEditRef = React.useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setRelativeNow(Date.now()), 30000);
@@ -285,6 +300,7 @@ function NegotiationThread({ negotiation, onBack }) {
     const sourceText = replyPt.trim();
     translationRequestRef.current += 1;
     const requestId = translationRequestRef.current;
+    englishManualEditRef.current = false;
     if (!sourceText) {
       setReplyEn('');
       setTranslationStatus('idle');
@@ -299,7 +315,7 @@ function NegotiationThread({ negotiation, onBack }) {
       try {
         const translated = await translatePortugueseToEnglish(sourceText);
         if (translationRequestRef.current !== requestId) return;
-        setReplyEn(translated);
+        if (!englishManualEditRef.current) setReplyEn(translated);
         setTranslationStatus('ready');
       } catch (e) {
         if (translationRequestRef.current !== requestId) return;
@@ -324,6 +340,7 @@ function NegotiationThread({ negotiation, onBack }) {
       await sendNegotiationMessage(negotiation.hash, text);
       setReplyPt('');
       setReplyEn('');
+      englishManualEditRef.current = false;
       setTranslationStatus('idle');
       await load(); // recarrega a conversa pra mostrar a mensagem enviada
     } catch (e) { setSendError(e.message); }
@@ -400,6 +417,7 @@ function NegotiationThread({ negotiation, onBack }) {
       let result = null;
       if (status === 'success') result = registerNegotiationSale(negotiation, saleOverrides);
       const savedClosure = closeNegotiation(negotiation.hash, status, {
+        role: 'seller',
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
         catalogCreated: result?.catalogCreated || false,
@@ -409,6 +427,26 @@ function NegotiationThread({ negotiation, onBack }) {
       setSaleModalOpen(false);
     } catch (e) {
       setCloseError(e.message || 'Não foi possível registrar o encerramento local.');
+    } finally {
+      setClosing(false);
+    }
+  }
+
+  function handleBuyerSuccess() {
+    if (closing || closure) return;
+    setClosing(true);
+    setCloseError('');
+    try {
+      const savedClosure = closeNegotiation(negotiation.hash, 'success', {
+        role: 'buyer',
+        saleId: null,
+        saleCreated: false,
+        catalogCreated: false,
+        purchaseCompleted: true,
+      });
+      setClosure(savedClosure);
+    } catch (e) {
+      setCloseError(e.message || 'Não foi possível finalizar a compra local.');
     } finally {
       setClosing(false);
     }
@@ -471,7 +509,7 @@ function NegotiationThread({ negotiation, onBack }) {
       {closure ? (
         <div style={{ marginBottom:10, padding:'9px 11px', background:closure.status==='success'?'rgba(52,211,153,0.09)':'rgba(251,113,133,0.09)', border:`1px solid ${closure.status==='success'?'rgba(52,211,153,0.32)':'rgba(251,113,133,0.32)'}`, borderRadius:7, color:closure.status==='success'?'var(--accent-green)':'var(--accent-red)', fontSize:11, lineHeight:1.5, display:'flex', alignItems:'flex-start', gap:8 }}>
           {closure.status==='success' ? <CheckCircle2 size={14} style={{ flexShrink:0, marginTop:1 }}/> : <XCircle size={14} style={{ flexShrink:0, marginTop:1 }}/>}
-          <span><strong>{closure.status==='success'?'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO':'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.') : 'Nenhuma venda foi criada para esta negociação.'}
+          <span><strong>{closure.status==='success' ? (closure.role === 'buyer' ? 'COMPRA CONCLUÍDA COM SUCESSO' : 'NEGOCIAÇÃO CONCLUÍDA COM SUCESSO') : 'NEGOCIAÇÃO ENCERRADA SEM SUCESSO'}</strong><br/>{closure.status==='success' ? (closure.role === 'buyer' ? 'Compra finalizada localmente. Nenhum valor foi solicitado ou registrado.' : (closure.saleCreated === false ? 'A venda já existia e foi atualizada no Acompanhamento UEX > Vendas.' : 'Venda registrada automaticamente em Acompanhamento UEX > Vendas.')) : 'Nenhuma venda foi criada para esta negociação.'}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Baú atualizado: {closure.vaultConsumption.boxes} caixa{closure.vaultConsumption.boxes === 1 ? '' : 's'} de {closure.vaultConsumption.boxQuantity} {closure.vaultConsumption.boxUnit} descontada{closure.vaultConsumption.boxes === 1 ? '' : 's'}{closure.vaultConsumption.quality ? ` · qualidade ${closure.vaultConsumption.quality}` : ''}.</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Baú não foi descontado: {closure.vaultConsumption.message}</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'not_linked' && <><br/><span style={{ color:'var(--text-muted)' }}>O anúncio não possui vínculo com o Baú; nenhuma quantidade foi descontada.</span></>}
@@ -481,7 +519,11 @@ function NegotiationThread({ negotiation, onBack }) {
         <div style={{ marginBottom:10, padding:'9px 11px', background:'rgba(255,255,255,0.025)', border:'1px solid var(--border-subtle)', borderRadius:7 }}>
           <div style={{ fontSize:10, color:'var(--text-muted)', marginBottom:8 }}>Registrar resultado local da negociação. Isso não envia nenhuma ação para a UEX.</div>
           <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
-            <button type="button" onClick={()=>setSaleModalOpen(true)} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Concluir com sucesso e registrar venda</button>
+            {isBuyer ? (
+              <button type="button" onClick={handleBuyerSuccess} disabled={closing} data-help="Marca esta negociação como compra concluída. Não solicita nem registra valor de compra." style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Finalizar compra com sucesso</button>
+            ) : (
+              <button type="button" onClick={()=>setSaleModalOpen(true)} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.32)', borderRadius:6, color:'var(--accent-green)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><CheckCircle2 size={12}/> Concluir com sucesso e registrar venda</button>
+            )}
             <button type="button" onClick={()=>handleCloseNegotiation('failed')} disabled={closing} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 10px', background:'rgba(251,113,133,0.08)', border:'1px solid rgba(251,113,133,0.28)', borderRadius:6, color:'var(--accent-red)', cursor:closing?'wait':'pointer', fontSize:10, fontWeight:800, textTransform:'uppercase', opacity:closing?0.6:1 }}><XCircle size={12}/> Encerrar sem sucesso</button>
           </div>
           {closeError && <div style={{ marginTop:8, color:'var(--accent-red)', fontSize:10, lineHeight:1.4 }}>{closeError}</div>}
@@ -583,9 +625,12 @@ function NegotiationThread({ negotiation, onBack }) {
               </div>
               <textarea
                 value={replyPt}
-                onChange={e => setReplyPt(e.target.value)}
+                onChange={e => setReplyPt(String(e.target.value))}
                 onKeyDown={handleKeyDown}
-                placeholder="Escreva em português... (Enter envia, Shift+Enter quebra linha)"
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Escreva em português... (aceita letras, números e valores como 2.000.000)"
                 rows={4}
                 className="uex-composer-textarea"
               />
@@ -603,8 +648,11 @@ function NegotiationThread({ negotiation, onBack }) {
               </div>
               <textarea
                 value={replyEn}
-                onChange={e => setReplyEn(e.target.value)}
-                placeholder="A tradução aparecerá aqui..."
+                onChange={e => { englishManualEditRef.current = true; setReplyEn(String(e.target.value)); }}
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="A tradução aparecerá aqui; você pode editar letras, números e valores"
                 rows={4}
                 className="uex-composer-textarea"
               />

@@ -555,6 +555,17 @@ export function sortMarketAlertListings(alert, listings = []) {
   });
 }
 
+/**
+ * Seleciona a janela atual de anúncios sem contar os que o usuário removeu.
+ * A exclusão acontece antes do slice para que uma vaga liberada seja ocupada
+ * pelo próximo resultado elegível retornado pela UEX.
+ */
+export function selectMarketAlertMatches(alert, listings = [], dismissedKeys = new Set()) {
+  const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(Array.isArray(dismissedKeys) ? dismissedKeys.map(String) : []);
+  const eligible = (Array.isArray(listings) ? listings : []).filter(listing => !dismissed.has(listingKey(listing)));
+  return sortMarketAlertListings(alert, eligible).slice(0, clampMaxResults(alert?.maxResults));
+}
+
 export async function fetchMarketListingsForAlert(alert) {
   const itemName = String(alert?.itemName || '').trim();
   const itemIds = resolveMarketAlertItemIds(alert);
@@ -614,8 +625,8 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
   for (const alert of alerts) {
     try {
       const listings = await fetchMarketListingsForAlert(alert);
-      const matches = sortMarketAlertListings(alert, listings.filter(listing => listingMatchesAlert(alert, listing)));
-      const bestMatches = matches.slice(0, clampMaxResults(alert.maxResults));
+      const matches = listings.filter(listing => listingMatchesAlert(alert, listing));
+      const bestMatches = selectMarketAlertMatches(alert, matches, dismissedKeys);
       const target = nextAlerts.find(row => row.id === alert.id);
       if (target) {
         target.lastCheckedAt = checkedAt;

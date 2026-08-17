@@ -15,7 +15,6 @@ export const BACKUP_CATEGORIES = [
   { id:'clanvault',   label:'Cofre do Clã',                    keys:['sc_clan_vault_v1'] },
   { id:'mininggroup', label:'Mineração em Grupo',              keys:['sc_mining_group_v1','sc_mining_builds_v1'] },
     { id:'missions',   label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },
-  { id:'unknown-vault', label:'Baú Desconhecido',               keys:['sc_unknown_vault_v1'] },
 
   { id:'notes',       label:'Bloco de Notas / Textos UEX',      keys:['sc_notes_v1','sc_uex_texts_v1'] },
   { id:'wikelo',      label:'Acompanhamento Wikelo',           keys:['sc_wikelo_missions_v1'] },
@@ -171,9 +170,6 @@ export async function restoreBackup(backup, selectedIds) {
     keysToRestore.forEach(k => {
       if (backup.data[k] !== undefined) {
         localStorage.setItem(k, backup.data[k]);
-        if (k === 'sc_unknown_vault_v1' && typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('sc_unknown_vault_updated'));
-        }
         restoredKeys++;
       }
     });

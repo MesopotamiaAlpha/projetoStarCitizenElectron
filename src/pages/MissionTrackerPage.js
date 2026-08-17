@@ -93,6 +93,25 @@ function ptMoney(v) {
   if (!v && v!==0) return '0';
   return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:3});
 }
+function ptWholeMoney(v) {
+  return Math.round(Number(v) || 0).toLocaleString('pt-BR');
+}
+function normalizeMissionAnalysisTitle(title) {
+  return String(title || 'Missão sem título')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\[(?:bp\??|auto|manual)\]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function displayMissionAnalysisTitle(title) {
+  const cleaned = String(title || 'Missão sem título')
+    .replace(/\[(?:bp\??|auto|manual)\]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || 'Missão sem título';
+}
 function isWalletOut(mission) { return mission?.status === 'Saiu da carteira'; }
 function walletOutAmount(mission) { return isWalletOut(mission) ? Math.abs(Number(mission.reward) || 0) : 0; }
 function hasPendingAutoReward(mission) {
@@ -1416,7 +1435,7 @@ function MissionCard({ mission, onEdit, onDelete, onStatusChange, onClockUpdate,
       {expanded&&(
         <div style={{padding:'8px 38px 12px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.1)'}}>
           {mission.auto&&<div style={{marginBottom:8,padding:'7px 10px',background:'rgba(251,191,36,0.06)',border:'1px solid rgba(251,191,36,0.18)',borderRadius:5,fontSize:10,color:'var(--text-secondary)'}}><div style={{display:'flex',gap:10,flexWrap:'wrap'}}><span><strong style={{color:'var(--accent-gold)'}}>AUTO</strong> · origem Game.log</span>{mission.external_generator&&<span>gerador: {mission.external_generator}</span>}{mission.watcher_guid&&<span>GUID: {mission.watcher_guid}</span>}{mission.duration_sec>0&&<span>duração: {fmtDuration(mission.duration_sec*1000)}</span>}{mission.reputation_label&&<span style={{color:'var(--accent-primary)'}}>{mission.reputation_label}</span>}{Number(mission.reward)!==0&&<span style={{color:Number(mission.reward)<0?'var(--accent-red)':'var(--accent-gold)'}}>{Number(mission.reward)<0?'-':''}{ptMoney(Math.abs(Number(mission.reward)))} aUEC</span>}{mission.auto_reward_source==='historical'&&<span style={{color:'var(--accent-primary)'}}>valor reaproveitado do histórico</span>}</div>{Number(mission.reward)===0&&<div style={{marginTop:4,color:'var(--text-muted)'}}>Valor aUEC não informado no Game.log; a recompensa monetária pode ser preenchida manualmente.</div>}{mission.auto_last_reason&&<div style={{marginTop:4,color:'var(--text-muted)'}}>Motivo: {mission.auto_last_reason}</div>}{mission.auto_blueprints?.length>0&&<div style={{marginTop:4,color:'var(--accent-gold)'}}>Blueprints detectados: {mission.auto_blueprints.map(item=>item.productName).filter(Boolean).join(', ')}</div>}</div>}
-          {scripStatus&&<div style={{marginBottom:8,padding:'7px 10px',background:scripStatus==='credited'?'rgba(52,211,153,0.06)':scripStatus==='failed'?'rgba(239,68,68,0.06)':'rgba(251,191,36,0.06)',border:`1px solid ${scripStatus==='credited'?'rgba(52,211,153,0.25)':scripStatus==='failed'?'rgba(239,68,68,0.25)':'rgba(251,191,36,0.25)'}`,borderRadius:5,fontSize:10,color:'var(--text-secondary)',display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}><Star size={12} style={{color:scripStatus==='credited'?'#34d399':scripStatus==='failed'?'#ef4444':'#fbbf24'}}/><strong style={{color:scripStatus==='credited'?'#34d399':scripStatus==='failed'?'#ef4444':'#fbbf24'}}>{scripTypeToName(mission.scrip_type)} ×{Number(mission.scrip_qty)}</strong><span>· {scripStatus==='credited'?'creditado no Baú Desconhecido':scripStatus==='failed'?'falha: missão não concluída':'aguardando conclusão com sucesso'}</span>{mission.scrip_failure_reason&&<span style={{color:'#ef4444'}}>· {mission.scrip_failure_reason}</span>}{mission.scrip_dispatch_error&&<span style={{color:'var(--accent-red)'}}>· {mission.scrip_dispatch_error}</span>}</div>}
+          {scripStatus&&<div style={{marginBottom:8,padding:'7px 10px',background:scripStatus==='credited'?'rgba(52,211,153,0.06)':scripStatus==='failed'?'rgba(239,68,68,0.06)':'rgba(251,191,36,0.06)',border:`1px solid ${scripStatus==='credited'?'rgba(52,211,153,0.25)':scripStatus==='failed'?'rgba(239,68,68,0.25)':'rgba(251,191,36,0.25)'}`,borderRadius:5,fontSize:10,color:'var(--text-secondary)',display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}><Star size={12} style={{color:scripStatus==='credited'?'#34d399':scripStatus==='failed'?'#ef4444':'#fbbf24'}}/><strong style={{color:scripStatus==='credited'?'#34d399':scripStatus==='failed'?'#ef4444':'#fbbf24'}}>{scripTypeToName(mission.scrip_type)} ×{Number(mission.scrip_qty)}</strong><span>· {scripStatus==='credited'?'creditado no Inventário padrão':scripStatus==='failed'?'falha: missão não concluída':'aguardando conclusão com sucesso'}</span>{mission.scrip_failure_reason&&<span style={{color:'#ef4444'}}>· {mission.scrip_failure_reason}</span>}{mission.scrip_dispatch_error&&<span style={{color:'var(--accent-red)'}}>· {mission.scrip_dispatch_error}</span>}</div>}
           {mission.bug_description&&<div style={{marginBottom:8,padding:'6px 10px',background:'rgba(225,112,85,0.08)',border:'1px solid rgba(225,112,85,0.2)',borderRadius:5,fontSize:11,color:'#e17055'}}>🐛 {mission.bug_description}</div>}
           {mission.objectives?.length>0&&(
             <div style={{marginBottom:8}}>
@@ -1565,7 +1584,7 @@ function BarChart({ data, valueKey, labelKey, color='var(--accent-primary)', hei
         const isNeg=v<0;
         return (
           <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
-            <div title={`${prefix}${ptMoney(Math.abs(v))}${suffix}`} style={{width:'100%',height:barH,borderRadius:'3px 3px 0 0',background:isNeg?'var(--accent-red)':color,transition:'height 0.3s',minHeight:2,boxShadow:isNeg?'0 0 5px rgba(251,113,133,0.3)':`0 0 5px ${color}44`}}/>
+            <div title={`${d.title || d[labelKey] || 'Registro'} · ${prefix}${ptMoney(Math.abs(v))}${suffix}`} style={{width:'100%',height:barH,borderRadius:'3px 3px 0 0',background:isNeg?'var(--accent-red)':color,transition:'height 0.3s',minHeight:2,boxShadow:isNeg?'0 0 5px rgba(251,113,133,0.3)':`0 0 5px ${color}44`}}/>
             <div style={{fontSize:8,color:'var(--text-muted)',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'100%'}}>{String(d[labelKey]||'').slice(0,8)}</div>
           </div>
         );
@@ -1969,7 +1988,6 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   const [editM,setEditM]           = useState(null);
   const [filterStatus,setFilter]   = useState('all');
   const [pendingOnly,setPendingOnly] = useState(false);
-  const [selected,setSelected]     = useState(new Set());
   const [showReuse,setShowReuse]   = useState(false);
   const [detailM,setDetailM]       = useState(null);
   const today = todayStr();
@@ -1980,20 +1998,6 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
 
   function handleStatusChange(id, status) { onStatusChange(id, status); }
 
-  function toggleSelect(id) {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-  function toggleSelectAll() {
-    if (selected.size === filtered.length && filtered.length > 0) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filtered.map(m=>m.id)));
-    }
-  }
 
   // Reaproveitar missão: preenche o form com dados da missão anterior, limpa campos únicos
   function handleReuse(m) {
@@ -2020,8 +2024,6 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
     setShowReuse(false);
   }
 
-  const allSelected = filtered.length > 0 && selected.size === filtered.length;
-  const someSelected = selected.size > 0;
 
   const SS={padding:'6px 22px 6px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 5px center'};
 
@@ -2043,10 +2045,6 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
       )}
       <DailyLossPanel losses={losses} onAdd={onAddLoss} onRemove={onRemoveLoss} targetDate={today}/>
 
-      {/* Painel de seleção múltipla */}
-      {someSelected && (
-        <SelectionSummaryPanel selected={selected} missions={missions} onClear={()=>setSelected(new Set())}/>
-      )}
 
       {/* Barra de controles */}
       <div className="mission-toolbar-responsive" style={{display:'flex',gap:7,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
@@ -2069,41 +2067,19 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
         <button className={`mission-pending-filter ${pendingOnly?'active':''}`} onClick={()=>setPendingOnly(value=>!value)} title="Mostrar somente missões AUTO sem recompensa aUEC">
           <AlertTriangle size={12}/> AUTO sem aUEC{todayMissions.filter(hasPendingAutoReward).length>0&&<span>{todayMissions.filter(hasPendingAutoReward).length}</span>}
         </button>
-        {/* Checkbox selecionar tudo */}
-        {filtered.length > 0 && (
-          <button onClick={toggleSelectAll} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',background:someSelected?'rgba(56,189,248,0.08)':'transparent',border:`1px solid ${someSelected?'rgba(56,189,248,0.3)':'var(--border-subtle)'}`,borderRadius:5,color:someSelected?'var(--accent-primary)':'var(--text-muted)',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase'}}>
-            <div style={{width:13,height:13,borderRadius:3,border:`2px solid ${allSelected?'var(--accent-primary)':'var(--text-muted)'}`,background:allSelected?'var(--accent-primary)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-              {allSelected && <div style={{width:6,height:6,background:'var(--bg-base)',borderRadius:1}}/>}
-            </div>
-            {allSelected ? 'Desmarcar' : someSelected ? `${selected.size} sel.` : 'Selecionar'}
-          </button>
-        )}
         <span style={{marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)'}}>{filtered.length} missão(ões)</span>
       </div>
 
       {filtered.length===0?(
         <div className="empty-state" style={{paddingTop:30}}>
           <Crosshair size={44} className="empty-state-icon"/>
-          <div className="empty-state-title">{todayMissions.length===0?'NENHUMA MISSÃO HOJE':'NENHUM RESULTADO'}</div>
+          <div className="empty-state-title">{todayMissions.length===0?'NENHUMA MISSÃO NESTE DIA':'NENHUM RESULTADO'}</div>
           <div className="empty-state-text">Clique em "Nova Missão" para registrar.</div>
         </div>
       ): (
         <div className="mission-list-responsive">
         {filtered.map(m=>(
-          <div key={m.id} style={{display:'flex',alignItems:'flex-start',gap:8}}>
-            {/* Checkbox */}
-            <button
-              onClick={()=>toggleSelect(m.id)}
-              style={{
-                marginTop:12,flexShrink:0,width:18,height:18,borderRadius:4,
-                border:`2px solid ${selected.has(m.id)?'var(--accent-primary)':'var(--border-normal)'}`,
-                background:selected.has(m.id)?'var(--accent-primary)':'transparent',
-                cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
-                transition:'all 0.15s',
-              }}>
-              {selected.has(m.id)&&<div style={{width:8,height:8,background:'var(--bg-base)',borderRadius:1}}/>}
-            </button>
-            <div style={{flex:1}}>
+          <div key={m.id}>
               <MissionCard mission={m}
                 onEdit={m=>{setEditM(m);setShowForm(false);}}
                 onDelete={onDelete} onStatusChange={handleStatusChange} onClockUpdate={onClockUpdate}
@@ -2111,7 +2087,6 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
                 onOpenLoot={onOpenLoot}
                 onRewardQuickSave={(id,reward)=>onSave({...m,reward,auto_reward_status:'manual',auto_reward_source:'manual',auto_reward_filled_at:new Date().toISOString()})}
                 onOpenDetails={setDetailM}/>
-            </div>
           </div>
         ))}
         </div>
@@ -2120,7 +2095,69 @@ function TodayTab({ missions, losses, onSave, onDelete, onStatusChange, onClockU
   );
 }
 
-// ── TAB 2: History ────────────────────────────────────────────────────────────
+// ── TAB 2: Seletor de Missões ──────────────────────────────────────────────────
+function MissionSelectorTab({ missions, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onOpenLoot, missionCatalog, objLibrary }) {
+  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [selected, setSelected] = useState(new Set());
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [detailM, setDetailM] = useState(null);
+  const [editM, setEditM] = useState(null);
+  const availableDates = useMemo(() => [...new Set(missions.map(m => financialDateStr(m)).filter(Boolean))].sort().reverse(), [missions]);
+  const dateMissions = useMemo(() => missions.filter(m => missionBelongsToDate(m, selectedDate)), [missions, selectedDate]);
+  const visibleMissions = useMemo(() => dateMissions.filter(m => filterStatus === 'all' || m.status === filterStatus), [dateMissions, filterStatus]);
+  const selectedMissions = useMemo(() => missions.filter(m => selected.has(m.id)), [missions, selected]);
+  const selectedReward = selectedMissions.reduce((total, mission) => total + earnedAmount(mission), 0);
+  const selectedTime = selectedMissions.reduce((total, mission) => total + Math.max(0, Number(mission.timer_elapsed) || 0), 0);
+  const selectedCompleted = selectedMissions.filter(m => m.status === 'Completed').length;
+  const selectedWithTime = selectedMissions.filter(m => (Number(m.timer_elapsed) || 0) > 0).length;
+  const allVisibleSelected = visibleMissions.length > 0 && visibleMissions.every(m => selected.has(m.id));
+
+  function toggleMission(id) {
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleVisibleMissions() {
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (allVisibleSelected) visibleMissions.forEach(m => next.delete(m.id));
+      else visibleMissions.forEach(m => next.add(m.id));
+      return next;
+    });
+  }
+  function shiftDate(delta) {
+    const date = new Date(`${selectedDate}T12:00:00`);
+    date.setDate(date.getDate() + delta);
+    setSelectedDate(localDateStr(date.toISOString()));
+  }
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'minmax(215px,250px) minmax(0,1fr)',gap:14,minHeight:'100%'}}>
+      {editM&&<div className="mission-modal-overlay" role="dialog" aria-modal="true" aria-label="Editar missão" onMouseDown={()=>setEditM(null)}><div className="mission-editor-dialog" onMouseDown={event=>event.stopPropagation()}><MissionForm initial={editM} onSave={mission=>{onSave(mission);setEditM(null);}} onCancelar={()=>setEditM(null)} objLibrary={objLibrary} missionCatalog={missionCatalog}/></div></div>}
+      <aside style={{position:'sticky',top:0,alignSelf:'start',background:'var(--bg-card)',border:'1px solid rgba(56,189,248,0.26)',borderRadius:9,padding:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10}}><Calendar size={15} style={{color:'var(--accent-primary)'}}/><strong style={{fontSize:11,color:'var(--text-primary)',letterSpacing:'0.06em'}}>CALENDÁRIO</strong></div>
+        <input type="date" value={selectedDate} onChange={event=>setSelectedDate(event.target.value)} style={{width:'100%',boxSizing:'border-box',padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',fontSize:11}} aria-label="Escolher dia para selecionar missões"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginTop:7}}><button type="button" onClick={()=>shiftDate(-1)} style={{padding:'6px 4px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>← Anterior</button><button type="button" onClick={()=>shiftDate(1)} style={{padding:'6px 4px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>Próximo →</button></div>
+        <button type="button" onClick={()=>setSelectedDate(todayStr())} style={{width:'100%',marginTop:6,padding:'6px 4px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.28)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:10,fontWeight:700}}>Ir para hoje</button>
+        <div style={{marginTop:14,fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Dias com missões</div>
+        <div style={{display:'flex',flexDirection:'column',gap:4,maxHeight:330,overflowY:'auto',marginTop:6}}>{availableDates.length === 0 ? <span style={{fontSize:10,color:'var(--text-muted)'}}>Nenhum registro ainda.</span> : availableDates.map(date=><button type="button" key={date} onClick={()=>setSelectedDate(date)} style={{textAlign:'left',padding:'6px 7px',background:selectedDate===date?'rgba(56,189,248,0.12)':'transparent',border:`1px solid ${selectedDate===date?'rgba(56,189,248,0.45)':'var(--border-subtle)'}`,borderRadius:5,color:selectedDate===date?'var(--accent-primary)':'var(--text-secondary)',cursor:'pointer',fontFamily:'Share Tech Mono,monospace',fontSize:10}}>{date} <span style={{color:'var(--text-muted)'}}>· {missions.filter(m=>missionBelongsToDate(m,date)).length}</span></button>)}</div>
+      </aside>
+      <section style={{minWidth:0}}>
+        <div style={{position:'sticky',top:0,zIndex:2,background:'var(--bg-base)',paddingBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap',marginBottom:8}}><div><div style={{fontFamily:'Michroma,sans-serif',fontSize:13,color:'var(--accent-primary)',letterSpacing:'0.06em'}}>MISSÕES SELECIONADAS</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:3}}>A seleção permanece ao mudar de dia.</div></div><button type="button" onClick={()=>setSelected(new Set())} disabled={selectedMissions.length===0} style={{padding:'6px 10px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-muted)',cursor:selectedMissions.length?'pointer':'not-allowed',fontSize:10}}>Limpar seleção</button></div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(135px,1fr))',gap:7}}>{[{label:'Missões',value:selectedMissions.length,color:'var(--accent-primary)'},{label:'Recompensas',value:`${ptWholeMoney(selectedReward)} aUEC`,color:'var(--accent-gold)'},{label:'Tempo total',value:selectedTime?fmtDuration(selectedTime):'—',color:'var(--accent-green)'},{label:'Concluídas',value:selectedCompleted,color:'var(--accent-green)'}].map(item=><div key={item.label} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'8px 9px'}}><div style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:800,color:item.color}}>{item.value}</div><div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',marginTop:2}}>{item.label}</div></div>)}</div>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:6}}>Tempo registrado em {selectedWithTime} missão(ões). Recompensas consideram somente missões concluídas.</div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:9}}><strong style={{fontSize:11,color:'var(--text-primary)'}}>Dia selecionado: {selectedDate}</strong><select value={filterStatus} onChange={event=>setFilterStatus(event.target.value)} style={{marginLeft:'auto',padding:'5px 23px 5px 7px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontSize:10}}><option value="all">Todos os status</option>{STATUSES.map(status=><option key={status}>{status}</option>)}</select>{visibleMissions.length>0&&<button type="button" onClick={toggleVisibleMissions} style={{padding:'5px 8px',background:allVisibleSelected?'rgba(56,189,248,0.12)':'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--accent-primary)',cursor:'pointer',fontSize:10}}>{allVisibleSelected?'Desmarcar dia':'Selecionar dia'}</button>}</div>
+        {visibleMissions.length===0 ? <div className="empty-state" style={{paddingTop:45}}><Calendar size={42} className="empty-state-icon"/><div className="empty-state-title">NENHUMA MISSÃO NESTE DIA</div><div className="empty-state-text">Escolha outra data no calendário para continuar sua seleção.</div></div> : <div className="mission-list-responsive">{visibleMissions.map(m=><div key={m.id} style={{display:'flex',alignItems:'flex-start',gap:8}}><button type="button" onClick={()=>toggleMission(m.id)} aria-label={selected.has(m.id)?'Remover missão da seleção':'Adicionar missão à seleção'} style={{marginTop:12,flexShrink:0,width:18,height:18,borderRadius:4,border:`2px solid ${selected.has(m.id)?'var(--accent-primary)':'var(--border-normal)'}`,background:selected.has(m.id)?'var(--accent-primary)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>{selected.has(m.id)&&<div style={{width:8,height:8,background:'var(--bg-base)',borderRadius:1}}/>}</button><div style={{flex:1}}><MissionCard mission={m} onEdit={setEditM} onDelete={onDelete} onStatusChange={onStatusChange} onClockUpdate={onClockUpdate} onLootUpdate={loot=>onLootUpdate(m.id,loot)} onOpenLoot={onOpenLoot} onOpenDetails={setDetailM}/></div></div>)}</div>}
+        </section>
+      <MissionDetailsModal mission={detailM} onClose={()=>setDetailM(null)} onEdit={mission=>{setDetailM(null);setEditM(mission);}} />
+    </div>
+  );
+}
+// ── TAB 3: History ────────────────────────────────────────────────────────────
 function HistoryTab({ missions, losses, onSave, onDelete, onStatusChange, onClockUpdate, onLootUpdate, onOpenLoot, objLibrary, missionCatalog }) {
   const [editM, setEditM] = useState(null);
   const [detailM, setDetailM] = useState(null);
@@ -2296,8 +2333,73 @@ function StatsTab({ missions, losses, onReset }) {
   const completedN  =inAlcance.filter(m=>m.status==='Completed').length;
   const successRate =inAlcance.length>0?Math.round(completedN/inAlcance.length*100):0;
   const avgReward   =completedN>0?Math.round(totalEarned/completedN):0;
-  const timedM      =missions.filter(m=>(m.timer_elapsed||0)>0);
+  const timedM      =inAlcance.filter(m=>(m.timer_elapsed||0)>0);
   const avgMin      =timedM.length>0?Math.round(timedM.reduce((a,m)=>a+(m.timer_elapsed||0),0)/timedM.length/60000):0;
+
+  const typeAnalytics = useMemo(() => {
+    const groups = new Map();
+    inAlcance.forEach(mission => {
+      const type = String(mission.type || mission.mission_type || 'Tipo não informado').trim() || 'Tipo não informado';
+      if (!groups.has(type)) groups.set(type, { type, total: 0, completed: 0, reward: 0, durationMs: 0, timed: 0 });
+      const group = groups.get(type);
+      group.total += 1;
+      if (mission.status === 'Completed') {
+        group.completed += 1;
+        group.reward += Math.max(0, Number(mission.reward) || 0);
+      }
+      const elapsed = Math.max(0, Number(mission.timer_elapsed) || 0);
+      if (elapsed > 0) {
+        group.durationMs += elapsed;
+        group.timed += 1;
+      }
+    });
+    return [...groups.values()].map(group => ({
+      ...group,
+      avgReward: group.completed ? group.reward / group.completed : 0,
+      avgMinutes: group.timed ? group.durationMs / group.timed / 60000 : 0,
+      successRate: group.total ? group.completed / group.total * 100 : 0,
+      rewardPerHour: group.durationMs > 0 ? group.reward / (group.durationMs / 3600000) : 0,
+    }));
+  }, [inAlcance]);
+
+  const missionEconomics = useMemo(() => {
+    const groups = new Map();
+    inAlcance.forEach(mission => {
+      const titleKey = normalizeMissionAnalysisTitle(mission.title);
+      if (!groups.has(titleKey)) groups.set(titleKey, { title: displayMissionAnalysisTitle(mission.title), total: 0, completed: 0, reward: 0, durationMs: 0, timedCompleted: 0 });
+      const group = groups.get(titleKey);
+      group.total += 1;
+      if (mission.status === 'Completed') {
+        group.completed += 1;
+        group.reward += Math.max(0, Number(mission.reward) || 0);
+        const elapsed = Math.max(0, Number(mission.timer_elapsed) || 0);
+        if (elapsed > 0) {
+          group.durationMs += elapsed;
+          group.timedCompleted += 1;
+        }
+      }
+    });
+    return [...groups.values()].map(group => ({
+      ...group,
+      avgReward: group.completed ? group.reward / group.completed : 0,
+      avgMinutes: group.timedCompleted ? group.durationMs / group.timedCompleted / 60000 : 0,
+      successRate: group.total ? group.completed / group.total * 100 : 0,
+      rewardPerHour: group.durationMs > 0 ? group.reward / (group.durationMs / 3600000) : 0,
+    }));
+  }, [inAlcance]);
+
+  const typeFrequencyData = typeAnalytics.slice().sort((a, b) => b.total - a.total).slice(0, 8).map(item => ({ label: item.type, value: item.total }));
+  const typeProfitData = typeAnalytics.slice().sort((a, b) => b.avgReward - a.avgReward).slice(0, 8).map(item => ({ label: item.type, value: Math.round(item.avgReward) }));
+  const typeDurationData = typeAnalytics.filter(item => item.avgMinutes > 0).slice().sort((a, b) => b.avgMinutes - a.avgMinutes).slice(0, 8).map(item => ({ label: item.type, value: Math.round(item.avgMinutes) }));
+  const typeSuccessData = typeAnalytics.slice().sort((a, b) => b.successRate - a.successRate).slice(0, 8).map(item => ({ label: item.type, value: Math.round(item.successRate) }));
+  const quickMissionRankings = missionEconomics
+    .filter(item => item.completed > 0 && item.rewardPerHour > 0)
+    .sort((a, b) => b.rewardPerHour - a.rewardPerHour)
+    .slice(0, 8);
+  const mostProfitableMissions = missionEconomics
+    .filter(item => item.completed > 0)
+    .sort((a, b) => b.avgReward - a.avgReward)
+    .slice(0, 5);
 
   return (
     <div>
@@ -2308,17 +2410,18 @@ function StatsTab({ missions, losses, onReset }) {
         ))}
         <button className="mission-stats-reset-button" type="button" onClick={onReset} title="Apagar todas as missões e perdas usadas no histórico e nas estatísticas"><Trash2 size={12}/> Resetar estatísticas e histórico</button>
       </div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,padding:'9px 11px',background:'rgba(56,189,248,0.05)',border:'1px solid rgba(56,189,248,0.16)',borderRadius:7,fontSize:10,color:'var(--text-muted)',lineHeight:1.5}}><span style={{color:'var(--accent-primary)',fontWeight:700}}>Como ler:</span><span>recompensas e média usam somente missões concluídas;</span><span>taxa de sucesso usa todas as missões do período;</span><span>tempo e retorno/h usam apenas missões com cronômetro.</span></div>
       <div className="mission-stats-kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
         {[
-          {l:'Ganho Total',       v:`${ptMoney(totalEarned)} aUEC`, c:'var(--accent-green)',   s:'missões concluídas'},
-          {l:'Saídas da Carteira',v:`${ptMoney(totalWalletOut)} aUEC`,c:'var(--accent-red)',     s:'pagamentos e compras'},
-          {l:'Perdas Manuais',    v:`${ptMoney(totalLost)} aUEC`,   c:'var(--accent-red)',     s:'fora de missões'},
-          {l:'Falhas (não ganho)',v:`${ptMoney(totalFailed)} aUEC`, c:'#fb923c',               s:'sua responsabilidade'},
-          {l:'Bugadas (perdido)', v:`${ptMoney(totalBugged)} aUEC`, c:'#e17055',               s:'bug do jogo'},
-          {l:'Net Total',         v:`${netTotal>=0?'+':''}${ptMoney(netTotal)} aUEC`, c:netTotal>=0?'var(--accent-green)':'var(--accent-red)', s:'ganhos - perdas'},
+          {l:'Recompensas concluídas', v:`${ptWholeMoney(totalEarned)} aUEC`, c:'var(--accent-green)', s:`${completedN} missões no período`},
+          {l:'Saídas da Carteira',v:`${ptWholeMoney(totalWalletOut)} aUEC`,c:'var(--accent-red)', s:'status saiu da carteira'},
+          {l:'Perdas Manuais',    v:`${ptWholeMoney(totalLost)} aUEC`, c:'var(--accent-red)', s:'registros de perdas'},
+          {l:'Falhas (não recebido)',v:`${ptWholeMoney(totalFailed)} aUEC`, c:'#fb923c', s:'recompensa não creditada'},
+          {l:'Bugadas (perdido)', v:`${ptWholeMoney(totalBugged)} aUEC`, c:'#e17055', s:'perda atribuída a bug'},
+          {l:'Resultado líquido', v:`${netTotal>=0?'+':''}${ptWholeMoney(netTotal)} aUEC`, c:netTotal>=0?'var(--accent-green)':'var(--accent-red)', s:'recompensas - saídas - perdas'},
           {l:'Taxa de Sucesso',   v:`${successRate}%`,              c:'var(--accent-primary)', s:`${completedN} de ${inAlcance.length}`},
-          {l:'Média por Missão',  v:`${ptMoney(avgReward)} aUEC`,   c:'var(--accent-gold)',    s:'missões concluídas'},
-          {l:'Tempo Médio',       v:avgMin>0?`${avgMin} min`:'—',   c:'var(--accent-primary)', s:'por missão cronometrada'},
+          {l:'Média por conclusão', v:`${ptWholeMoney(avgReward)} aUEC`, c:'var(--accent-gold)', s:`${completedN} concluídas`},
+          {l:'Tempo médio registrado', v:avgMin>0?`${avgMin} min`:'—', c:'var(--accent-primary)', s:`${timedM.length} com cronômetro`},
         ].map(({l,v,c,s})=>(
           <div key={l} className="mission-stats-kpi" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'11px 13px'}}>
             <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color:c,marginBottom:2}}>{v}</div>
@@ -2365,10 +2468,51 @@ function StatsTab({ missions, losses, onReset }) {
         </div>
         <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
           <div className="modal-section-title"><Clock size={11}/> Tempo por Missão (min)</div>
-          <BarChart data={timedM.slice(-20).map(m=>({label:m.title.slice(0,10),duration:Math.round((m.timer_elapsed||0)/60000)}))} valueKey="duration" labelKey="label" color="var(--accent-gold)" height={100} suffix=" min" noDataMsg="Nenhuma missão cronometrada"/>
+          <BarChart data={timedM.slice(-20).map((m,index)=>({label:`#${index+1}`,title:displayMissionAnalysisTitle(m.title),duration:Math.round((m.timer_elapsed||0)/60000)}))} valueKey="duration" labelKey="label" color="var(--accent-gold)" height={100} suffix=" min" noDataMsg="Nenhuma missão cronometrada"/>
           <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Média: {avgMin} min · {timedM.length} cronometradas</div>
         </div>
       </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(270px,1fr))',gap:12,marginBottom:14}}>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+          <div className="modal-section-title"><BarChart3 size={11}/> Tipos mais realizados</div>
+          <BarChart data={typeFrequencyData} valueKey="value" labelKey="label" color="var(--accent-primary)" height={115} suffix=" missões" noDataMsg="Nenhuma missão no período"/>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Mostra os tipos que você mais repetiu no período selecionado.</div>
+        </div>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+          <div className="modal-section-title"><DollarSign size={11}/> Recompensa média por conclusão</div>
+          <BarChart data={typeProfitData} valueKey="value" labelKey="label" color="var(--accent-green)" height={115} suffix=" aUEC" noDataMsg="Nenhuma recompensa concluída"/>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Média recebida por missão concluída dentro de cada tipo.</div>
+        </div>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+          <div className="modal-section-title"><Clock size={11}/> Duração média por tipo</div>
+          <BarChart data={typeDurationData} valueKey="value" labelKey="label" color="var(--accent-gold)" height={115} suffix=" min" noDataMsg="Nenhuma duração registrada"/>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Usa somente missões com tempo registrado pelo cronômetro.</div>
+        </div>
+        <div className="mission-stats-chart-card" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'13px'}}>
+          <div className="modal-section-title"><CheckCircle2 size={11}/> Taxa de sucesso por tipo</div>
+          <BarChart data={typeSuccessData} valueKey="value" labelKey="label" color="var(--accent-green)" height={115} suffix="%" noDataMsg="Nenhuma missão no período"/>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginTop:5}}>Percentual de missões concluídas dentro de cada tipo.</div>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12,marginBottom:14}}>
+        <div style={{background:'var(--bg-card)',border:'1px solid rgba(52,211,153,0.25)',borderRadius:8,padding:'14px'}}>
+          <div className="modal-section-title"><TrendingUp size={11}/> Melhor retorno por hora</div>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:9}}>Ranking de missões concluídas com duração registrada. Útil para escolher o que fazer quando o tempo é curto.</div>
+          {quickMissionRankings.length === 0 ? <div style={{padding:'18px 8px',textAlign:'center',fontSize:11,color:'var(--text-muted)'}}>Registre duração e conclusão para calcular a rentabilidade por hora.</div> : (
+            <div style={{display:'grid',gap:6}}>{quickMissionRankings.map((item,index)=><div key={item.title} style={{display:'grid',gridTemplateColumns:'24px minmax(0,1fr) auto',alignItems:'center',gap:7,padding:'7px 8px',background:'rgba(52,211,153,0.05)',border:'1px solid rgba(52,211,153,0.13)',borderRadius:6}}><span style={{fontFamily:'Michroma,sans-serif',fontSize:11,color:'var(--accent-green)',fontWeight:800}}>#{index+1}</span><div style={{minWidth:0}}><div style={{fontSize:11,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.title}>{item.title}</div><div style={{fontSize:9,color:'var(--text-muted)',marginTop:2}}>{Math.round(item.avgMinutes)} min médios · {item.completed} concluída(s)</div></div><strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-green)',whiteSpace:'nowrap'}}>{ptWholeMoney(item.rewardPerHour)}/h</strong></div>)}</div>
+          )}
+        </div>
+        <div style={{background:'var(--bg-card)',border:'1px solid rgba(251,191,36,0.25)',borderRadius:8,padding:'14px'}}>
+          <div className="modal-section-title"><DollarSign size={11}/> Missões de maior recompensa média</div>
+          <div style={{fontSize:10,color:'var(--text-muted)',marginBottom:9}}>Indica quais títulos entregaram mais aUEC por conclusão no período selecionado.</div>
+          {mostProfitableMissions.length === 0 ? <div style={{padding:'18px 8px',textAlign:'center',fontSize:11,color:'var(--text-muted)'}}>Nenhuma missão concluída com recompensa registrada.</div> : (
+            <div style={{display:'grid',gap:6}}>{mostProfitableMissions.map((item,index)=><div key={item.title} style={{display:'grid',gridTemplateColumns:'24px minmax(0,1fr) auto',alignItems:'center',gap:7,padding:'7px 8px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.13)',borderRadius:6}}><span style={{fontFamily:'Michroma,sans-serif',fontSize:11,color:'var(--accent-gold)',fontWeight:800}}>#{index+1}</span><div style={{minWidth:0}}><div style={{fontSize:11,fontWeight:700,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.title}>{item.title}</div><div style={{fontSize:9,color:'var(--text-muted)',marginTop:2}}>{item.completed} conclusão(ões) · {Math.round(item.successRate)}% de sucesso</div></div><strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',whiteSpace:'nowrap'}}>{ptWholeMoney(item.avgReward)}</strong></div>)}</div>
+          )}
+        </div>
+      </div>
+
       {(totalFailed>0||totalBugged>0)&&(
         <div className="mission-stats-loss-panel" style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'14px'}}>
           <div className="modal-section-title">⚠️ Recompensas Perdidas — Falha vs Bug</div>
@@ -2612,6 +2756,7 @@ export default function MissionTrackerPage() {
 
   const TABS=[
     {id:'today',   label:'Hoje',          icon:Calendar,  badge:todayM.length>0?String(todayM.length):null},
+    {id:'selector', label:'Seletor de Missões', icon:Crosshair, badge:null},
     {id:'history', label:'Histórico',      icon:Clock,     badge:null},
     {id:'stats',   label:'Estatísticas',   icon:BarChart3,  badge:null},
   ];
@@ -2670,6 +2815,7 @@ export default function MissionTrackerPage() {
             onAddLoss={handleAddLoss} onRemoveLoss={handleRemoveLoss}
             objLibrary={objLibrary} onLootSave={handleLootSave} onLootUpdate={handleLootUpdate} onOpenLoot={setLootMission} missionCatalog={missionCatalog}/>
         )}
+        {activeTab==='selector'&&<MissionSelectorTab missions={missions} onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange} onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} onOpenLoot={setLootMission} objLibrary={objLibrary} missionCatalog={missionCatalog}/>} 
         {activeTab==='history'&&<HistoryTab missions={missions} losses={losses}
           onSave={handleSave} onDelete={handleDelete} onStatusChange={handleStatusChange}
           onClockUpdate={handleClockUpdate} onLootUpdate={handleLootUpdate} onOpenLoot={setLootMission} objLibrary={objLibrary} missionCatalog={missionCatalog}/>}

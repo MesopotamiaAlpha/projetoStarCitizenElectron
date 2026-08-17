@@ -382,7 +382,7 @@ async function initDatabase() {
       wishlist      INTEGER DEFAULT 0,
       notes         TEXT DEFAULT '',
       obtained_date TEXT,
-      quantity      INTEGER DEFAULT 1,
+      quantity      INTEGER DEFAULT 0,
       FOREIGN KEY (piece_id) REFERENCES armor_pieces(id)
     );
 
@@ -406,6 +406,9 @@ CREATE TABLE IF NOT EXISTS inventory_items (
       notes         TEXT DEFAULT '',
       is_crafted    INTEGER DEFAULT 0,
       craft_status  TEXT DEFAULT '[]',
+      craft_materials TEXT DEFAULT '[]',
+      craft_attachments TEXT DEFAULT '[]',
+      reservations TEXT DEFAULT '[]',
       created_at    TEXT DEFAULT (datetime('now')),
       updated_at    TEXT DEFAULT (datetime('now'))
     );
@@ -456,10 +459,12 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   // então adicionamos manualmente se ainda não existirem (SQLite ignora erro se já existir).
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN is_crafted INTEGER DEFAULT 0`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_status TEXT DEFAULT '[]'`); } catch(e) {}
-  // Migração idempotente: versões antigas não guardavam a quantidade de cada peça obtida.
-  // O DEFAULT 1 mantém exatamente o comportamento anterior para todos os registros existentes.
-  try { db.run(`ALTER TABLE user_pieces ADD COLUMN quantity INTEGER DEFAULT 1`); } catch(e) {}
-  db.run(`UPDATE user_pieces SET quantity=1 WHERE quantity IS NULL OR quantity < 1`);
+  try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_materials TEXT DEFAULT '[]'`); } catch(e) {}
+  try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_attachments TEXT DEFAULT '[]'`); } catch(e) {}
+  try { db.run(`ALTER TABLE inventory_items ADD COLUMN reservations TEXT DEFAULT '[]'`); } catch(e) {}
+  // Migração idempotente: quantidade positiva representa cópias possuídas.
+  try { db.run(`ALTER TABLE user_pieces ADD COLUMN quantity INTEGER DEFAULT 0`); } catch(e) {}
+  db.run(`UPDATE user_pieces SET quantity=CASE WHEN owned=1 THEN CASE WHEN quantity>0 THEN quantity ELSE 1 END ELSE 0 END`);
   // Metadados de origem para distinguir blueprints importadas do SCMDB das manuais.
   try { db.run(`ALTER TABLE blueprints ADD COLUMN source TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE blueprints ADD COLUMN scmdb_tag TEXT DEFAULT ''`); } catch(e) {}
@@ -484,6 +489,11 @@ function queryAll(sql, params = []) {
   return values.map(row => { const o={}; columns.forEach((c,i)=>{o[c]=row[i];}); return o; });
 }
 function queryOne(sql, params=[]) { return queryAll(sql,params)[0]||null; }
+function normalizeArmorKey(value, variant='Base') {
+  const text = String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\\s+/g,' ');
+  const v = String(variant || 'Base').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\\s+/g,' ');
+  return `${text}||${v}`;
+}
 
 function insertSet(arr) {
   db.run(`INSERT INTO armor_sets (base_name,variant_name,manufacturer,type,category,description,lore,tags,added_version,rarity) VALUES (?,?,?,?,?,?,?,?,?,?)`, arr);
@@ -1045,7 +1055,7 @@ ipcMain.handle('get-seed-names', () => {
 ipcMain.handle('get-all-sets', () => {
   const sets = queryAll(`SELECT id,base_name,variant_name,manufacturer,type,category,description,lore,tags,added_version,rarity,is_custom FROM armor_sets ORDER BY is_custom,type,base_name,variant_name`);
   for (const s of sets) {
-    s.pieces = queryAll(`SELECT ap.*,up.owned,up.wishlist,up.notes,up.obtained_date FROM armor_pieces ap LEFT JOIN user_pieces up ON ap.id=up.piece_id WHERE ap.set_id=? ORDER BY ap.piece_type`,[s.id]);
+    s.pieces = queryAll(`SELECT ap.*,COALESCE(up.owned,0) AS owned,up.wishlist,up.notes,up.obtained_date,COALESCE(up.quantity,CASE WHEN up.owned=1 THEN 1 ELSE 0 END) AS quantity FROM armor_pieces ap LEFT JOIN user_pieces up ON ap.id=up.piece_id WHERE ap.set_id=? ORDER BY ap.piece_type`,[s.id]);
     s.set_name = s.variant_name==='Base' ? s.base_name : `${s.base_name} — ${s.variant_name}`;
   }
   return sets;
@@ -1054,7 +1064,7 @@ ipcMain.handle('get-all-sets', () => {
 ipcMain.handle('toggle-piece', (event, pieceId) => {
   const cur = queryOne('SELECT owned FROM user_pieces WHERE piece_id=?',[pieceId]);
   const newOwned = (cur?.owned||0)?0:1;
-  db.run('UPDATE user_pieces SET owned=?,obtained_date=? WHERE piece_id=?',[newOwned,newOwned?new Date().toISOString():null,pieceId]);
+  db.run('UPDATE user_pieces SET owned=?,quantity=?,obtained_date=? WHERE piece_id=?',[newOwned,newOwned?1:0,newOwned?new Date().toISOString():null,pieceId]);
   saveDb(); return {owned:newOwned};
 });
 ipcMain.handle('toggle-piece-wishlist', (event,pieceId) => {
@@ -1070,15 +1080,15 @@ ipcMain.handle('update-piece-notes', (event,{pieceId,notes}) => {
 ipcMain.handle('update-piece-quantity', async (event, id, quantity) => {
   try {
     const pieceId = Number(id);
-    const nextQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+    const nextQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
     if (!Number.isInteger(pieceId) || pieceId <= 0) {
       return { success: false, message: 'Peça inválida.' };
     }
     const piece = queryOne('SELECT piece_id FROM user_pieces WHERE piece_id=?', [pieceId]);
     if (!piece) return { success: false, message: 'Peça não encontrada.' };
-    db.run('UPDATE user_pieces SET quantity=? WHERE piece_id=?', [nextQuantity, pieceId]);
+    db.run('UPDATE user_pieces SET quantity=?, owned=?, obtained_date=? WHERE piece_id=?', [nextQuantity, nextQuantity > 0 ? 1 : 0, nextQuantity > 0 ? new Date().toISOString() : null, pieceId]);
     saveDb();
-    return { success: true, quantity: nextQuantity };
+    return { success: true, quantity: nextQuantity, owned: nextQuantity > 0 ? 1 : 0 };
   } catch(e) {
     return { success:false, message:e.message };
   }
@@ -1093,7 +1103,11 @@ ipcMain.handle('get-stats', () => {
   return {totalSets,totalPieces,ownedPieces,wishlistPieces,byType,completeSets};
 });
 ipcMain.handle('create-custom-set', (event,{set,pieces}) => {
-  const setId = insertSet([set.base_name||set.set_name,set.variant_name||'Base',set.manufacturer,set.type||'Medium',set.category||'Combat',set.description||'',set.lore||'',JSON.stringify(set.tags||[]),set.added_version||'4.0',set.rarity||'Common']);
+  const baseName = set.base_name || set.set_name;
+  const variantName = set.variant_name || 'Base';
+  const duplicate = queryOne('SELECT id FROM armor_sets WHERE lower(base_name)=lower(?) AND lower(variant_name)=lower(?) LIMIT 1',[baseName, variantName]);
+  if (duplicate) return { success:false, duplicate:true, existingSetId:duplicate.id, error:'Esta armadura já está cadastrada.' };
+  const setId = insertSet([baseName,variantName,set.manufacturer,set.type||'Medium',set.category||'Combat',set.description||'',set.lore||'',JSON.stringify(set.tags||[]),set.added_version||'4.0',set.rarity||'Common']);
   db.run('UPDATE armor_sets SET is_custom=1 WHERE id=?',[setId]);
   for(const p of (pieces||[])){insertPiece([setId,p.piece_type,p.piece_name||`${set.base_name} ${p.piece_type}`,+p.resistance_physical||0,+p.resistance_energy||0,+p.resistance_distortion||0,+p.resistance_thermal||0,+p.resistance_biochemical||0,+p.resistance_stun||0,+p.mobility_penalty||0,+p.slots||0,p.is_lootable?1:0,p.is_purchasable?1:0,p.buy_location||'',p.how_to_get||'',+p.price_auec||0,p.description||'']);}
   saveDb(); return {success:true,setId};
@@ -1109,6 +1123,26 @@ ipcMain.handle('update-custom-piece', (event,{pieceId,piece}) => {
 ipcMain.handle('add-piece-to-set', (event,{setId,piece}) => {
   insertPiece([setId,piece.piece_type,piece.piece_name||piece.piece_type,+piece.resistance_physical||0,+piece.resistance_energy||0,+piece.resistance_distortion||0,+piece.resistance_thermal||0,+piece.resistance_biochemical||0,+piece.resistance_stun||0,+piece.mobility_penalty||0,+piece.slots||0,piece.is_lootable?1:0,piece.is_purchasable?1:0,piece.buy_location||'',piece.how_to_get||'',+piece.price_auec||0,piece.description||'']);
   saveDb(); return {success:true};
+});
+ipcMain.handle('get-duplicate-custom-sets', () => {
+  const rows = queryAll(`SELECT id,base_name,variant_name,manufacturer,type,category,is_custom FROM armor_sets WHERE is_custom=1 ORDER BY lower(base_name),lower(variant_name),id`);
+  const groups = new Map();
+  rows.forEach(row => { const key = normalizeArmorKey(row.base_name, row.variant_name); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(row); });
+  return [...groups.entries()].filter(([, entries]) => entries.length > 1).map(([key, entries]) => ({ key, label:`${entries[0].base_name} · ${entries[0].variant_name || 'Base'}`, entries }));
+});
+ipcMain.handle('delete-custom-sets', (event, setIds) => {
+  const ids = [...new Set((Array.isArray(setIds) ? setIds : []).map(Number).filter(Number.isInteger))];
+  const deleted = [];
+  ids.forEach(setId => {
+    const s = queryOne('SELECT is_custom FROM armor_sets WHERE id=?',[setId]);
+    if (!s?.is_custom) return;
+    const pieces = queryAll('SELECT id FROM armor_pieces WHERE set_id=?',[setId]);
+    pieces.forEach(p => db.run('DELETE FROM user_pieces WHERE piece_id=?',[p.id]));
+    db.run('DELETE FROM armor_pieces WHERE set_id=?',[setId]);
+    db.run('DELETE FROM armor_sets WHERE id=?',[setId]);
+    deleted.push(setId);
+  });
+  saveDb(); return { success:true, deleted };
 });
 ipcMain.handle('delete-custom-set', (event,setId) => {
   const s = queryOne('SELECT is_custom FROM armor_sets WHERE id=?',[setId]);
@@ -2233,8 +2267,8 @@ ipcMain.handle('inventory-create', (event, item) => {
   db.run(`INSERT INTO inventory_items
     (name,category,subcategory,system,location_type,location_name,container,
      quantity,unit,size,grade,manufacturer,condition,value_auec,is_contraband,notes,
-     is_crafted,craft_status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           is_crafted,craft_status,craft_materials,craft_attachments,reservations)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [item.name, item.category||'Miscellaneous', item.subcategory||'',
      item.system||'Stanton', item.location_type||'Station',
      item.location_name||'', item.container||'',
@@ -2242,7 +2276,7 @@ ipcMain.handle('inventory-create', (event, item) => {
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
      item.is_contraband?1:0, item.notes||'',
-     item.is_crafted?1:0, JSON.stringify(item.craft_status||[])]);
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[])]);
   const id = queryOne('SELECT last_insert_rowid() as id').id;
   saveDb();
   return { success: true, id };
@@ -2252,15 +2286,15 @@ ipcMain.handle('inventory-update', (event, item) => {
   db.run(`UPDATE inventory_items SET
     name=?,category=?,subcategory=?,system=?,location_type=?,location_name=?,
     container=?,quantity=?,unit=?,size=?,grade=?,manufacturer=?,condition=?,
-    value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,updated_at=datetime('now')
-    WHERE id=?`,
+         value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,craft_materials=?,craft_attachments=?,reservations=?,updated_at=datetime('now')
+     WHERE id=?`,
     [item.name, item.category, item.subcategory||'',
      item.system, item.location_type, item.location_name,
      item.container||'', (Number(item.quantity) >= 0 ? Number(item.quantity) : 0), item.unit||'un',
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
      item.is_contraband?1:0, item.notes||'',
-     item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), item.id]);
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[]), item.id]);
   saveDb();
   return { success: true };
 });

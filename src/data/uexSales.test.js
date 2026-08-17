@@ -1,5 +1,5 @@
 import { loadVault, saveVault } from './oreVault';
-import { buildNegotiationSale, loadUexCatalog, loadUexSales, registerNegotiationSale, saveUexCatalog } from './uexSales';
+import { buildNegotiationSale, closeNegotiation, getNegotiationClosure, loadUexCatalog, loadUexSales, registerNegotiationSale, saveUexCatalog } from './uexSales';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -18,6 +18,33 @@ describe('uexSales vault integration', () => {
     expect(sale.qty).toBe(4);
     expect(sale.total_revenue).toBe(900000);
     expect(sale.price).toBe(225000);
+  });
+
+  test('calcula o total multiplicando quantidade pelo valor unitário', () => {
+    const sale = buildNegotiationSale({
+      hash: 'unit-price-sale-1',
+      listing_title: 'Gold',
+      price: 100000,
+      is_listing_advertiser: 1,
+    }, { quantity: 3, unitPrice: 200000, totalRevenue: 600000 });
+
+    expect(sale.qty).toBe(3);
+    expect(sale.price).toBe(200000);
+    expect(sale.total_revenue).toBe(600000);
+  });
+
+  test('permite fechar compra com sucesso sem criar uma venda ou informar valor', () => {
+    const closure = closeNegotiation('buyer-success-1', 'success', {
+      role: 'buyer',
+      purchaseCompleted: true,
+      saleCreated: false,
+    });
+
+    expect(closure.status).toBe('success');
+    expect(closure.role).toBe('buyer');
+    expect(closure.purchaseCompleted).toBe(true);
+    expect(getNegotiationClosure('buyer-success-1').saleCreated).toBe(false);
+    expect(loadUexSales()).toHaveLength(0);
   });
 
   test('salva o fechamento date_closed_client quando a conta é compradora', () => {

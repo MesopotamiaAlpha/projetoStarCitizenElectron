@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Package, Star, Search, Trophy, HardHat, Shirt, Dumbbell, Footprints, Backpack, Shield, Plus, Minus } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useDeferredValue } from 'react';
+import { Package, Star, Search, Trophy, HardHat, Shirt, Dumbbell, Footprints, Backpack, Shield, Plus, Minus, LayoutGrid, List } from 'lucide-react';
 import ArmorSetModal from '../components/ArmorSetModal';
 
 const PIECE_ICONS   = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
@@ -94,6 +94,13 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
   const [activeTab,   setActiveTab]   = useState('sets');
   const [search,      setSearch]      = useState('');
   const [selectedSet, setSelectedSet] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('recent');
+  const [viewMode, setViewMode] = useState('list');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 48;
+  useEffect(() => { setPage(1); }, [activeTab, search, typeFilter, statusFilter, sortBy, viewMode]);
 
   const setsWithPieces = useMemo(() =>
     sets.filter(s => (s.pieces||[]).some(p => p.owned)),
@@ -128,32 +135,46 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
     return total;
   }, [sets]);
 
-  const q = search.toLowerCase();
+  const deferredSearch = useDeferredValue(search);
+  const q = deferredSearch.trim().toLowerCase();
 
-  const filteredSetsWithPieces = useMemo(() =>
-    setsWithPieces.filter(s =>
-      !q || s.base_name?.toLowerCase().includes(q) ||
-      s.variant_name?.toLowerCase().includes(q) ||
-      s.manufacturer?.toLowerCase().includes(q)
-    ),
-  [setsWithPieces, q]);
+  const filteredSetsWithPieces = useMemo(() => {
+    const result = setsWithPieces.filter(s => {
+      const matchesSearch = !q || s.base_name?.toLowerCase().includes(q) || s.variant_name?.toLowerCase().includes(q) || s.manufacturer?.toLowerCase().includes(q);
+      const matchesType = typeFilter === 'all' || s.type === typeFilter;
+      const pieces = s.pieces || [];
+      const owned = pieces.filter(piece => piece.owned).length;
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'complete' && owned === pieces.length) || (statusFilter === 'partial' && owned > 0 && owned < pieces.length);
+      return matchesSearch && matchesType && matchesStatus;
+    });
+    return result.map(set => ({
+      set,
+      lastObtainedAt: Math.max(0, ...(set.pieces || []).map(piece => new Date(piece.obtained_date || 0).getTime() || 0)),
+      quantityTotal: (set.pieces || []).reduce((sum, piece) => sum + (piece.owned ? Math.max(1, Number(piece.quantity) || 1) : 0), 0),
+    })).sort((a, b) => {
+      if (sortBy === 'name') return `${a.set.base_name} ${a.set.variant_name || ''}`.localeCompare(`${b.set.base_name} ${b.set.variant_name || ''}`);
+      if (sortBy === 'quantity') return b.quantityTotal - a.quantityTotal;
+      return b.lastObtainedAt - a.lastObtainedAt;
+    }).map(item => item.set);
+  }, [setsWithPieces, q, typeFilter, statusFilter, sortBy]);
 
-  const filteredObtida = useMemo(() =>
-    allObtidaPieces.filter(({ piece, set }) =>
-      !q || set.base_name?.toLowerCase().includes(q) ||
-      piece.piece_name?.toLowerCase().includes(q)
-    ),
-  [allObtidaPieces, q]);
+  const filteredObtida = useMemo(() => allObtidaPieces.filter(({ piece, set }) =>
+    (typeFilter === 'all' || set.type === typeFilter) && (!q || set.base_name?.toLowerCase().includes(q) || piece.piece_name?.toLowerCase().includes(q))
+  ).sort((a, b) => sortBy === 'name' ? a.piece.piece_name.localeCompare(b.piece.piece_name) : new Date(b.piece.obtained_date || 0) - new Date(a.piece.obtained_date || 0)), [allObtidaPieces, q, typeFilter, sortBy]);
 
-  const filteredWishlist = useMemo(() =>
-    wishlistPieces.filter(({ piece, set }) =>
-      !q || set.base_name?.toLowerCase().includes(q) ||
-      piece.piece_name?.toLowerCase().includes(q)
-    ),
-  [wishlistPieces, q]);
+  const filteredWishlist = useMemo(() => wishlistPieces.filter(({ piece, set }) =>
+    (typeFilter === 'all' || set.type === typeFilter) && (!q || set.base_name?.toLowerCase().includes(q) || piece.piece_name?.toLowerCase().includes(q))
+  ).sort((a, b) => a.piece.piece_name.localeCompare(b.piece.piece_name)), [wishlistPieces, q, typeFilter]);
 
   const pct = stats && stats.totalPieces > 0
     ? Math.round((stats.ownedPieces / stats.totalPieces) * 100) : 0;
+
+  const activeItemsCount = activeTab === 'sets' ? filteredSetsWithPieces.length : activeTab === 'pieces' ? filteredObtida.length : filteredWishlist.length;
+  const totalPages = Math.max(1, Math.ceil(activeItemsCount / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleSets = useMemo(() => filteredSetsWithPieces.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredSetsWithPieces, safePage]);
+  const visibleObtida = useMemo(() => filteredObtida.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredObtida, safePage]);
+  const visibleWishlist = useMemo(() => filteredWishlist.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE), [filteredWishlist, safePage]);
 
   const TABS = [
     { id:'sets',     label:'Sets com Peças', icon:Shield,  count:setsWithPieces.length },
@@ -239,11 +260,23 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
           ))}
         </div>
 
-        {/* Search */}
-        <div style={{ position:'relative', maxWidth:340, marginBottom:14 }}>
-          <Search size={13} style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
-          <input className="search-input" style={{ paddingLeft:32, width:'100%' }} placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)}/>
+        {/* Search and collection controls */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+          <div style={{ position:'relative', flex:'1 1 260px', maxWidth:390 }}>
+            <Search size={13} style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }}/>
+            <input className="search-input" style={{ paddingLeft:32, width:'100%' }} placeholder="Buscar nome, fabricante ou peça..." value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+          <select className="filter-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <option value="all">Todos os tipos</option><option value="Light">Leve</option><option value="Médio">Médio</option><option value="Heavy">Pesado</option><option value="Special">Especial</option>
+          </select>
+          {activeTab === 'sets' && <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="all">Todos os status</option><option value="complete">Completos</option><option value="partial">Parciais</option></select>}
+          <select className="filter-select" value={sortBy} onChange={e => setSortBy(e.target.value)}><option value="recent">Mais recentes</option><option value="name">Nome A-Z</option><option value="quantity">Maior quantidade</option></select>
+          <div style={{ display:'flex', border:'1px solid var(--border-subtle)', borderRadius:6, overflow:'hidden' }}>
+            <button title="Visualização em lista" onClick={() => setViewMode('list')} style={{ display:'flex', padding:'7px 9px', background:viewMode==='list'?'rgba(56,189,248,0.14)':'transparent', border:0, color:viewMode==='list'?'var(--accent-primary)':'var(--text-muted)', cursor:'pointer' }}><List size={14}/></button>
+            <button title="Visualização em grade" onClick={() => setViewMode('grid')} style={{ display:'flex', padding:'7px 9px', background:viewMode==='grid'?'rgba(56,189,248,0.14)':'transparent', border:0, color:viewMode==='grid'?'var(--accent-primary)':'var(--text-muted)', cursor:'pointer' }}><LayoutGrid size={14}/></button>
+          </div>
         </div>
+        <div style={{ marginBottom:10, color:'var(--text-muted)', fontSize:11 }}>Mostrando {activeItemsCount} resultado{activeItemsCount === 1 ? '' : 's'}{activeItemsCount > PAGE_SIZE ? ` · página ${safePage}/${totalPages}` : ''}</div>
 
         {/* ── ABA SETS ── */}
         {activeTab==='sets' && (
@@ -254,8 +287,8 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
               <div className="empty-state-text">Vá para "Todas as Armaduras" e marque as peças que você tem.</div>
             </div>
           ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {filteredSetsWithPieces.map(s => {
+            <div style={{ display:viewMode === 'grid' ? 'grid' : 'flex', gridTemplateColumns:viewMode === 'grid' ? 'repeat(auto-fill,minmax(300px,1fr))' : undefined, flexDirection:viewMode === 'grid' ? undefined : 'column', gap:8 }}>
+              {visibleSets.map(s => {
                 const pieces    = s.pieces || [];
                 const owned     = pieces.filter(p => p.owned).length;
                 const total     = pieces.length;
@@ -342,8 +375,8 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
               <div className="empty-state-text">Marque peças individuais nos sets para ver aqui.</div>
             </div>
           ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              {filteredObtida.map(({ piece, set }) => (
+            <div style={{ display:viewMode === 'grid' ? 'grid' : 'flex', gridTemplateColumns:viewMode === 'grid' ? 'repeat(auto-fill,minmax(300px,1fr))' : undefined, flexDirection:viewMode === 'grid' ? undefined : 'column', gap:6 }}>
+              {visibleObtida.map(({ piece, set }) => (
                 <PieceRow
                   key={piece.id} piece={piece}
                   setNome={set.base_name} setTipo={set.type} variantNome={set.variant_name}
@@ -364,8 +397,8 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
               <div className="empty-state-text">Adicione peças à lista de desejos nos detalhes do set.</div>
             </div>
           ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              {filteredWishlist.map(({ piece, set }) => (
+            <div style={{ display:viewMode === 'grid' ? 'grid' : 'flex', gridTemplateColumns:viewMode === 'grid' ? 'repeat(auto-fill,minmax(300px,1fr))' : undefined, flexDirection:viewMode === 'grid' ? undefined : 'column', gap:6 }}>
+              {visibleWishlist.map(({ piece, set }) => (
                 <PieceRow
                   key={piece.id} piece={piece}
                   setNome={set.base_name} setTipo={set.type} variantNome={set.variant_name}
@@ -375,6 +408,13 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
               ))}
             </div>
           )
+        )}
+        {activeItemsCount > PAGE_SIZE && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, padding:'16px 0 4px' }}>
+            <button className="filter-chip" disabled={safePage <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}>‹ Anterior</button>
+            <span style={{ color:'var(--text-muted)', fontSize:11, fontFamily:'Share Tech Mono,monospace' }}>{safePage} / {totalPages}</span>
+            <button className="filter-chip" disabled={safePage >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}>Próxima ›</button>
+          </div>
         )}
       </div>
 

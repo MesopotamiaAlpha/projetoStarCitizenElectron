@@ -180,18 +180,19 @@ export function deductOreEntry(id, amount) {
 export function deductOreEntries(usages = []) {
   const deductions = new Map();
   for (const usage of usages) {
-    const id = Number(usage.id);
+    const id = String(usage.id ?? '').trim();
     const amount = Number(usage.amount);
-    if (Number.isFinite(id) && Number.isFinite(amount) && amount > 0) {
+    if (id && Number.isFinite(amount) && amount > 0) {
       deductions.set(id, (deductions.get(id) || 0) + amount);
     }
   }
   const v = loadVault();
   v.entries = v.entries.map(e => {
-    const amount = deductions.get(Number(e.id)) || 0;
+    const amount = deductions.get(String(e.id ?? '').trim()) || 0;
     if (!amount) return e;
     const remaining = Math.max(0, (Number(e.quantity) || 0) - amount);
-    return { ...e, quantity: remaining, updated_at: new Date().toISOString() };
+    const normalizedUnit = normalizeCargoUnit(e.unit || 'un');
+    return { ...e, quantity: isCargoUnit(normalizedUnit) ? roundCargo(remaining) : remaining, updated_at: new Date().toISOString() };
   }).filter(e => (Number(e.quantity) || 0) > 0); // remove zerados
   saveVault(v);
   return v;

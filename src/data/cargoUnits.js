@@ -73,6 +73,28 @@ export function cargoToCscu(amount, unit) {
   return toCargoBase(amount, unit);
 }
 
+/**
+ * Normaliza uma quantidade digitada para o formato canônico do Baú.
+ * Exemplo: 0.5456 SCU => 54.56 cSCU.
+ * O valor original continua podendo ser exibido na interface, mas o
+ * armazenamento fica consistente e independente da unidade escolhida.
+ */
+export function cargoInputToStorage(value, inputUnit = 'cSCU') {
+  const normalized = normalizeCargoUnit(inputUnit);
+  return {
+    quantity: toCargoBase(parseCargoInput(value, normalized), normalized),
+    unit: 'cSCU',
+    inputUnit: normalized,
+  };
+}
+
+export function formatCargoBreakdown(amount, unit) {
+  const normalized = normalizeCargoUnit(unit);
+  if (!isCargoUnit(normalized)) return `${formatCargoNumber(amount, 6)} ${normalized || 'un'}`;
+  const base = toCargoBase(amount, normalized);
+  return `${formatCargoNumber(fromCargoBase(base, 'SCU'), 9)} SCU · ${formatCargoNumber(base, 9)} cSCU`;
+}
+
 export function parseCargoInput(value, unit = '') {
   const raw = String(value ?? '').trim().replace(/\s+/g, '');
   if (!raw) return 0;
@@ -170,6 +192,11 @@ export function analyzeCargoQuantityInput(value, unit) {
     result.warning = `A quantidade é menor que 1 SCU e parece mais clara em cSCU. ${formatCargoNumber(parsed, 9)} SCU correspondem a ${formatCargoNumber(cscu, 9)} cSCU.`;
     result.suggestedUnit = 'cSCU';
     result.suggestedValue = String(roundCargo(cscu));
+  } else if (normalizedUnit === 'cSCU' && parsed > 0 && parsed < 1) {
+    result.severity = 'warning';
+    result.warning = `${formatCargoNumber(parsed, 9)} cSCU é uma quantidade muito pequena. Se este número veio da tela do jogo, provavelmente era ${formatCargoNumber(parsed, 9)} SCU, que equivale a ${formatCargoNumber(parsed * 100, 9)} cSCU.`;
+    result.suggestedUnit = 'SCU';
+    result.suggestedValue = String(roundCargo(parsed));
   } else if (normalizedUnit === 'cSCU' && parsed >= 100) {
     result.severity = 'warning';
     result.warning = `${formatCargoNumber(parsed, 9)} cSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira se você não pretendia informar a quantidade diretamente em SCU.`;

@@ -2,6 +2,7 @@ import {
   listingMatchesAlert,
   marketAlertDefaults,
   sortMarketAlertListings,
+  selectMarketAlertMatches,
   filterMarketAlertsForAutomaticCheck,
   shouldCheckMarketAlertAutomatically,
 } from './uexMarketAlerts';
@@ -32,6 +33,23 @@ describe('UEX market alerts', () => {
       { id: 2, price: 120000, quality: 900 },
     ]);
     expect(rows.map(row => row.id)).toEqual([1, 2, 3]);
+  });
+
+  test('preenche novamente o limite ignorando anúncios removidos pelo usuário', () => {
+    const listings = [1, 2, 3, 4, 5, 6].map(id => ({
+      id,
+      id_item: 'gold-id',
+      operation: 'sell',
+      currency: 'UEC',
+      price: id * 100000,
+      quality: 900,
+      in_stock: 1,
+    }));
+    const selected = selectMarketAlertMatches(baseAlert, listings, new Set(['id:1']));
+    expect(selected.map(row => row.id)).toEqual([2, 3, 4, 5, 6].slice(0, 5));
+
+    const selectedAfterSecondRemoval = selectMarketAlertMatches(baseAlert, listings, new Set(['id:1', 'id:2']));
+    expect(selectedAfterSecondRemoval.map(row => row.id)).toEqual([3, 4, 5, 6]);
   });
 
   test('filtra qualidade desconhecida quando solicitado', () => {

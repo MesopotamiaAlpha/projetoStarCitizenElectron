@@ -1,5 +1,7 @@
 import {
   cargoEquivalentTotal,
+  cargoInputToStorage,
+  formatCargoBreakdown,
   analyzeCargoQuantityInput,
   cargoToCscu,
   cargoToScu,
@@ -54,5 +56,25 @@ describe('cargoUnits', () => {
     expect(normalizeCargoQuantity('938', 'cSCU')).toBe(938);
     expect(fromCargoBase(normalizeCargoQuantity('596', 'cSCU'), 'SCU')).toBe(5.96);
     expect(fromCargoBase(normalizeCargoQuantity('938', 'cSCU'), 'SCU')).toBe(9.38);
+  });
+
+  test('converte diretamente o valor decimal exibido no jogo para o armazenamento em cSCU', () => {
+    const stored = cargoInputToStorage('0.5456', 'SCU');
+    expect(stored.unit).toBe('cSCU');
+    expect(stored.quantity).toBe(54.56);
+    expect(fromCargoBase(stored.quantity, 'SCU')).toBe(0.5456);
+    expect(formatCargoBreakdown('0.5456', 'SCU')).toContain('0,5456 SCU');
+  });
+
+  test('aceita vírgula decimal no valor exibido pelo jogo', () => {
+    expect(cargoInputToStorage('0,5456', 'SCU').quantity).toBe(54.56);
+  });
+
+  test('alerta quando uma fração muito pequena foi digitada em cSCU por engano', () => {
+    const result = analyzeCargoQuantityInput('0,109', 'cSCU');
+    expect(result.severity).toBe('warning');
+    expect(result.suggestedUnit).toBe('SCU');
+    expect(result.suggestedValue).toBe('0.109');
+    expect(result.warning).toContain('10,9 cSCU');
   });
 });

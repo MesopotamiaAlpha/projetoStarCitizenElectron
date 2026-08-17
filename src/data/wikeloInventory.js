@@ -2,13 +2,23 @@ function normalizedName(value) {
   return String(value || '').trim().toLocaleLowerCase();
 }
 
+function availableQuantity(item) {
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  let reservations = item?.reservations;
+  if (typeof reservations === 'string') {
+    try { reservations = JSON.parse(reservations); } catch { reservations = []; }
+  }
+  if (!Array.isArray(reservations)) reservations = [];
+  const reserved = reservations.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity ?? row?.amount) || 0), 0);
+  return Math.max(0, total - Math.min(total, reserved));
+}
+
 export function getInventoryItemQuantity(name, inventoryItems = []) {
   const target = normalizedName(name);
   if (!target) return 0;
   return inventoryItems.reduce((total, item) => {
     if (normalizedName(item?.name) !== target) return total;
-    const quantity = Number(item?.quantity);
-    return total + (Number.isFinite(quantity) && quantity > 0 ? quantity : 0);
+    return total + availableQuantity(item);
   }, 0);
 }
 
@@ -41,11 +51,11 @@ function inventoryLocationLabel(item) {
 function getInventorySources(name, inventoryItems = []) {
   const target = normalizedName(name);
   const sources = inventoryItems
-    .filter(item => normalizedName(item?.name) === target && Number(item?.quantity) > 0)
+    .filter(item => normalizedName(item?.name) === target && availableQuantity(item) > 0)
     .map(item => ({
       id: item.id,
       label: inventoryLocationLabel(item),
-      quantity: Math.max(0, Number(item.quantity) || 0),
+      quantity: availableQuantity(item),
     }));
   const labels = [...new Set(sources.map(source => source.label))];
   return { sources, labels };
@@ -119,7 +129,8 @@ export function buildWikeloDeliveryPlan(mission, inventoryItems = []) {
     let remaining = needed;
     candidates.forEach(row => {
       if (remaining <= 0) return;
-      const currentQuantity = Math.max(0, Number(row?.quantity) || 0);
+      const totalQuantity = Math.max(0, Number(row?.quantity) || 0);
+      const currentQuantity = availableQuantity(row);
       const alreadyReserved = reserved.get(row.id) || 0;
       const available = Math.max(0, currentQuantity - alreadyReserved);
       const amount = Math.min(remaining, available);
@@ -129,8 +140,8 @@ export function buildWikeloDeliveryPlan(mission, inventoryItems = []) {
         inventoryId: row.id,
         name: row.name,
         amount,
-        beforeQuantity: currentQuantity,
-        afterQuantity: currentQuantity - amount,
+        beforeQuantity: totalQuantity,
+        afterQuantity: totalQuantity - amount,
       });
       remaining -= amount;
     });

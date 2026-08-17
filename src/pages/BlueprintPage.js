@@ -493,6 +493,10 @@ export default function BlueprintPage() {
   const [search,      setSearch]      = useState('');
   const [filterCat,   setFilterCat]   = useState('all');
   const [filterFac,   setFilterFac]   = useState('all');
+  const [filterMaterial, setFilterMaterial] = useState('all');
+  const [filterClass, setFilterClass] = useState('all');
+  const [filterComponentType, setFilterComponentType] = useState('all');
+  const [filterSubtype, setFilterSubtype] = useState('all');
   const [filterObtida, setFilterObtida] = useState('all');
   const [sortBy,      setOrdenarBy]      = useState('name');
   const [selectedBp,  setSelectedBp]  = useState(null);
@@ -601,6 +605,14 @@ export default function BlueprintPage() {
     if(deferredSearch){const q=deferredSearch.toLowerCase();res=res.filter(b=>b.name?.toLowerCase().includes(q)||b.category?.toLowerCase().includes(q)||b.manufacturer?.toLowerCase().includes(q)||b.faction?.toLowerCase().includes(q)||b.ingredients?.some(i=>i.material_name?.toLowerCase().includes(q)));}
     if(filterCat!=='all') res=res.filter(b=>b.category===filterCat);
     if(filterFac!=='all') res=res.filter(b=>b.faction===filterFac);
+    if(filterClass!=='all') res=res.filter(b=>String(b.item_class || b.class || '').trim()===filterClass);
+    if(filterComponentType!=='all') res=res.filter(b=>String(b.component_type || b.componentType || b.type || '').trim()===filterComponentType);
+    if(filterSubtype!=='all') res=res.filter(b=>String(b.subcategory || b.subtype || '').trim()===filterSubtype);
+    if(filterMaterial!=='all') res=res.filter(b=>{
+      let ingredients=b.ingredients;
+      if(typeof ingredients==='string'){try{ingredients=JSON.parse(ingredients);}catch{ingredients=[];}}
+      return Array.isArray(ingredients) && ingredients.some(i=>String(i?.material_name || i?.material || i?.name || '').trim()===filterMaterial);
+    });
     if(filterObtida==='owned')    res=res.filter(b=>b.owned);
     if(filterObtida==='missing')  res=res.filter(b=>!b.owned);
     if(filterObtida==='wishlist') res=res.filter(b=>b.wishlist&&!b.owned);
@@ -608,15 +620,23 @@ export default function BlueprintPage() {
     if(filterObtida==='materials') res=res.filter(b=>hasBlueprintMaterials(b));
     res.sort((a,b)=>sortBy==='faction'?(a.faction||'').localeCompare(b.faction||''):sortBy==='cat'?(a.category||'').localeCompare(b.category||''):sortBy==='crafted'?(b.crafted_count||0)-(a.crafted_count||0):(a.name||'').localeCompare(b.name||''));
     return res;
-  },[bps,deferredSearch,filterCat,filterFac,filterObtida,sortBy,queuedIds]);
+  },[bps,deferredSearch,filterCat,filterFac,filterMaterial,filterClass,filterComponentType,filterSubtype,filterObtida,sortBy,queuedIds]);
 
   useEffect(() => {
     setVisibleCount(100);
-  }, [deferredSearch, filterCat, filterFac, filterObtida, sortBy, queue]);
+  }, [deferredSearch, filterCat, filterFac, filterMaterial, filterClass, filterComponentType, filterSubtype, filterObtida, sortBy, queue]);
 
   const visibleBlueprints = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
-  const catList = useMemo(()=>[...new Set(bps.map(b=>b.category))].sort(),[bps]);
+  const catList = useMemo(()=>[...new Set(bps.map(b=>b.category).filter(Boolean))].sort(),[bps]);
   const facList = useMemo(()=>[...new Set(bps.map(b=>b.faction).filter(Boolean))].sort(),[bps]);
+  const classList = useMemo(()=>[...new Set(bps.map(b=>String(b.item_class || b.class || '').trim()).filter(Boolean))].sort(),[bps]);
+  const componentTypeList = useMemo(()=>[...new Set(bps.map(b=>String(b.component_type || b.componentType || b.type || '').trim()).filter(Boolean))].sort(),[bps]);
+  const subtypeList = useMemo(()=>[...new Set(bps.map(b=>String(b.subcategory || b.subtype || '').trim()).filter(Boolean))].sort(),[bps]);
+  const materialList = useMemo(()=>{
+    const values = new Set();
+    bps.forEach(bp=>{ let ingredients=bp.ingredients; if(typeof ingredients==='string'){try{ingredients=JSON.parse(ingredients);}catch{ingredients=[];}} (Array.isArray(ingredients)?ingredients:[]).forEach(i=>{const name=String(i?.material_name || i?.material || i?.name || '').trim(); if(name) values.add(name);}); });
+    return [...values].sort((a,b)=>a.localeCompare(b));
+  },[bps]);
   const queuedCount = queue.queuedBlueprints.length;
   const ownedCount  = bps.filter(b=>b.owned).length;
     const pct = bps.length>0?Math.round((ownedCount/bps.length)*100):0;
@@ -702,6 +722,22 @@ export default function BlueprintPage() {
             <select style={SS} value={filterFac} onChange={e=>setFilterFac(e.target.value)}>
               <option value="all">Todas as Facções</option>
               {facList.map(f=><option key={f}>{f}</option>)}
+            </select>
+            <select style={SS} value={filterMaterial} onChange={e=>setFilterMaterial(e.target.value)}>
+              <option value="all">Qualquer Minério</option>
+              {materialList.map(material=><option key={material}>{material}</option>)}
+            </select>
+            <select style={SS} value={filterClass} onChange={e=>setFilterClass(e.target.value)}>
+              <option value="all">Qualquer Classe</option>
+              {classList.map(value=><option key={value}>{value}</option>)}
+            </select>
+            <select style={SS} value={filterComponentType} onChange={e=>setFilterComponentType(e.target.value)}>
+              <option value="all">Tipo de Componente</option>
+              {componentTypeList.map(value=><option key={value}>{value}</option>)}
+            </select>
+            <select style={SS} value={filterSubtype} onChange={e=>setFilterSubtype(e.target.value)}>
+              <option value="all">Qualquer Subtipo</option>
+              {subtypeList.map(value=><option key={value}>{value}</option>)}
             </select>
             <select style={SS} value={sortBy} onChange={e=>setOrdenarBy(e.target.value)}>
               <option value="name">Nome (A-Z)</option>

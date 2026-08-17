@@ -5,6 +5,7 @@
 // É uma heurística: pode juntar/errar em nomes atípicos, então o resultado deve
 // ser conferido antes de importar.
 import { loadUexItemsDB } from './uexItemsDB';
+import { getArmorIdentity } from './armorDedup';
 
 const PIECE_TYPE_BY_CATEGORY = {
   'helmets':   'Helmet',
@@ -54,8 +55,8 @@ export function buildUexArmorCatalog() {
 /** Só os grupos cujo nome ainda não existe entre os sets já cadastrados no app. */
 export function getMissingArmorGroups(existingSets) {
   const catalog = buildUexArmorCatalog();
-  const existingNames = new Set((existingSets || []).map(s => (s.base_name || '').trim().toLowerCase()));
-  return catalog.filter(g => !existingNames.has(g.base_name.trim().toLowerCase()));
+  const existingNames = new Set((existingSets || []).map(s => getArmorIdentity(s)));
+  return catalog.filter(g => !existingNames.has(getArmorIdentity({ base_name: g.base_name, variant_name: 'Base' })));
 }
 
 export function getArmorSyncStats() {

@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
-  BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check
+  BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check, Image as ImageIcon,
+  LockKeyhole, UserRound
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
@@ -11,7 +12,6 @@ import { getItemMarketPrice, getMarketPriceForName } from '../data/uexMarketDB';
 import { buildManagedLocationTree, buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { SCRIPT_RATIO, isScriptItem, normalizeScriptName, calcWikeloFavors } from '../data/wikelo';
-import { loadUnknownVault, removeFromUnknownVault, UNKNOWN_VAULT_UPDATED_EVENT } from '../data/unknownVault';
 import { publishInventoryUpdate } from '../data/inventoryEvents';
 import {
   loadInventoryPreferences,
@@ -31,15 +31,16 @@ import {
 // Script Items — conversão especial
 // ─────────────────────────────────────────────────────────────────────────────
 const WIKELO_COLOR = '#a29bfe';
-const UNKNOWN_VAULT_SYSTEM = 'Baú Desconhecido';
-const UNKNOWN_VAULT_LOCATION_TYPE = 'Baú Desconhecido';
-const UNKNOWN_VAULT_LOCATION_NAME = 'Sem localização definida';
+const LEGACY_UNKNOWN_SYSTEM = 'Baú Desconhecido';
+const LEGACY_UNKNOWN_LOCATION_TYPE = 'Baú Desconhecido';
+const LEGACY_UNKNOWN_LOCATION_NAME = 'Sem localização definida';
 
-function isUnknownVaultItem(item) {
+// Registros antigos permanecem ocultos, mas não são apagados automaticamente.
+function isLegacyUnassignedItem(item) {
   return Boolean(item?.is_unknown_vault)
-    || String(item?.system || '') === UNKNOWN_VAULT_SYSTEM
-    || String(item?.location_type || '') === UNKNOWN_VAULT_LOCATION_TYPE
-    || String(item?.location_name || '') === UNKNOWN_VAULT_LOCATION_NAME;
+    || String(item?.system || '') === LEGACY_UNKNOWN_SYSTEM
+    || String(item?.location_type || '') === LEGACY_UNKNOWN_LOCATION_TYPE
+    || String(item?.location_name || '') === LEGACY_UNKNOWN_LOCATION_NAME;
 }
 
 function qualityTierFromUexItem(item) {
@@ -79,17 +80,81 @@ export function normalizeCraftStatus(value) {
     try { parsed = JSON.parse(raw); } catch { return []; }
   }
   if (!Array.isArray(parsed)) {
-    if (parsed && typeof parsed === 'object' && ('status' in parsed || 'bonus' in parsed)) parsed = [parsed];
+    if (parsed && typeof parsed === 'object' && ('status' in parsed || 'bonus' in parsed || 'value' in parsed)) parsed = [parsed];
     else return [];
   }
   return parsed.filter(Boolean).map((row, index) => {
-    if (typeof row === 'string') return { id: `craft-${index}-${row}`, status: row, bonus: '' };
+    if (typeof row === 'string') return { id: `craft-${index}-${row}`, status: row, bonus: '', value: '', value_unit: '%' };
+    const legacyBonus = String(row.bonus ?? '');
     return {
       id: row.id ?? `craft-${index}`,
-      status: String(row.status ?? ''),
-      bonus: String(row.bonus ?? ''),
+      status: String(row.status ?? row.name ?? ''),
+      bonus: legacyBonus,
+      value: String(row.value ?? row.amount ?? (legacyBonus ? legacyBonus.replace(/[%]/g, '').replace(/^\+/, '').trim() : '')),
+      value_unit: String(row.value_unit ?? row.unit ?? (legacyBonus.includes('%') ? '%' : 'un')) === '%' ? '%' : 'un',
     };
   });
+}
+
+export function normalizeCraftMaterials(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: row.id ?? `craft-material-${index}`,
+    material: String(row.material ?? row.name ?? row.material_name ?? ''),
+    quality: String(row.quality ?? row.quality_min ?? ''),
+    quantity: String(row.quantity ?? row.amount ?? ''),
+    unit: String(row.unit ?? 'un'),
+  }));
+}
+
+export function normalizeReservations(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: String(row.id ?? `reservation-${index}`),
+    person: String(row.person ?? row.owner ?? row.reserved_for ?? '').trim(),
+    quantity: Math.max(0, Number(row.quantity ?? row.amount) || 0),
+    notes: String(row.notes ?? '').trim(),
+    createdAt: row.createdAt ?? row.created_at ?? null,
+    updatedAt: row.updatedAt ?? row.updated_at ?? null,
+  })).filter(row => row.person && row.quantity > 0);
+}
+
+export function getReservedQuantity(item) {
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  return Math.min(total, normalizeReservations(item?.reservations).reduce((sum, row) => sum + row.quantity, 0));
+}
+
+export function getAvailableQuantity(item) {
+  return Math.max(0, (Number(item?.quantity) || 0) - getReservedQuantity(item));
+}
+
+export function normalizeCraftAttachments(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) parsed = parsed && typeof parsed === 'object' ? [parsed] : [];
+  return parsed.filter(Boolean).map((row, index) => ({
+    id: row.id ?? `craft-attachment-${index}`,
+    name: String(row.name ?? row.filename ?? 'Imagem craftada'),
+    type: String(row.type ?? 'image/*'),
+    dataUrl: String(row.dataUrl ?? row.data ?? ''),
+    addedAt: row.addedAt ?? null,
+  })).filter(row => row.dataUrl);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -529,7 +594,7 @@ function inventoryStackKey(item) {
     String(item.name || '').trim().toLowerCase(), item.category || '', item.subcategory || '',
     item.unit || 'un', item.size || '', item.grade || '', item.manufacturer || '',
     item.condition || '', Number(item.value_auec) || 0, item.is_contraband ? 1 : 0,
-    item.is_crafted ? 1 : 0, JSON.stringify(item.craft_status || []), item.notes || '',
+    item.is_crafted ? 1 : 0, JSON.stringify(item.craft_materials || []), JSON.stringify(item.craft_status || []), JSON.stringify(item.craft_attachments || []), item.notes || '',
     item.container || '',
   ].join('::');
 }
@@ -543,17 +608,18 @@ const emptyItem = () => ({
   container:'', quantity:0, unit:'un',
   size:'', grade:'', manufacturer:'', condition:'Bom',
   value_auec:0, is_contraband:false, notes:'',
-  is_crafted:false, craft_status:[],
+  is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], reservations:[],
 });
 
-function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'' }; }
+function newCraftMaterialRow() { return { id: Date.now()+Math.random(), material:'', quality:'', quantity:'', unit:'un' }; }
+function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'', bonus:'', value:'', value_unit:'%' }; }
 
 function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation = null }) {
   const [data, setData] = useState(() => {
     const base = initial
-      ? { is_crafted:false, craft_status:[], ...initial }
+      ? { is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], ...initial }
       : { ...emptyItem(), ...(defaultLocation || {}) };
-    return { ...base, craft_status: normalizeCraftStatus(base.craft_status) };
+    return { ...base, craft_materials: normalizeCraftMaterials(base.craft_materials), craft_status: normalizeCraftStatus(base.craft_status), craft_attachments: normalizeCraftAttachments(base.craft_attachments) };
   });
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -565,6 +631,25 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
   }, []);
 
   const set = (k,v) => setData(p=>({...p,[k]:v}));
+
+  function updateCraftMaterial(index, patch) {
+    set('craft_materials', data.craft_materials.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+  function updateCraftStatus(index, patch) {
+    set('craft_status', data.craft_status.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+  function handleCraftImageFiles(event) {
+    const files = Array.from(event.target.files || []).filter(file => file.type.startsWith('image/'));
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const attachment = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: file.name, type: file.type, dataUrl: String(reader.result || ''), addedAt: new Date().toISOString() };
+        setData(previous => ({ ...previous, craft_attachments: [...(previous.craft_attachments || []), attachment] }));
+      };
+      reader.readAsDataURL(file);
+    });
+    event.target.value = '';
+  }
 
   // Autocomplete: buscar sugestões ao digitar o nome
   function handleNameChange(val) {
@@ -961,27 +1046,43 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
 
         {data.is_crafted && (
           <div style={{ padding:'12px 14px', background:'rgba(251,191,36,0.04)', border:'1px solid rgba(251,191,36,0.15)', borderRadius:6 }}>
-            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8 }}>Status do Craft</div>
-            {data.craft_status.map((row,i) => (
-              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:8,marginBottom:6 }}>
-                <input style={IS} value={row.status} onChange={e=>{
-                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,status:e.target.value} : r);
-                  set('craft_status', rows);
-                }} placeholder="Status (ex: Potência do laser)"/>
-                <input style={IS} value={row.bonus} onChange={e=>{
-                  const rows = data.craft_status.map((r,j)=> j===i ? {...r,bonus:e.target.value} : r);
-                  set('craft_status', rows);
-                }} placeholder="Bônus (ex: +15%)"/>
-                <button onClick={()=>set('craft_status', data.craft_status.filter((_,j)=>j!==i))}
-                  style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                  <X size={13}/>
-                </button>
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4 }}>⚒️ Dados do craft</div>
+            <div style={{ fontSize:10,color:'var(--text-muted)',marginBottom:12 }}>Adicione somente os materiais e alterações que este item realmente possui.</div>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Materiais necessários</div>
+            {data.craft_materials.map((row,i) => (
+              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1.5fr .7fr .8fr .7fr auto',gap:7,marginBottom:6,alignItems:'center' }}>
+                <input style={IS} value={row.material} onChange={e=>updateCraftMaterial(i,{material:e.target.value})} placeholder="Minério / material"/>
+                <input style={IS} value={row.quality} onChange={e=>updateCraftMaterial(i,{quality:e.target.value})} placeholder="Qualidade" inputMode="numeric"/>
+                <input style={IS} value={row.quantity} onChange={e=>updateCraftMaterial(i,{quantity:e.target.value})} placeholder="Quantidade" inputMode="decimal"/>
+                <select style={SS} value={row.unit} onChange={e=>updateCraftMaterial(i,{unit:e.target.value})}>
+                  <option value="un">un</option><option value="SCU">SCU</option><option value="cSCU">cSCU</option><option value="kg">kg</option>
+                </select>
+                <button type="button" onClick={()=>set('craft_materials', data.craft_materials.filter((_,j)=>j!==i))} title="Remover material" style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><X size={13}/></button>
               </div>
             ))}
-            <button onClick={()=>set('craft_status', [...data.craft_status, newCraftStatusRow()])}
-              style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginTop:data.craft_status.length?4:0 }}>
-              <Plus size={12}/> + Status
-            </button>
+            <button type="button" onClick={()=>set('craft_materials', [...data.craft_materials, newCraftMaterialRow()])} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginBottom:14 }}><Plus size={12}/> Adicionar minério</button>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Alterações de status</div>
+            {data.craft_status.map((row,i) => (
+              <div key={row.id} style={{ display:'grid',gridTemplateColumns:'1.3fr .8fr .65fr auto',gap:7,marginBottom:6,alignItems:'center' }}>
+                <input style={IS} value={row.status} onChange={e=>updateCraftStatus(i,{status:e.target.value})} placeholder="Status (ex: Potência)"/>
+                <input style={IS} value={row.value} onChange={e=>updateCraftStatus(i,{value:e.target.value,bonus:e.target.value ? `${e.target.value}${row.value_unit === '%' ? '%' : ''}` : ''})} placeholder="Valor aumentado" inputMode="decimal"/>
+                <select style={SS} value={row.value_unit} onChange={e=>updateCraftStatus(i,{value_unit:e.target.value,bonus:row.value ? `${row.value}${e.target.value === '%' ? '%' : ''}` : ''})}><option value="%">%</option><option value="un">un</option></select>
+                <button type="button" onClick={()=>set('craft_status', data.craft_status.filter((_,j)=>j!==i))} title="Remover status" style={{ width:32,height:32,borderRadius:5,border:'1px solid rgba(251,113,133,0.25)',background:'rgba(251,113,133,0.06)',color:'var(--accent-red)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}><X size={13}/></button>
+              </div>
+            ))}
+            <button type="button" onClick={()=>set('craft_status', [...data.craft_status, newCraftStatusRow()])} style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 12px',background:'rgba(251,191,36,0.1)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:5,color:'var(--accent-gold)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer',textTransform:'uppercase',marginBottom:14 }}><Plus size={12}/> Adicionar status</button>
+
+            <div style={{ fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7 }}>Imagens do craft</div>
+            <div style={{ fontSize:10,color:'var(--text-muted)',marginBottom:8 }}>Anexe prints da tela do jogo ou referências deste item.</div>
+            <label style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'7px 11px',border:'1px solid rgba(167,139,250,0.35)',background:'rgba(167,139,250,0.08)',borderRadius:5,color:'#c4b5fd',fontSize:11,fontWeight:700,cursor:'pointer' }}><ImageIcon size={14}/> Adicionar imagem<input type="file" accept="image/*" multiple onChange={handleCraftImageFiles} style={{ display:'none' }}/></label>
+            {data.craft_attachments.length > 0 && <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginTop:10 }}>
+              {data.craft_attachments.map(image => <div key={image.id} style={{ position:'relative',border:'1px solid rgba(167,139,250,0.3)',borderRadius:6,overflow:'hidden',background:'var(--bg-base)' }}>
+                <img src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{ display:'block',width:'100%',height:82,objectFit:'cover',cursor:'pointer' }}/>
+                <div style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 6px' }}><span style={{ flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:9,color:'var(--text-secondary)' }}>{image.name}</span><button type="button" onClick={()=>set('craft_attachments', data.craft_attachments.filter(item=>item.id!==image.id))} title="Remover imagem" style={{ border:0,background:'transparent',color:'var(--accent-red)',cursor:'pointer',padding:2 }}><Trash2 size={12}/></button></div>
+              </div>)}
+            </div>}
           </div>
         )}
       </div>
@@ -1098,13 +1199,75 @@ function PafPanel({ item, allItems }) {
   );
 }
 
+function ReservedPanel({ item, onSave }) {
+  const reservations = normalizeReservations(item?.reservations);
+  const total = Math.max(0, Number(item?.quantity) || 0);
+  const reserved = getReservedQuantity(item);
+  const available = getAvailableQuantity(item);
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [person, setPerson] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+
+  function resetForm() {
+    setEditingId(null); setPerson(''); setQuantity(''); setNotes(''); setError('');
+  }
+
+  function beginEdit(row) {
+    setEditingId(row.id); setPerson(row.person); setQuantity(String(row.quantity)); setNotes(row.notes || ''); setError(''); setOpen(true);
+  }
+
+  function submit() {
+    const cleanPerson = person.trim();
+    const amount = Number(String(quantity).replace(',', '.'));
+    if (!cleanPerson) { setError('Informe o nome da pessoa.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setError('A quantidade deve ser maior que zero.'); return; }
+    const withoutCurrent = reservations.filter(row => row.id !== editingId);
+    const usedByOthers = withoutCurrent.reduce((sum, row) => sum + row.quantity, 0);
+    if (usedByOthers + amount > total) {
+      setError(`A reserva total não pode passar de ${total} ${item.unit || 'un'}. Restam ${Math.max(0, total - usedByOthers)} ${item.unit || 'un'} para reservar.`);
+      return;
+    }
+    const now = new Date().toISOString();
+    const nextRow = { id: editingId || `reservation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, person: cleanPerson, quantity: amount, notes: notes.trim(), createdAt: editingId ? (reservations.find(row => row.id === editingId)?.createdAt || now) : now, updatedAt: now };
+    onSave([...withoutCurrent, nextRow]);
+    resetForm(); setOpen(false);
+  }
+
+  function remove(id) {
+    onSave(reservations.filter(row => row.id !== id));
+    if (editingId === id) resetForm();
+  }
+
+  return (
+    <section style={{marginBottom:14,padding:'11px 12px',background:'rgba(251,191,36,0.05)',border:'1px solid rgba(251,191,36,0.24)',borderRadius:7}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:7}}><LockKeyhole size={14} style={{color:'var(--accent-gold)'}}/><div><div style={{fontSize:10,fontWeight:800,color:'var(--accent-gold)',letterSpacing:'0.08em'}}>RESERVADO</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>Itens de outras pessoas não entram no seu saldo livre.</div></div></div>
+        <button type="button" onClick={()=>{setOpen(value=>!value);setError('');}} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 9px',background:open?'rgba(251,191,36,0.16)':'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.32)',borderRadius:5,color:'var(--accent-gold)',cursor:'pointer',fontSize:10,fontWeight:800}}><Plus size={11}/> {open ? 'Fechar' : 'Adicionar reserva'}</button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:7,marginTop:10}}>
+        <div style={{padding:'7px 8px',background:'rgba(255,255,255,0.03)',borderRadius:5}}><div style={{fontSize:8,color:'var(--text-muted)',fontWeight:700}}>TOTAL</div><strong style={{fontSize:12,color:'var(--text-primary)'}}>{total} {item.unit || 'un'}</strong></div>
+        <div style={{padding:'7px 8px',background:'rgba(251,191,36,0.08)',borderRadius:5}}><div style={{fontSize:8,color:'var(--accent-gold)',fontWeight:700}}>RESERVADO</div><strong style={{fontSize:12,color:'var(--accent-gold)'}}>{reserved} {item.unit || 'un'}</strong></div>
+        <div style={{padding:'7px 8px',background:'rgba(52,211,153,0.08)',borderRadius:5}}><div style={{fontSize:8,color:'var(--accent-green)',fontWeight:700}}>LIVRE PARA USO</div><strong style={{fontSize:12,color:'var(--accent-green)'}}>{available} {item.unit || 'un'}</strong></div>
+      </div>
+      {reservations.length > 0 && <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:10}}>{reservations.map(row=><div key={row.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(251,191,36,0.14)',borderRadius:5}}><UserRound size={12} style={{color:'var(--accent-gold)',flexShrink:0}}/><div style={{minWidth:0,flex:1}}><div style={{fontSize:11,color:'var(--text-primary)',fontWeight:700}}>{row.person} <span style={{color:'var(--accent-gold)',fontFamily:'Share Tech Mono,monospace'}}>· {row.quantity} {item.unit || 'un'}</span></div>{row.notes && <div style={{fontSize:9,color:'var(--text-muted)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.notes}</div>}</div><button type="button" onClick={()=>beginEdit(row)} title="Editar reserva" style={{border:0,background:'transparent',color:'var(--accent-primary)',cursor:'pointer',padding:3}}><Edit3 size={12}/></button><button type="button" onClick={()=>remove(row.id)} title="Remover reserva" style={{border:0,background:'transparent',color:'var(--accent-red)',cursor:'pointer',padding:3}}><Trash2 size={12}/></button></div>)}</div>}
+      {open && <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(251,191,36,0.18)',display:'grid',gridTemplateColumns:'1.2fr .7fr 1.3fr auto',gap:7,alignItems:'end'}}><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>PESSOA<input value={person} onChange={event=>setPerson(event.target.value)} placeholder="Nome da pessoa" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>QUANTIDADE<input type="number" min="0" max={total} step="any" value={quantity} onChange={event=>setQuantity(event.target.value)} placeholder="0" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><label style={{fontSize:9,color:'var(--text-muted)',fontWeight:700}}>OBSERVAÇÃO<input value={notes} onChange={event=>setNotes(event.target.value)} placeholder="Opcional" style={{display:'block',width:'100%',marginTop:4,padding:'7px 8px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:4,color:'var(--text-primary)'}}/></label><button type="button" onClick={submit} style={{display:'flex',alignItems:'center',gap:4,padding:'7px 9px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:4,color:'var(--accent-green)',cursor:'pointer',fontSize:10,fontWeight:800}}><Save size={11}/> Salvar</button></div>}
+      {error && <div style={{marginTop:7,color:'var(--accent-red)',fontSize:10}}>{error}</div>}
+    </section>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ItemCard — card visual com modal de detalhes
 // ─────────────────────────────────────────────────────────────────────────────
-const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer }) {
+const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer, onReservationUpdate }) {
   const [showDetail, setShowDetail] = useState(false);
   const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
   const craftStatus = normalizeCraftStatus(item.craft_status);
+  const craftMaterials = normalizeCraftMaterials(item.craft_materials);
+  const craftAttachments = normalizeCraftAttachments(item.craft_attachments);
   const [showTransfer, setShowTransfer] = useState(false);
   const [delConf,    setDelConf]    = useState(false);
   const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
@@ -1113,6 +1276,8 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
   const isPaf    = isPafItem(displayName);
   const favors   = isScript ? Math.floor((item.quantity||0) / SCRIPT_RATIO) : 0;
   const resto    = isScript ? (item.quantity||0) % SCRIPT_RATIO : 0;
+  const reservedQuantity = getReservedQuantity(item);
+  const availableQuantity = getAvailableQuantity(item);
   const totalVal = (item.value_auec||0) * (item.quantity||1);
 
   return (
@@ -1132,6 +1297,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
         {/* Linha 1: nome + badges */}
         <div className="inventory-item-card-header" style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
           <span className="inventory-item-card-title" style={{fontFamily:'"Exo 2",sans-serif',fontSize:13,fontWeight:700,color:'var(--text-primary)',flex:1,lineHeight:1.3}}>{displayName}</span>
+          {reservedQuantity > 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>🔒 {reservedQuantity} RESERVADO</span>}
           {item.quantity === 0 && <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'var(--text-muted)',border:'1px solid rgba(255,255,255,0.1)',fontWeight:700,flexShrink:0}}>SEM ESTOQUE</span>}
           {item.is_contraband ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(231,76,60,0.15)',color:'#e74c3c',border:'1px solid rgba(231,76,60,0.3)',fontWeight:700,flexShrink:0}}>⚠ CONTRA</span> : null}
           {item.is_crafted ? <span style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:'rgba(251,191,36,0.15)',color:'var(--accent-gold)',border:'1px solid rgba(251,191,36,0.3)',fontWeight:700,flexShrink:0}}>⚒ CRAFT</span> : null}
@@ -1155,7 +1321,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
 
         {/* Linha 4: qty + valor */}
         <div className="inventory-item-card-footer" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'auto'}}>
-          <button onClick={e=>{e.stopPropagation();setShowTransfer(true);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 7px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:4,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:9,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}>
+          <button onClick={e=>{e.stopPropagation();setShowTransfer(true);}} disabled={availableQuantity<=0} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 7px',background:'rgba(56,189,248,0.07)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:4,color:'var(--accent-primary)',cursor:availableQuantity>0?'pointer':'not-allowed',fontSize:9,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:availableQuantity>0?1:0.5}}>
             <MapPin size={10}/> Transferir
           </button>
           <div className="inventory-item-card-quantity" style={{display:'flex',alignItems:'center',gap:7,marginLeft:'auto'}}>
@@ -1178,7 +1344,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
       {showTransfer && (
         <TransferModal
           itemName={displayName}
-          quantity={item.quantity}
+          quantity={availableQuantity}
           unit={item.unit}
           destinations={transferDestinations}
           currentKey={`${item.system}::${item.location_type}::${item.location_name}`}
@@ -1217,6 +1383,8 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
 
             <QuantityAdjuster item={item} onUpdate={onScriptUpdate}/>
 
+            <ReservedPanel item={item} onSave={reservations => onReservationUpdate(item, reservations)} />
+
             {/* Grid de atributos */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
               {[
@@ -1251,6 +1419,15 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
               </div>
             )}
 
+            {item.is_crafted && (craftMaterials.length > 0 || craftStatus.length > 0 || craftAttachments.length > 0) && (
+              <div style={{marginBottom:14,padding:'10px 12px',background:'rgba(251,191,36,0.04)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:6}}>
+                <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>⚒️ Dados do craft</div>
+                {craftMaterials.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>MATERIAIS</div>{craftMaterials.map(material=><div key={material.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{material.material || 'Material não informado'}</span><span>{material.quantity || '—'} {material.unit}{material.quality ? ` · Q${material.quality}` : ''}</span></div>)}</div>}
+                {craftStatus.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>STATUS</div>{craftStatus.map(status=><div key={status.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{status.status || 'Status não informado'}</span><span>{status.value || status.bonus || '—'}{status.value ? ` ${status.value_unit}` : ''}</span></div>)}</div>}
+                {craftAttachments.length > 0 && <div><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:5}}>IMAGENS ({craftAttachments.length})</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{craftAttachments.map(image=><img key={image.id} src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{width:64,height:48,objectFit:'cover',borderRadius:4,border:'1px solid rgba(167,139,250,0.35)',cursor:'pointer'}}/>)}</div></div>}
+              </div>
+            )}
+
             {item.notes && (
               <div style={{marginBottom:14,padding:'8px 12px',background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
                 <div style={{fontSize:9,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Observações</div>
@@ -1273,7 +1450,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
 
             {/* Deletar */}
                 <div style={{display:'flex',justifyContent:'flex-end',gap:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
-                  <button onClick={()=>{setShowTransfer(true);setShowDetail(false);}} disabled={Number(item.quantity)<=0} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',cursor:Number(item.quantity)>0?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:Number(item.quantity)>0?1:0.5}}><MapPin size={11}/> Transferir para...</button>
+                  <button onClick={()=>{setShowTransfer(true);setShowDetail(false);}} disabled={availableQuantity<=0} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.25)',borderRadius:5,color:'var(--accent-primary)',cursor:availableQuantity>0?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',opacity:availableQuantity>0?1:0.5}}><MapPin size={11}/> Transferir para...</button>
               {delConf ? (
                 <>
                   <span style={{fontSize:12,color:'var(--accent-red)',alignSelf:'center'}}>Confirmar exclusão?</span>
@@ -1293,66 +1470,6 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
   );
 });
 
-// ── Baú Desconhecido ───────────────────────────────────────────────────────────
-function UnknownVaultPanel({ items, locationOptions, onDirect }) {
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [destination, setDestination] = useState({ system:'', location_type:'', location_name:'' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const systems = useMemo(() => [...new Set((locationOptions || []).map(option => option.system).filter(Boolean))].sort(), [locationOptions]);
-  const types = useMemo(() => [...new Set((locationOptions || []).filter(option => option.system === destination.system).map(option => option.location_type).filter(Boolean))].sort(), [locationOptions, destination.system]);
-  const names = useMemo(() => [...new Set((locationOptions || []).filter(option => option.system === destination.system && option.location_type === destination.location_type).map(option => option.location_name).filter(Boolean))].sort(), [locationOptions, destination.system, destination.location_type]);
-
-  function openDirection(item) {
-    const first = locationOptions?.[0] || {};
-    setSelectedItem(item);
-    setError('');
-    setDestination({ system:first.system || systems[0] || '', location_type:first.location_type || '', location_name:first.location_name || '' });
-  }
-  function changeSystem(system) {
-    const availableTypes = [...new Set((locationOptions || []).filter(option => option.system === system).map(option => option.location_type).filter(Boolean))].sort();
-    const nextType = availableTypes[0] || '';
-    const nextName = locationOptions.find(option => option.system === system && option.location_type === nextType)?.location_name || '';
-    setDestination({ system, location_type:nextType, location_name:nextName });
-  }
-  function changeType(location_type) {
-    const nextName = locationOptions.find(option => option.system === destination.system && option.location_type === location_type)?.location_name || '';
-    setDestination(prev => ({ ...prev, location_type, location_name:nextName }));
-  }
-  async function confirmDirection() {
-    if (!selectedItem || !destination.system || !destination.location_type || !destination.location_name) {
-      setError('Selecione sistema, tipo de local e localização.');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const ok = await onDirect(selectedItem, destination);
-      if (ok) setSelectedItem(null);
-      else setError('Não foi possível gravar o scrip no local escolhido.');
-    } catch (err) {
-      setError(err.message || 'Não foi possível direcionar o item.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section style={{marginBottom:20,padding:'14px 16px',background:'linear-gradient(135deg,rgba(162,155,254,0.10),rgba(56,189,248,0.04))',border:'1px solid rgba(162,155,254,0.32)',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,0.12)'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:30,height:30,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(162,155,254,0.16)',color:'#a29bfe'}}><Package size={16}/></div>
-          <div><div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:800,color:'#c4b5fd',letterSpacing:'0.08em'}}>BAÚ DESCONHECIDO</div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:2}}>Scrip recebido em missão aguardando um local definitivo</div></div>
-        </div>
-        <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:800,color:items.length?'#c4b5fd':'var(--text-muted)'}}>{items.length} pendente{items.length === 1 ? '' : 's'}</span>
-      </div>
-      {items.length === 0 ? <div style={{padding:'10px 12px',border:'1px dashed rgba(162,155,254,0.22)',borderRadius:7,fontSize:11,color:'var(--text-muted)'}}>Nenhum MG Scrip ou Council Scrip aguardando direcionamento.</div> : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:8}}>{items.map(item => <div key={item.id} style={{padding:'10px 11px',background:'rgba(7,12,24,0.28)',border:'1px solid rgba(162,155,254,0.18)',borderRadius:7}}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><strong style={{fontSize:12,color:'var(--text-primary)'}}>{item.name}</strong><span style={{fontFamily:'Share Tech Mono,monospace',fontSize:15,fontWeight:800,color:'#c4b5fd'}}>{item.quantity}</span></div><div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.source_mission_title || 'Origem não informada'}</div><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8}}><span style={{fontSize:9,color:'var(--text-muted)'}}>{item.received_at ? new Date(item.received_at).toLocaleDateString('pt-BR') : '—'}</span><button type="button" onClick={()=>openDirection(item)} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 8px',borderRadius:5,border:'1px solid rgba(162,155,254,0.35)',background:'rgba(162,155,254,0.10)',color:'#c4b5fd',cursor:'pointer',fontSize:10,fontWeight:700}}><MapPin size={11}/> Direcionar</button></div></div>)}</div>}
-      {selectedItem && <div style={{position:'fixed',inset:0,zIndex:1200,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onMouseDown={()=>!busy&&setSelectedItem(null)}><div style={{width:'100%',maxWidth:520,padding:18,background:'var(--bg-card)',border:'1px solid rgba(162,155,254,0.38)',borderRadius:10,boxShadow:'0 20px 60px rgba(0,0,0,0.55)'}} onMouseDown={event=>event.stopPropagation()}><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}><div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color:'#c4b5fd'}}>DIRECIONAR PARA O INVENTÁRIO</div><button type="button" onClick={()=>setSelectedItem(null)} disabled={busy} style={{background:'none',border:'none',color:'var(--text-muted)',cursor:'pointer'}}><X size={15}/></button></div><div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:14}}><strong style={{color:'var(--text-primary)'}}>{selectedItem.name} ×{selectedItem.quantity}</strong> será somado ao item existente no destino, se houver.</div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}><label style={{fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Sistema<select value={destination.system} onChange={event=>changeSystem(event.target.value)} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{systems.map(system=><option key={system} value={system}>{system}</option>)}</select></label><label style={{fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Tipo de local<select value={destination.location_type} onChange={event=>changeType(event.target.value)} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{types.map(type=><option key={type} value={type}>{type}</option>)}</select></label></div><label style={{display:'block',marginTop:9,fontSize:10,color:'var(--text-muted)',fontWeight:700,textTransform:'uppercase'}}>Localização<select value={destination.location_name} onChange={event=>setDestination(prev=>({...prev,location_name:event.target.value}))} style={{display:'block',width:'100%',marginTop:4,padding:'8px 9px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)'}}>{names.map(name=><option key={name} value={name}>{name}</option>)}</select></label>{error&&<div style={{marginTop:9,padding:'7px 9px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.25)',borderRadius:5,color:'var(--accent-red)',fontSize:11}}>{error}</div>}<div style={{display:'flex',justifyContent:'flex-end',gap:7,marginTop:16}}><button type="button" onClick={()=>setSelectedItem(null)} disabled={busy} style={{padding:'7px 12px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer'}}>Cancelar</button><button type="button" onClick={confirmDirection} disabled={busy} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'7px 13px',background:'rgba(162,155,254,0.14)',border:'1px solid rgba(162,155,254,0.4)',borderRadius:5,color:'#c4b5fd',cursor:'pointer',fontWeight:700}}>{busy?<RefreshCw size={12} className="spin"/>:<Check size={12}/>} {busy?'Salvando...':'Confirmar destino'}</button></div></div></div>}
-    </section>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1360,7 +1477,6 @@ function UnknownVaultPanel({ items, locationOptions, onDirect }) {
 export default function InventoryPage() {
   const [itens,        setItens]        = useState([]);
   const itensRef = useRef([]);
-  const [unknownVaultItems, setUnknownVaultItems] = useState(() => loadUnknownVault().items);
   const [loading,      setLoading]      = useState(true);
   const [showForm,     setShowForm]     = useState(false);
   const [editItem,     setEditItem]     = useState(null);
@@ -1439,6 +1555,7 @@ export default function InventoryPage() {
         ...item,
         name: normalizeUexItemName(item.name),
         craft_status: normalizeCraftStatus(item.craft_status),
+        reservations: normalizeReservations(item.reservations),
       }));
       itensRef.current = normalized;
       setItens(normalized);
@@ -1448,16 +1565,6 @@ export default function InventoryPage() {
   }, [invAPI]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-  const refreshUnknownVault = useCallback(() => {
-    setUnknownVaultItems(loadUnknownVault().items);
-  }, []);
-
-  useEffect(() => {
-    refreshUnknownVault();
-    window.addEventListener(UNKNOWN_VAULT_UPDATED_EVENT, refreshUnknownVault);
-    return () => window.removeEventListener(UNKNOWN_VAULT_UPDATED_EVENT, refreshUnknownVault);
-  }, [refreshUnknownVault]);
 
   const handleEditItem = useCallback((item) => {
     setEditItem(item);
@@ -1469,6 +1576,7 @@ export default function InventoryPage() {
     ...data,
     name: normalizeUexItemName(data.name),
     craft_status: normalizeCraftStatus(data.craft_status),
+    reservations: normalizeReservations(data.reservations),
   };
     if (normalizedData.id) await invAPI.update(normalizedData);
     else { await invAPI.create(normalizedData); setProvenance('item', normalizedData.name, SOURCES.MANUAL); }
@@ -1482,12 +1590,32 @@ export default function InventoryPage() {
     publishInventoryUpdate(refreshed);
   }, [invAPI, loadData]);
 
+  const handleReservationUpdate = useCallback(async (item, reservations) => {
+    const normalizedReservations = normalizeReservations(reservations);
+    const total = Math.max(0, Number(item.quantity) || 0);
+    const reserved = normalizedReservations.reduce((sum, row) => sum + row.quantity, 0);
+    if (reserved > total) return;
+    const updatedItem = { ...item, reservations: normalizedReservations };
+    const nextItems = itensRef.current.map(entry => entry.id === item.id ? updatedItem : entry);
+    itensRef.current = nextItems;
+    setItens(nextItems);
+    try {
+      await invAPI.update(updatedItem);
+      publishInventoryUpdate(nextItems);
+    } catch (error) {
+      const refreshed = await loadData();
+      publishInventoryUpdate(refreshed);
+      console.error('Erro ao atualizar reserva do inventário:', error);
+    }
+  }, [invAPI, loadData]);
+
   const handleTransfer = useCallback(async (item, { destination, quantity }) => {
-    const sourceQuantity = Math.max(0, Number(item.quantity) || 0);
+    const sourceQuantity = getAvailableQuantity(item);
     const amount = Math.max(0, Number(quantity) || 0);
     if (!destination || amount <= 0 || amount > sourceQuantity) return;
 
-    const sourceRemaining = sourceQuantity - amount;
+    const totalSourceQuantity = Math.max(0, Number(item.quantity) || 0);
+    const sourceRemaining = totalSourceQuantity - amount;
     const destinationFields = {
       system: destination.system,
       location_type: destination.location_type,
@@ -1504,7 +1632,8 @@ export default function InventoryPage() {
 
     const original = { ...item };
     try {
-      if (sourceRemaining === 0 && !target) {
+                    if (sourceRemaining === 0 && !target && getReservedQuantity(item) === 0) {
+
         // Movimento integral sem duplicata: preserva o id e todos os metadados.
         await invAPI.update({ ...item, ...destinationFields });
       } else if (target) {
@@ -1522,7 +1651,7 @@ export default function InventoryPage() {
         // Movimento parcial: reduz a origem e cria uma entrada equivalente no destino.
         await invAPI.update({ ...item, quantity:sourceRemaining });
         try {
-          const transferred = { ...item, ...destinationFields, quantity:amount };
+          const transferred = { ...item, ...destinationFields, quantity:amount, reservations:[] };
           delete transferred.id;
           delete transferred.created_at;
           delete transferred.updated_at;
@@ -1540,56 +1669,6 @@ export default function InventoryPage() {
       publishInventoryUpdate(refreshed);
     }
   }, [invAPI, loadData]);
-
-  const handleDirectUnknownItem = useCallback(async (unknownItem, destination) => {
-    const canonicalName = normalizeScriptName(unknownItem.name) || unknownItem.name;
-    const amount = Math.max(0, Number(unknownItem.quantity) || 0);
-    if (!canonicalName || amount <= 0) return false;
-
-    const target = itensRef.current.find(item => {
-      const itemName = normalizeScriptName(item.name) || item.name;
-      return !isUnknownVaultItem(item)
-        && String(itemName || '').trim().toLowerCase() === String(canonicalName || '').trim().toLowerCase()
-        && item.system === destination.system
-        && item.location_type === destination.location_type
-        && item.location_name === destination.location_name;
-    });
-
-    try {
-      if (target) {
-        await invAPI.update({ ...target, name: canonicalName, quantity: Math.max(0, Number(target.quantity) || 0) + amount, unit: target.unit || 'un' });
-      } else {
-        await invAPI.create({
-          name: canonicalName,
-          category: 'Miscellaneous',
-          subcategory: 'Outro',
-          system: destination.system,
-          location_type: destination.location_type,
-          location_name: destination.location_name,
-          container: '',
-          quantity: amount,
-          unit: 'un',
-          size: '',
-          grade: '',
-          manufacturer: '',
-          condition: 'Novo',
-          value_auec: 0,
-          is_contraband: 0,
-          notes: 'Recebido de missão e direcionado pelo Baú Desconhecido.',
-          is_crafted: 0,
-          craft_status: [],
-        });
-      }
-      removeFromUnknownVault(unknownItem.id);
-      const refreshed = await loadData();
-      publishInventoryUpdate(refreshed);
-      refreshUnknownVault();
-      return true;
-    } catch (error) {
-      console.error('Erro ao direcionar scrip do Baú Desconhecido:', error);
-      return false;
-    }
-  }, [invAPI, loadData, refreshUnknownVault]);
 
   const handleScriptUpdate = useCallback(async (id, newQty) => {
     const current = itensRef.current.find(i => i.id === id);
@@ -1614,7 +1693,7 @@ export default function InventoryPage() {
   }, [invAPI, loadData]);
 
   // ── Derivados para navegação ──
-  const regularItems = useMemo(() => itens.filter(item => !isUnknownVaultItem(item)), [itens]);
+  const regularItems = useMemo(() => itens.filter(item => !isLegacyUnassignedItem(item)), [itens]);
   // Sistemas que têm itens
   const systemsWithItems = useMemo(() => {
     const counts = {};
@@ -1746,8 +1825,6 @@ export default function InventoryPage() {
           <ItemForm initial={editItem||undefined} defaultLocation={editItem ? null : defaultLocation} taxonomy={taxonomy} onSave={handleSave} onCancelar={()=>{setShowForm(false);setEditItem(null);}}/>
         </div>
       )}
-
-      <div style={{padding:'0 24px',flexShrink:0}}><UnknownVaultPanel items={unknownVaultItems} locationOptions={transferDestinations} onDirect={handleDirectUnknownItem}/></div>
 
       {/* ── Breadcrumb de navegação ── */}
       <div style={{padding:'8px 24px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
@@ -1970,7 +2047,8 @@ export default function InventoryPage() {
                     onScriptUpdate={handleScriptUpdate}
                     allItems={itens}
                     transferDestinations={transferDestinations}
-                    onTransfer={handleTransfer}/>
+                    onTransfer={handleTransfer}
+                    onReservationUpdate={handleReservationUpdate}/>
                 ))}
               </div>
             ) : (
@@ -1986,7 +2064,8 @@ export default function InventoryPage() {
                       onScriptUpdate={handleScriptUpdate}
                       allItems={itens}
                       transferDestinations={transferDestinations}
-                      onTransfer={handleTransfer}/>
+                      onTransfer={handleTransfer}
+                    onReservationUpdate={handleReservationUpdate}/>
                   );
                 })}
               </div>
@@ -2008,8 +2087,10 @@ export default function InventoryPage() {
                   onScriptUpdate={handleScriptUpdate}
                   allItems={itens}
                   transferDestinations={transferDestinations}
-                  onTransfer={handleTransfer}/>
+                                        onTransfer={handleTransfer}
+                      onReservationUpdate={handleReservationUpdate}/>
                 ))}
+
             </div>
           </div>
         )}
