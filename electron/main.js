@@ -28,14 +28,40 @@ let dataMigration = { copied: [], skipped: [], warnings: [] };
 let mainWindow;
 let missionLogWatcher;
 
+function normalizeMissionMonitorStatus(raw = {}) {
+  const status = raw && typeof raw === 'object' ? raw : {};
+  const activeMissions = Array.isArray(status.activeMissions)
+    ? status.activeMissions
+    : Array.isArray(status.active)
+      ? status.active
+      : [];
+  const rawDebug = status.debug || status.diagnostics || {};
+  const debug = {
+    ...rawDebug,
+    phase: rawDebug.phase || (status.running ? 'running_legacy_status' : 'idle'),
+    fileExists: rawDebug.fileExists !== undefined ? rawDebug.fileExists : Boolean(status.logPath),
+    fileReadable: rawDebug.fileReadable !== undefined ? rawDebug.fileReadable : Boolean(status.logPath),
+    activeCount: rawDebug.activeCount !== undefined ? rawDebug.activeCount : activeMissions.length,
+    statusShape: Object.keys(status),
+    legacyStatusShape: !status.debug,
+    watcherVersion: status.watcherVersion || 'unknown-legacy-watcher',
+  };
+  return { ...status, activeMissions, debug };
+}
+
 function getMissionLogWatcher() {
   if (missionLogWatcher) return missionLogWatcher;
   missionLogWatcher = new MissionLogWatcher(
     event => {
+      console.info('[MissionAutoMonitor][main][event->renderer]', { type: event?.type, guid: event?.guid || event?.missionGuid || null, activeCount: missionLogWatcher?.active?.size || 0 });
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-event', event);
+      else console.warn('[MissionAutoMonitor][main] renderer indisponível para evento');
     },
     status => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-status', status);
+      const normalizedStatus = normalizeMissionMonitorStatus(status);
+      console.info('[MissionAutoMonitor][main][status->renderer]', { running: normalizedStatus.running, logPath: normalizedStatus.logPath, phase: normalizedStatus.debug.phase, fileExists: normalizedStatus.debug.fileExists, readCount: normalizedStatus.debug.readCount, activeCount: normalizedStatus.debug.activeCount, statusShape: normalizedStatus.debug.statusShape, legacyStatusShape: normalizedStatus.debug.legacyStatusShape, watcherVersion: normalizedStatus.debug.watcherVersion });
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-status', normalizedStatus);
+      else console.warn('[MissionAutoMonitor][main] renderer indisponível para status');
     },
   );
   return missionLogWatcher;
@@ -2596,7 +2622,10 @@ ipcMain.handle('mission-monitor-choose-log', async () => {
 });
 
 ipcMain.handle('mission-monitor-start', async (_event, logPath) => {
-  return getMissionLogWatcher().start(logPath);
+  console.info('[MissionAutoMonitor][main][ipc.start.received]', { logPath, type: typeof logPath });
+  const status = normalizeMissionMonitorStatus(await getMissionLogWatcher().start(logPath));
+  console.info('[MissionAutoMonitor][main][ipc.start.return]', { logPath: status.logPath, running: status.running, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  return status;
 });
 
 ipcMain.handle('mission-monitor-stop', async () => {
@@ -2605,7 +2634,9 @@ ipcMain.handle('mission-monitor-stop', async () => {
 });
 
 ipcMain.handle('mission-monitor-status', () => {
-  return missionLogWatcher ? missionLogWatcher.status() : { running: false, logPath: null, channel: 'UNKNOWN', activeMissions: [], recentEvents: [] };
+  const status = normalizeMissionMonitorStatus(missionLogWatcher ? missionLogWatcher.status() : { running: false, logPath: null, channel: 'UNKNOWN', activeMissions: [] });
+  console.info('[MissionAutoMonitor][main][ipc.status.return]', { running: status.running, logPath: status.logPath, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  return status;
 });
 
 // ── Window ────────────────────────────────────────────────────────────────────

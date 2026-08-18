@@ -456,9 +456,9 @@ function NegotiationThread({ negotiation, onBack }) {
   const negotiationListingUrl = getNegotiationListingUrl(negotiation);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="uex-thread-shell" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       {saleModalOpen && <SaleCompletionModal negotiation={negotiation} saving={closing} onCancel={() => setSaleModalOpen(false)} onConfirm={values => handleCloseNegotiation('success', values)} />}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <div className="uex-thread-header" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexShrink: 0 }}>
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <ArrowLeft size={14} /> Voltar
         </button>
@@ -556,7 +556,7 @@ function NegotiationThread({ negotiation, onBack }) {
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="uex-thread-messages" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {newMessagesCount > 0 && <button type="button" onClick={revealNewMessages} style={{ position:'sticky', top:0, zIndex:2, display:'flex', alignItems:'center', justifyContent:'center', gap:7, padding:'8px 10px', background:'rgba(56,189,248,0.14)', border:'1px solid rgba(56,189,248,0.4)', borderRadius:7, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:800 }}><BellRing size={13}/> {newMessagesCount} nova{newMessagesCount !== 1 ? 's' : ''} mensagem{newMessagesCount !== 1 ? 'ns' : ''} recebida{newMessagesCount !== 1 ? 's' : ''} — ver agora</button>}
         {loading && <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Carregando mensagens...</div>}
         {!loading && messages.length === 0 && !error && (
@@ -606,7 +606,7 @@ function NegotiationThread({ negotiation, onBack }) {
           Esta negociação está encerrada — não é possível enviar novas mensagens.
         </div>
       ) : (
-        <div style={{ marginTop: 12, flexShrink: 0 }}>
+        <div className="uex-thread-composer" style={{ marginTop: 12, flexShrink: 0, minHeight: 0 }}>
           {sendError && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.25)', borderRadius: 6, color: 'var(--accent-red)', fontSize: 11, marginBottom: 8 }}>
               <AlertTriangle size={12} />{sendError}
@@ -736,7 +736,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
   }
 
   return (
-    <>
+    <div className="uex-negotiations-page">
       <div className="page-header">
         <div>
           <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -749,7 +749,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
         </button>
       </div>
 
-      <div className="page-body" style={{ padding: 24, height: '100%' }}>
+      <div className={`page-body uex-negotiations-body${selected ? ' has-selected-thread' : ''}`} style={{ padding: 24, height: '100%', minHeight: 0, boxSizing: 'border-box' }}>
         {!selected && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}><Filter size={13} /> Mostrar</div>
@@ -826,6 +826,6 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

@@ -8,6 +8,16 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function traceFrontend(step, details = {}, level = 'info') {
+  const payload = { at: nowIso(), step, ...details };
+  try {
+    const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
+    console[method]('[MissionAutoMonitor][frontend]', payload);
+    if (typeof window !== 'undefined') window.__missionAutoMonitorLastTrace = payload;
+  } catch (_) {}
+  return payload;
+}
+
 function readState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -39,6 +49,7 @@ function defaultState() {
     activeMissions: [],
     events: [],
     lastError: '',
+    debug: {},
     updatedAt: nowIso(),
   };
 }
@@ -56,6 +67,7 @@ export function loadMissionAutoMonitor() {
     activeMissions: Array.isArray(stored.activeMissions) ? stored.activeMissions : [],
     events: Array.isArray(stored.events) ? stored.events.map(normalizeEvent).slice(0, MISSION_AUTO_MONITOR_MAX_EVENTS) : [],
     lastError: String(stored.lastError || ''),
+    debug: stored.debug && typeof stored.debug === 'object' ? stored.debug : {},
   };
 }
 
@@ -73,6 +85,7 @@ export function saveMissionAutoMonitor(nextState) {
     activeMissions: Array.isArray(nextState?.activeMissions) ? nextState.activeMissions : current.activeMissions,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  traceFrontend('storage.saved', { running: next.running, enabled: next.enabled, logPath: next.logPath, activeCount: next.activeMissions.length, eventCount: next.events.length, phase: next.debug?.phase || 'unknown' });
   emit(next);
   return next;
 }
@@ -82,6 +95,7 @@ export function setMissionAutoMonitorEnabled(enabled) {
 }
 
 export function setMissionAutoMonitorStatus(status = {}) {
+  traceFrontend('ipc.status.received', { running: status.running, logPath: status.logPath, channel: status.channel, debug: status.debug || null });
   const current = loadMissionAutoMonitor();
   // Ao reabrir o aplicativo, o watcher ainda não está criado e o IPC retorna
   // logPath=null. Preserve o caminho escolhido anteriormente nesse caso.
@@ -94,10 +108,12 @@ export function setMissionAutoMonitorStatus(status = {}) {
     channel: status.channel || current.channel || 'UNKNOWN',
     activeMissions: Array.isArray(status.activeMissions) ? status.activeMissions : current.activeMissions,
     lastError: status.lastError || '',
+    debug: status.debug && typeof status.debug === 'object' ? status.debug : current.debug,
   });
 }
 
 export function appendMissionAutoMonitorEvent(event) {
+  traceFrontend('ipc.event.received', { type: event?.type, guid: event?.guid || event?.missionGuid || null, debugName: event?.debugName || null, raw: event });
   const normalized = normalizeEvent(event);
   const current = loadMissionAutoMonitor();
   const events = [normalized, ...current.events.filter(item => item.eventId !== normalized.eventId)].slice(0, MISSION_AUTO_MONITOR_MAX_EVENTS);
@@ -109,6 +125,7 @@ export function appendMissionAutoMonitorEvent(event) {
   } else if (normalized.type === 'session_reset') {
     activeMissions = [];
   }
+  traceFrontend('event.state.transition', { type: normalized.type, guid: normalized.guid || null, activeBefore: current.activeMissions.length, activeAfter: activeMissions.length });
   return saveMissionAutoMonitor({ events, activeMissions, channel: normalized.channel || current.channel, lastError: '' });
 }
 

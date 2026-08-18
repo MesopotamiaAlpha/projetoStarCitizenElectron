@@ -9032,3 +9032,617 @@ button.dashboard-mini-metric:hover,
   /* O tilt do Hangar é controlado pelo modo visual do app; não anulá-lo globalmente. */
 }
 
+
+/* Entrada futurista dos modais de detalhes: animação compositada, sem alterar o fluxo interno. */
+.inventory-detail-modal-overlay,
+.mission-modal-overlay {
+  animation: emotoDetailOverlayIn 220ms cubic-bezier(.22, .61, .36, 1) both;
+  isolation: isolate;
+}
+
+.inventory-detail-modal,
+.mission-detail-dialog {
+  animation: emotoDetailDialogIn 360ms cubic-bezier(.16, 1, .3, 1) both;
+  transform-origin: center top;
+  will-change: transform, opacity, filter;
+}
+
+.inventory-detail-modal::before,
+.mission-detail-dialog::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(112deg, transparent 20%, rgba(125, 211, 252, .16) 46%, transparent 61%);
+  background-size: 240% 100%;
+  opacity: 0;
+  animation: emotoDetailSheen 620ms cubic-bezier(.22, .61, .36, 1) 90ms both;
+  z-index: 0;
+}
+
+.inventory-detail-modal > *,
+.mission-detail-dialog > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes emotoDetailOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes emotoDetailDialogIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0) scale(.985);
+    filter: brightness(.82) saturate(.82);
+  }
+  62% {
+    opacity: 1;
+    transform: translate3d(0, 2px, 0) scale(1.002);
+    filter: brightness(1.04) saturate(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: brightness(1) saturate(1);
+  }
+}
+
+@keyframes emotoDetailSheen {
+  from { background-position: 140% 0; opacity: 0; }
+  28% { opacity: .65; }
+  to { background-position: -40% 0; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-detail-modal-overlay,
+  .mission-modal-overlay,
+  .inventory-detail-modal,
+  .mission-detail-dialog {
+    animation-duration: 180ms !important;
+  }
+  .inventory-detail-modal::before,
+  .mission-detail-dialog::before {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+.visual-mode-off .inventory-detail-modal-overlay,
+.visual-mode-off .mission-modal-overlay,
+.visual-mode-off .inventory-detail-modal,
+.visual-mode-off .mission-detail-dialog {
+  animation: none !important;
+}
+.visual-mode-off .inventory-detail-modal::before,
+.visual-mode-off .mission-detail-dialog::before {
+  display: none !important;
+}
+
+@media (max-width: 680px) {
+  .inventory-detail-modal,
+  .mission-detail-dialog {
+    animation-name: emotoDetailDialogInCompact;
+  }
+}
+
+@keyframes emotoDetailDialogInCompact {
+  from { opacity: 0; transform: translate3d(0, -8px, 0) scale(.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+/* Rastreador de Missões — faixa persistente de missões automáticas ativas */
+.mission-auto-active-strip { margin: 0 32px 12px; padding: 12px 14px; border: 1px solid rgba(52,211,153,.28); border-radius: 10px; background: linear-gradient(120deg, rgba(16,185,129,.08), rgba(15,23,42,.72)); box-shadow: 0 0 22px rgba(16,185,129,.06); }
+.mission-auto-active-strip-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; color:#6ee7b7; font:700 10px/1.2 "Exo 2",sans-serif; letter-spacing:.08em; }
+.mission-auto-active-strip-header span { display:inline-flex; align-items:center; gap:6px; }
+.mission-auto-active-strip-header strong { min-width:22px; padding:3px 7px; border-radius:999px; background:rgba(52,211,153,.15); text-align:center; font:700 11px/1 "Share Tech Mono",monospace; }
+.mission-auto-active-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px; }
+.mission-auto-active-card { min-width:0; padding:10px; border:1px solid rgba(52,211,153,.18); border-radius:8px; background:rgba(2,6,23,.34); }
+.mission-auto-active-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px; }
+.mission-auto-active-card strong { display:block; overflow:hidden; color:var(--text-primary); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.mission-auto-active-card small { display:block; margin-top:4px; overflow:hidden; color:var(--text-muted); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.mission-auto-live-dot { color:#6ee7b7; font:700 9px/1 "Share Tech Mono",monospace; }
+.mission-auto-live-dot::before { content:""; display:inline-block; width:6px; height:6px; margin-right:5px; border-radius:50%; background:#34d399; box-shadow:0 0 8px #34d399; vertical-align:1px; }
+@media (max-width:720px) { .mission-auto-active-strip { margin-right:14px; margin-left:14px; } .mission-auto-active-grid { grid-template-columns:1fr; } }
+
+
+/* === LAYOUT RESPONSIVO DO CHAT DE NEGOCIAÇÕES UEX === */
+.uex-negotiations-body.has-selected-thread {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.uex-negotiations-body.has-selected-thread > .uex-thread-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.uex-thread-shell,
+.uex-thread-shell * {
+  box-sizing: border-box;
+}
+
+.uex-thread-header {
+  min-width: 0;
+  overflow: visible;
+}
+
+.uex-thread-header > div:first-of-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uex-thread-messages {
+  min-height: 0 !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+}
+
+.uex-thread-composer {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  max-height: min(42vh, 330px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-panel);
+  padding-top: 2px;
+}
+
+.uex-bilingual-composer {
+  min-width: 0;
+}
+
+.uex-composer-pane {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.uex-composer-textarea {
+  min-height: 76px;
+  max-height: 132px;
+  resize: vertical;
+  overflow-y: auto;
+}
+
+@media (max-height: 760px) and (min-width: 721px) {
+  .uex-thread-header {
+    margin-bottom: 8px !important;
+  }
+
+  .uex-thread-composer {
+    max-height: 36vh;
+  }
+
+  .uex-composer-textarea {
+    min-height: 58px;
+    max-height: 92px;
+  }
+
+  .uex-composer-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .uex-negotiations-body.has-selected-thread {
+    padding: 12px !important;
+    overflow: hidden;
+  }
+
+  .uex-thread-header {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+    margin-bottom: 8px !important;
+  }
+
+  .uex-thread-header > div:last-child {
+    width: 100%;
+    justify-content: flex-start !important;
+  }
+
+  .uex-thread-composer {
+    max-height: 48vh;
+  }
+}
+
+@media (max-width: 420px) {
+  .uex-thread-composer {
+    max-height: 52vh;
+  }
+
+  .uex-composer-textarea {
+    min-height: 62px;
+    max-height: 110px;
+  }
+
+  .uex-send-button {
+    min-height: 34px;
+    font-size: 9px;
+  }
+}
+
+
+/* Contêiner externo da tela UEX: impede que o cabeçalho e o chat somem suas alturas. */
+.uex-negotiations-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.uex-negotiations-page > .page-body {
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.uex-negotiations-page > .uex-negotiations-body.has-selected-thread {
+  flex: 1 1 auto;
+  height: auto !important;
+  overflow: hidden;
+}
+
+.uex-negotiations-page .uex-thread-shell {
+  min-height: 0;
+  max-height: 100%;
+}
+
+
+/* === REFINAMENTO GLOBAL DE NAVEGAÇÃO E ESPAÇO === */
+:root {
+  --sidebar-width: 278px;
+  --sidebar-collapsed-width: 72px;
+}
+
+/* Barras de rolagem discretas e consistentes em chats, listas, tracking e administração. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.48) rgba(10, 14, 24, 0.55);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0.78), rgba(5, 7, 12, 0.9));
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.75), rgba(99, 102, 241, 0.68));
+  border: 2px solid rgba(5, 7, 12, 0.72);
+  border-radius: 10px;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.22);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.95), rgba(129, 140, 248, 0.9));
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.46);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.main-content {
+  min-height: 0;
+}
+
+.main-content > .page-transition-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-content > .page-transition-shell > [data-active-page] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Botão único e discreto para liberar ou recuperar espaço vertical. */
+.page-header-toggle {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 4px 8px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 5px;
+  background: rgba(5, 7, 12, 0.72);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 700 9px 'Exo 2', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+}
+
+.page-header-toggle:hover {
+  color: var(--accent-primary);
+  border-color: rgba(56, 189, 248, 0.52);
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.16);
+}
+
+.page-header-collapsed .page-header {
+  flex: 0 0 35px;
+  min-height: 35px;
+  max-height: 35px;
+  padding: 6px 52px 6px 18px !important;
+  overflow: hidden;
+  border-bottom-color: rgba(56, 189, 248, 0.2);
+  background: linear-gradient(90deg, rgba(10, 14, 24, 0.96), rgba(10, 14, 24, 0.72));
+}
+
+.page-header-collapsed .page-header > * {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-5px);
+}
+
+.page-header-collapsed .page-header-toggle {
+  color: var(--accent-primary);
+  border-color: rgba(56, 189, 248, 0.42);
+}
+
+/* Menu aberto: espaço suficiente para nomes longos como Acompanhamento Wikelo. */
+.app:not(.sidebar-collapsed) .sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+}
+
+.app:not(.sidebar-collapsed) .nav-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app:not(.sidebar-collapsed) .nav-item {
+  min-width: 0;
+}
+
+/* Menu recolhido: cada ícone tem uma célula estável, sem compressão da grid. */
+.app.sidebar-collapsed .sidebar {
+  width: var(--sidebar-collapsed-width);
+  min-width: var(--sidebar-collapsed-width);
+}
+
+.app.sidebar-collapsed .sidebar-logo {
+  min-height: 72px;
+  justify-content: center;
+  padding: 10px 8px;
+}
+
+.app.sidebar-collapsed .sidebar-logo .logo-text,
+.app.sidebar-collapsed .nav-group-header,
+.app.sidebar-collapsed .nav-item-label,
+.app.sidebar-collapsed .nav-item-badge,
+.app.sidebar-collapsed .nav-arrow,
+.app.sidebar-collapsed .sidebar-footer {
+  display: none !important;
+}
+
+.app.sidebar-collapsed .sidebar-nav {
+  min-width: 0;
+  padding: 10px 8px;
+  gap: 6px;
+}
+
+.app.sidebar-collapsed .nav-group {
+  min-width: 0;
+  width: 100%;
+  margin-bottom: 3px;
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.app.sidebar-collapsed .nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app.sidebar-collapsed .nav-item {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 0 !important;
+  border-radius: 7px;
+  transform: none;
+}
+
+.app.sidebar-collapsed .nav-item:hover {
+  transform: translateY(-1px);
+}
+
+.app.sidebar-collapsed .nav-item-icon {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  flex: 0 0 28px;
+}
+
+@media (max-width: 980px) {
+  :root { --sidebar-width: 238px; }
+}
+
+@media (max-width: 760px) {
+  :root { --sidebar-width: 214px; }
+
+  .page-header-toggle span {
+    display: none;
+  }
+
+  .page-header-toggle {
+    width: 28px;
+    justify-content: center;
+    padding: 4px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root { --sidebar-width: 214px; --sidebar-collapsed-width: 68px; }
+}
+
+
+/* Correção final do menu recolhido: nunca deixar um grupo virar apenas uma borda vazia. */
+.app.sidebar-collapsed .sidebar .nav-group-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 31px;
+  padding: 3px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-heading {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-icon,
+.app.sidebar-collapsed .sidebar .nav-item-icon {
+  display: grid !important;
+  place-items: center;
+  visibility: visible !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-icon svg,
+.app.sidebar-collapsed .sidebar .nav-item-icon svg {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px;
+  min-height: 16px;
+  visibility: visible !important;
+  opacity: 1 !important;
+  stroke: currentColor !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-copy,
+.app.sidebar-collapsed .sidebar .nav-group-meta,
+.app.sidebar-collapsed .sidebar .nav-item-label,
+.app.sidebar-collapsed .sidebar .nav-item-badge,
+.app.sidebar-collapsed .sidebar .nav-arrow {
+  display: none !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group:has(.nav-group-items:empty) {
+  display: none;
+}
+
+
+/* Correção anti-sobreposição: modo recolhido em fluxo vertical único. */
+.app.sidebar-collapsed .sidebar-nav {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 7px !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group {
+  position: relative !important;
+  display: flex !important;
+  flex: 0 0 auto !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 4px !important;
+  overflow: visible !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-header {
+  position: relative !important;
+  display: flex !important;
+  flex: 0 0 32px !important;
+  width: 100% !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-group-items {
+  position: relative !important;
+  display: flex !important;
+  flex: 0 0 auto !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-item {
+  position: relative !important;
+  display: flex !important;
+  flex: 0 0 38px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none;
+}
+
+.app.sidebar-collapsed .sidebar .nav-item + .nav-item {
+  margin-top: 0 !important;
+}
+
+.app.sidebar-collapsed .sidebar .nav-item-icon {
+  position: relative !important;
+  display: grid !important;
+  flex: 0 0 28px !important;
+  width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+}

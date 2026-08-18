@@ -234,6 +234,7 @@ const NAV_GROUPS = [
 const PAGES = NAV_GROUPS.flatMap(g => g.pages);
 const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
 const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
+const PAGE_HEADER_COLLAPSED_KEY = 'sc_page_header_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
@@ -247,6 +248,9 @@ export default function App() {
       if (saved !== null) return saved === '1';
     } catch {}
     return typeof window !== 'undefined' && window.innerWidth <= 560;
+  });
+  const [pageHeaderCollapsed, setPageHeaderCollapsed] = useState(() => {
+    try { return localStorage.getItem(PAGE_HEADER_COLLAPSED_KEY) === '1'; } catch { return false; }
   });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
@@ -283,6 +287,14 @@ export default function App() {
     setSidebarCollapsed(prev => {
       const next = !prev;
       try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
+
+  function togglePageHeader() {
+    setPageHeaderCollapsed(previous => {
+      const next = !previous;
+      try { localStorage.setItem(PAGE_HEADER_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
       return next;
     });
   }
@@ -359,7 +371,7 @@ export default function App() {
   const customCount = sets.filter(s=>s.is_custom).length;
 
   return (
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} visual-mode-${visualMode}`}>
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${pageHeaderCollapsed ? 'page-header-collapsed' : ''} visual-mode-${visualMode}`}>
       <VisualEffectsLayer mode={visualMode} activePage={activePage} />
       <BorderGlowController mode={visualMode} />
       <CardNavEnhancer mode={visualMode} />
@@ -413,6 +425,16 @@ export default function App() {
       </aside>
 
       <main className="main-content">
+        <button
+          type="button"
+          className="page-header-toggle"
+          onClick={togglePageHeader}
+          aria-pressed={pageHeaderCollapsed}
+          title={pageHeaderCollapsed ? 'Expandir informações da tela' : 'Recolher informações da tela'}
+        >
+          {pageHeaderCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span>{pageHeaderCollapsed ? 'Expandir detalhes' : 'Recolher detalhes'}</span>
+        </button>
         <AnimatedContent key={activePage} className="page-transition-shell" direction="vertical" distance={18} duration={0.45} allowMotion={visualMode !== 'off'}>
           <div data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}

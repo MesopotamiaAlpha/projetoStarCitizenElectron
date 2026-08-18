@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { getMissionAdminOptions, loadMissionAdmin, MISSION_ADMIN_UPDATED_EVENT } from '../data/missionAdmin';
 import {
+  appendMissionAutoMonitorEvent,
+  upsertAutomaticMissionRecord,
   clearMissionAutoMonitorEvents,
   getMissionAutoMonitorStats,
   loadMissionAutoMonitor,
@@ -2543,7 +2545,7 @@ function autoMonitorEventTitle(event) {
   return event.type === 'blueprint_received' ? (event.productName || 'Blueprint recebido') : (event.debugName || 'Missão detectada no Game.log');
 }
 
-function MissionAutoInlinePanel() {
+function MissionAutoInlinePanel({ onAutomaticEvent }) {
   const [monitor, setMonitor] = useState(() => loadMissionAutoMonitor());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -2552,25 +2554,94 @@ function MissionAutoInlinePanel() {
   const [showHistory, setShowHistory] = useState(false);
 
   const refreshLocal = useCallback(() => setMonitor(loadMissionAutoMonitor()), []);
+  const reconcileActiveMissions = useCallback((status) => {
+    const active = Array.isArray(status?.activeMissions) ? status.activeMissions : [];
+    if (!active.length || typeof onAutomaticEvent !== 'function') return;
+    console.info('[MissionAutoMonitor][panel][reconcile.active_from_status]', { count: active.length, guids: active.map(item => item.guid) });
+    active.forEach(mission => onAutomaticEvent({
+      type: 'mission_start',
+      guid: mission.guid,
+      debugName: mission.debugName,
+      generator: mission.generator,
+      contractDefinitionId: mission.contractDefinitionId,
+      reward: mission.reward,
+      startTs: mission.startTs,
+      ts: mission.startTs,
+      channel: status.channel || mission.channel || 'UNKNOWN',
+      source: 'watcher_status_reconciliation',
+    }));
+  }, [onAutomaticEvent]);
   const refreshStatus = useCallback(async () => {
+    console.info('[MissionAutoMonitor][panel][status.request]');
     const api = window.electronAPI;
-    if (!api?.missionMonitorStatus) return;
+    if (!api?.missionMonitorStatus) return null;
     try {
       const status = await api.missionMonitorStatus();
+      console.info('[MissionAutoMonitor][panel][status.response]', status);
       setMonitor(setMissionAutoMonitorStatus(status));
+      reconcileActiveMissions(status);
+      return status;
     } catch (err) {
-      setError(err.message || 'Não foi possível consultar o monitor automático.');
+      const message = err.message || 'Não foi possível consultar o monitor automático.';
+      setMonitor(saveMissionAutoMonitor({ running: false, lastError: message, debug: { ...(loadMissionAutoMonitor().debug || {}), phase: 'status_error', lastErrorCode: 'STATUS_FAILED', lastErrorMessage: message } }));
+      setError(message);
+      return null;
     }
   }, []);
 
   useEffect(() => {
-    refreshStatus();
+    let cancelled = false;
+    const resumeMonitorIfEnabled = async () => {
+      const status = await refreshStatus();
+      if (cancelled || status?.running) return;
+      const saved = loadMissionAutoMonitor();
+      const api = window.electronAPI;
+      if (!saved.enabled || !saved.logPath || !api?.missionMonitorStart) return;
+      try {
+        const nextStatus = await api.missionMonitorStart(saved.logPath);
+        if (!cancelled) setMonitor(saveMissionAutoMonitor({ ...nextStatus, enabled: true, logPath: saved.logPath }));
+      } catch (err) {
+        if (!cancelled) {
+          const message = err.message || 'Não foi possível retomar o monitor automático.';
+          setMonitor(saveMissionAutoMonitor({ running: false, lastError: message, debug: { ...(loadMissionAutoMonitor().debug || {}), phase: 'resume_error', lastErrorCode: 'RESUME_FAILED', lastErrorMessage: message } }));
+          setError(err.message || 'Não foi possível retomar o monitor automático.');
+        }
+      }
+    };
+    resumeMonitorIfEnabled();
     window.addEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshLocal);
-    return () => window.removeEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshLocal);
-  }, [refreshLocal, refreshStatus]);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(MISSION_AUTO_MONITOR_UPDATED_EVENT, refreshLocal);
+    };
+  }, [refreshLocal, refreshStatus, reconcileActiveMissions]);
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    const cleanStatus = api?.onMissionMonitorStatus ? api.onMissionMonitorStatus(next => {
+      console.info('[MissionAutoMonitor][panel][ipc.status]', next);
+      setMonitor(setMissionAutoMonitorStatus(next));
+      reconcileActiveMissions(next);
+    }) : null;
+    const cleanEvent = api?.onMissionMonitorEvent ? api.onMissionMonitorEvent(event => {
+      console.info('[MissionAutoMonitor][panel][ipc.event]', event);
+      const next = appendMissionAutoMonitorEvent(event);
+      setMonitor(next);
+      if (typeof onAutomaticEvent === 'function') {
+        console.info('[MissionAutoMonitor][panel][frontend.upsert.start]', { type: event?.type, guid: event?.guid || null });
+        onAutomaticEvent(event);
+        console.info('[MissionAutoMonitor][panel][frontend.upsert.dispatched]', { type: event?.type, guid: event?.guid || null });
+      }
+    }) : null;
+    return () => {
+      if (typeof cleanStatus === 'function') cleanStatus();
+      if (typeof cleanEvent === 'function') cleanEvent();
+    };
+  }, [onAutomaticEvent]);
 
   const running = Boolean(monitor.running);
   const stats = getMissionAutoMonitorStats(monitor);
+  const debug = monitor.debug || {};
   const apiAvailable = Boolean(window.electronAPI?.missionMonitorStart && window.electronAPI?.missionMonitorStop);
 
   async function chooseLog() {
@@ -2582,12 +2653,15 @@ function MissionAutoInlinePanel() {
     }
     try {
       const selected = await api.missionMonitorChooseLog();
+      console.info('[MissionAutoMonitor][panel][choose.result]', { selected, type: typeof selected });
       if (selected) {
         setMonitor(saveMissionAutoMonitor({ logPath: selected, lastError: '' }));
         setMessage('Game.log selecionado. O monitor está pronto para ser ligado.');
       }
     } catch (err) {
-      setError(err.message || 'Não foi possível selecionar o Game.log.');
+      const message = err.message || 'Não foi possível selecionar o Game.log.';
+      setMonitor(saveMissionAutoMonitor({ lastError: message, debug: { ...(loadMissionAutoMonitor().debug || {}), phase: 'choose_error', lastErrorCode: 'CHOOSE_FAILED', lastErrorMessage: message } }));
+      setError(message);
     }
   }
 
@@ -2609,13 +2683,17 @@ function MissionAutoInlinePanel() {
         let logPath = monitor.logPath || '';
         if (!logPath) logPath = await api.missionMonitorChooseLog();
         if (!logPath) throw new Error('Escolha o arquivo Game.log antes de ligar o monitor.');
+        console.info('[MissionAutoMonitor][panel][start.request]', { logPath, type: typeof logPath });
         const status = await api.missionMonitorStart(logPath);
+        console.info('[MissionAutoMonitor][panel][start.response]', status);
         setMonitor(saveMissionAutoMonitor({ ...status, enabled: true, logPath }));
+        reconcileActiveMissions(status);
         setMessage('Monitor ligado. Novas missões serão preenchidas automaticamente nesta tela.');
       }
     } catch (err) {
-      setMonitor(saveMissionAutoMonitor({ lastError: err.message || 'Não foi possível alterar o monitor.' }));
-      setError(err.message || 'Não foi possível alterar o monitor.');
+      const message = err.message || 'Não foi possível alterar o monitor.';
+      setMonitor(saveMissionAutoMonitor({ running: false, lastError: message, debug: { ...(loadMissionAutoMonitor().debug || {}), phase: 'toggle_error', lastErrorCode: 'TOGGLE_FAILED', lastErrorMessage: message } }));
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -2629,7 +2707,7 @@ function MissionAutoInlinePanel() {
 
   return <section className={`mission-auto-inline ${expanded ? 'expanded' : 'collapsed'}`}>
     <div className="mission-auto-inline-header"><button type="button" className="mission-auto-inline-heading" onClick={() => setExpanded(value => !value)}><span className="mission-auto-inline-icon"><Radio size={16} /></span><span><strong>Monitor automático integrado</strong><small>Preenche o Rastreador com as missões detectadas no Game.log</small></span></button><div className="mission-auto-inline-actions"><span className={`mission-auto-connection ${running ? 'connected' : 'disconnected'}`}><span />{running ? `Ligado · ${monitor.channel || 'UNKNOWN'}` : 'Desligado'}</span><button type="button" className={`mission-auto-power ${running ? 'on' : 'off'}`} onClick={toggleMonitor} disabled={busy}>{busy ? 'Alterando...' : running ? <><Square size={12} /> Desligar</> : <><Play size={12} /> Ligar monitor</>}</button></div></div>
-    {expanded && <div className="mission-auto-inline-body"><div className="mission-auto-inline-boundary"><Tag size={14} /><span>As missões criadas automaticamente recebem a etiqueta <strong>AUTO</strong> e continuam dentro desta lista normal do Rastreador. Missões manuais não são alteradas.</span></div><div className="mission-auto-inline-source"><div className="mission-auto-path"><FileSearch size={14} /><span title={monitor.logPath || ''}>{monitor.logPath || 'Nenhum Game.log selecionado'}</span></div><button type="button" className="mission-auto-secondary-button" onClick={chooseLog} disabled={running}><FolderOpen size={13} /> Escolher Game.log</button><button type="button" className="mission-auto-secondary-button" onClick={refreshStatus}><RefreshCw size={13} /> Atualizar</button></div>{error && <div className="mission-auto-error"><AlertTriangle size={13} />{error}</div>}{message && <div className="mission-auto-success"><CheckCircle2 size={13} />{message}</div>}<div className="mission-auto-inline-stats"><span><strong>{stats.active}</strong> ativas</span><span><strong>{stats.completed}</strong> concluídas</span><span><strong>{stats.ended}</strong> encerradas</span><span><strong>{stats.blueprints}</strong> blueprints</span><span><strong>{stats.totalEvents}</strong> eventos</span></div><div className="mission-auto-inline-footer"><span>{stats.active > 0 ? `${stats.active} missão(ões) acompanhada(s) agora` : 'Nenhuma missão automática em andamento'}</span><div><button type="button" className="mission-auto-text-button" onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Ocultar eventos' : 'Ver eventos'}</button><button type="button" className="mission-auto-text-button danger" onClick={clearAutoHistory} disabled={!stats.totalEvents}>Limpar histórico</button></div></div>{showHistory && <div className="mission-auto-inline-history">{(monitor.events || []).slice(0, 8).map(event => <div key={event.eventId} className="mission-auto-inline-event"><span className="mission-auto-badge"><Tag size={9} /> AUTO</span><div><strong>{autoMonitorEventTitle(event)}</strong><small>{event.type === 'mission_complete' ? 'Missão concluída' : event.type === 'mission_ended' ? (event.completionLabel || 'Missão encerrada') : event.type === 'mission_start' ? 'Missão iniciada' : event.type === 'blueprint_received' ? 'Blueprint recebido' : event.type}</small></div><time>{autoMonitorDate(event.ts)}</time></div>)}{!monitor.events?.length && <div className="mission-auto-inline-no-events">Nenhum evento automático registrado.</div>}</div>}<div className="mission-auto-inline-note">O monitor lê somente o arquivo local do jogo e não altera os arquivos do Star Citizen. Desligar interrompe apenas novas capturas.</div></div>}
+    {expanded && <div className="mission-auto-inline-body"><div className="mission-auto-inline-boundary"><Tag size={14} /><span>As missões criadas automaticamente recebem a etiqueta <strong>AUTO</strong> e continuam dentro desta lista normal do Rastreador. Missões manuais não são alteradas.</span></div><div className="mission-auto-inline-source"><div className="mission-auto-path"><FileSearch size={14} /><span title={monitor.logPath || ''}>{monitor.logPath || 'Nenhum Game.log selecionado'}</span></div><button type="button" className="mission-auto-secondary-button" onClick={chooseLog} disabled={running}><FolderOpen size={13} /> Escolher Game.log</button><button type="button" className="mission-auto-secondary-button" onClick={refreshStatus}><RefreshCw size={13} /> Atualizar</button></div><details className="mission-auto-debug"><summary>Diagnóstico do leitor</summary><div className="mission-auto-debug-grid"><span>Fase: <strong>{debug.phase || 'idle'}</strong></span><span>Arquivo: <strong>{debug.fileExists ? (debug.fileReadable ? 'legível' : 'encontrado, não legível') : 'não encontrado'}</strong></span><span>Código: <strong>{debug.lastErrorCode || '—'}</strong></span><span>Leituras: <strong>{debug.readCount || 0}</strong></span><span>Linhas lidas: <strong>{debug.linesRead || 0}</strong></span><span>Linhas processadas: <strong>{debug.linesProcessed || 0}</strong></span><span>Bytes: <strong>{debug.bytesRead || 0}</strong></span><span>Eventos: <strong>{debug.eventsEmitted || 0}</strong></span><span>Posição: <strong>{debug.position || 0} / {debug.fileSize || 0}</strong></span><span>Candidatas: <strong>{debug.candidateMatches || 0}</strong></span><span>Último padrão: <strong>{debug.lastMatch || 'nenhum'}</strong></span><span>Etapas: <strong>{(debug.trace || []).length}</strong></span><span>Última etapa: <strong>{debug.trace?.[debug.trace.length - 1]?.step || 'nenhuma'}</strong></span></div><pre>{JSON.stringify({ lastError: monitor.lastError || null, lastErrorMessage: debug.lastErrorMessage || null, pendingAccepted: debug.pendingAccepted || null, patternMatches: debug.patternMatches || {}, lastCandidate: debug.lastCandidate || null, candidateHistory: debug.candidateHistory || [], lastLinePreview: debug.lastLinePreview || '', lastFileCheckAt: debug.lastFileCheckAt || null, lastReadAt: debug.lastReadAt || null, lastLineAt: debug.lastLineAt || null, trace: debug.trace || [] }, null, 2)}</pre></details>{error && <div className="mission-auto-error"><AlertTriangle size={13} />{error}</div>}{message && <div className="mission-auto-success"><CheckCircle2 size={13} />{message}</div>}<div className="mission-auto-inline-stats"><span><strong>{stats.active}</strong> ativas</span><span><strong>{stats.completed}</strong> concluídas</span><span><strong>{stats.ended}</strong> encerradas</span><span><strong>{stats.blueprints}</strong> blueprints</span><span><strong>{stats.totalEvents}</strong> eventos</span></div><div className="mission-auto-inline-footer"><span>{stats.active > 0 ? `${stats.active} missão(ões) acompanhada(s) agora` : 'Nenhuma missão automática em andamento'}</span><div><button type="button" className="mission-auto-text-button" onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Ocultar eventos' : 'Ver eventos'}</button><button type="button" className="mission-auto-text-button danger" onClick={clearAutoHistory} disabled={!stats.totalEvents}>Limpar histórico</button></div></div>{showHistory && <div className="mission-auto-inline-history">{(monitor.events || []).slice(0, 8).map(event => <div key={event.eventId} className="mission-auto-inline-event"><span className="mission-auto-badge"><Tag size={9} /> AUTO</span><div><strong>{autoMonitorEventTitle(event)}</strong><small>{event.type === 'mission_complete' ? 'Missão concluída' : event.type === 'mission_ended' ? (event.completionLabel || 'Missão encerrada') : event.type === 'mission_start' ? 'Missão iniciada' : event.type === 'blueprint_received' ? 'Blueprint recebido' : event.type}</small></div><time>{autoMonitorDate(event.ts)}</time></div>)}{!monitor.events?.length && <div className="mission-auto-inline-no-events">Nenhum evento automático registrado.</div>}</div>}<div className="mission-auto-inline-note">O monitor lê somente o arquivo local do jogo e não altera os arquivos do Star Citizen. Desligar interrompe apenas novas capturas.</div></div>}
   </section>;
 }
 
@@ -2672,6 +2750,11 @@ export default function MissionTrackerPage() {
   const {lib:objLibrary,addToLib}=useObjLibrary();
 
   function persistMissions(updated){setMissions(updated);save(MISSIONS_KEY,updated);}
+  const handleAutomaticEvent = useCallback((event) => {
+    const typeNames = getMissionAdminOptions('types', '', missionCatalog).map(option => option.name);
+    const mission = upsertAutomaticMissionRecord(event, typeNames);
+    if (mission) setMissions(load(MISSIONS_KEY, []));
+  }, [missionCatalog]);
   function persistLosses(updated) {setLosses(updated);save(LOSSES_KEY,updated);}
 
   async function handleSave(m) {
@@ -2753,6 +2836,7 @@ export default function MissionTrackerPage() {
   const activeCount=missions.filter(m=>m.status==='Active').length;
   const buggedCount=missions.filter(m=>m.status==='Bugged').length;
   const pendingAutoCount=missions.filter(hasPendingAutoReward).length;
+  const automaticActiveMissions = missions.filter(mission => mission.auto === true && mission.status === 'Active');
 
   const TABS=[
     {id:'today',   label:'Hoje',          icon:Calendar,  badge:todayM.length>0?String(todayM.length):null},
@@ -2786,7 +2870,8 @@ export default function MissionTrackerPage() {
         </div>
       </div>
 
-      <MissionAutoInlinePanel />
+      <MissionAutoInlinePanel onAutomaticEvent={handleAutomaticEvent} />
+
 
       {/* Tabs */}
       <div style={{padding:'0 32px',borderBottom:'1px solid var(--border-subtle)',background:'var(--bg-panel)',display:'flex',flexShrink:0}}>
