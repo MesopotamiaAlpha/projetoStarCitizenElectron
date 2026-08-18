@@ -28,6 +28,9 @@ import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
 import ContextHelpOverlay from './components/ContextHelpOverlay';
+import VisualEffectsLayer from './components/VisualEffectsLayer';
+import AnimatedContent from './components/AnimatedContent';
+import InteractionFX from './components/InteractionFX';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
 import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
@@ -237,6 +240,13 @@ export default function App() {
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
   });
+  const [visualMode, setVisualMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('companheiro_emoto_visual_mode_v2');
+      if (saved === 'off' || saved === 'economic' || saved === 'immersive') return saved;
+    } catch {}
+    return 'economic';
+  });
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -262,6 +272,14 @@ export default function App() {
     setSidebarCollapsed(prev => {
       const next = !prev;
       try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
+
+  function cycleVisualMode() {
+    setVisualMode(previous => {
+      const next = previous === 'off' ? 'economic' : previous === 'economic' ? 'immersive' : 'off';
+      try { localStorage.setItem('companheiro_emoto_visual_mode_v2', next); } catch {}
       return next;
     });
   }
@@ -330,7 +348,8 @@ export default function App() {
   const customCount = sets.filter(s=>s.is_custom).length;
 
   return (
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} visual-mode-${visualMode}`}>
+      <VisualEffectsLayer mode={visualMode} activePage={activePage} />
       <aside className="sidebar">
         <div className="sidebar-logo">
           <EmotoIcon size={30} className="logo-icon" />
@@ -369,12 +388,17 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-badge">v1.6.5</span>
+          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 2.0.0" aria-label={`Efeitos visuais: ${visualMode}`}>
+            <span className="visual-mode-dot" />
+            <span>{visualMode === 'off' ? 'Efeitos desligados' : visualMode === 'economic' ? 'Efeitos econômicos' : 'Efeitos imersivos'}</span>
+          </button>
+          <span className="version-badge">v2.0.0</span>
         </div>
       </aside>
 
       <main className="main-content">
-        <div key={activePage} className="page-transition-shell" data-active-page={activePage}>
+        <AnimatedContent key={activePage} className="page-transition-shell" direction="vertical" distance={18} duration={0.45}>
+          <div data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
           {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
           {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
@@ -404,9 +428,11 @@ export default function App() {
           {activePage==='notes'      && <NotesPage />}
           {activePage==='system-admin' && <SystemAdminPage />}
           {activePage==='useful-links' && <UsefulLinksPage />}
-        </div>
+          </div>
+        </AnimatedContent>
       </main>
 
+      <InteractionFX />
       <UexNotificationBell onNavigate={goToPage} />
       <CalculatorWidget />
       <ContextHelpOverlay />
