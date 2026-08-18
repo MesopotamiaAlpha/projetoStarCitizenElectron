@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** permitir que outro programador consiga instalar, executar, entender, corrigir, estender e empacotar o Companheiro Emoto sem depender do histórico de desenvolvimento.
 
-O **Companheiro Emoto** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
+O **Companheiro Emoto 2.0.0** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. A versão 2.0.0 adiciona uma camada visual opcional com PixiJS 8 para efeitos espaciais e HUD futurista, mantendo os componentes funcionais em React/HTML. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
 
 O projeto é um aplicativo Electron: o React representa a interface; o processo principal do Electron controla a janela, o banco SQLite em memória, o acesso ao sistema de arquivos, a proxy HTTPS da UEX, as traduções e os backups; o `preload.js` expõe uma API IPC limitada ao renderer. Essa separação usa `contextIsolation`, `contextBridge`, `nodeIntegration: false` e sandbox no renderer. O `contextBridge` é a forma recomendada pelo Electron para expor APIs específicas do preload sem entregar APIs poderosas diretamente à página carregada [1].
 
@@ -19,6 +19,8 @@ O projeto é um aplicativo Electron: o React representa a interface; o processo 
 | Empacotamento | `electron-builder` | Geração de instalador NSIS e ZIP exclusivamente para Windows. |
 | Ícones | `lucide-react` + `electron-icons/icon.ico` | Ícones da interface e ícone do aplicativo Windows. |
 | Estilos | `src/App.css` | Tema escuro sci-fi, grids, responsividade, cards, sidebar, modais e componentes compartilhados. |
+| Efeitos visuais | `pixi.js` 8 | Canvas 2D acelerado para estrelas e ambientação espacial decorativa. A camada não recebe cliques nem armazena dados. O antigo Grid Scan foi removido. |
+| Microanimações | `gsap` + componentes inspirados em React Bits | Entradas de páginas, faíscas de clique, foco futurista, feedback de ações e transições suaves. Os componentes são locais e modulares, conforme a filosofia do React Bits. |
 
 O `sql.js` não é um servidor SQLite separado. O objeto `db` vive no processo principal. O banco é carregado do arquivo, alterado em memória e salvo usando `db.export()`. Portanto, qualquer nova operação que altere tabelas deve chamar `saveDb()` depois da alteração.
 
@@ -73,7 +75,7 @@ projetoStarCitizenElectron/
 │   ├── index.js                Ponto de entrada React
 │   ├── App.js                  Shell, menu e roteamento por estado
 │   ├── App.css                 Tema e responsividade global
-│   ├── components/             Widgets globais, ErrorBoundary, ajuda contextual, anexos, calculadora e sininho
+│   ├── components/             Widgets globais, PixiVisualLayer, ErrorBoundary, ajuda contextual, anexos, calculadora e sininho
 │   ├── data/                   Regras de domínio, persistência local e eventos entre telas
 │   └── pages/                  Telas funcionais do aplicativo
 ├── scripts/
@@ -93,7 +95,25 @@ projetoStarCitizenElectron/
 
 `src/pages/materialQueue.js` é um helper legado. O arquivo canônico usado por `BlueprintPage` e `MaterialTrackerPage` é `src/data/materialQueue.js`. Não duplique correções nos dois arquivos sem confirmar quais importações existem.
 
-## 4. Arquitetura de execução
+## 4. Camada visual PixiJS 8 da versão 2.0.0
+
+`src/components/PixiVisualLayer.js` cria uma camada visual independente do conteúdo React. O ticker usa uma instância independente de `Ticker` para manter compatibilidade com ambientes em que `Application.ticker` não é exposto. Ela utiliza `Application.init()` de forma assíncrona, redimensiona o canvas ao espaço da janela e destrói o renderer ao desmontar ou trocar o modo visual. O canvas usa `pointer-events: none`, portanto não bloqueia a sidebar, os formulários, os cards nem os modais.
+
+A interface possui três modos persistidos em `localStorage`:
+
+| Modo | Uso | Custo esperado |
+|---|---|---:|
+| Desligado | Remove completamente os efeitos | Mínimo |
+| Econômico | Campo reduzido de estrelas, HUD discreto e ticker limitado | Baixo |
+| Imersivo | Mais partículas e HUD mais visível | Moderado |
+
+O modo pode ser alternado pelo botão no rodapé da barra lateral. O PixiJS deve permanecer destinado a ambientação visual; textos, inputs, tabelas, filtros, acessibilidade e regras de negócio continuam no React. Não coloque milhares de registros do Inventário ou das Armaduras dentro do canvas.
+
+Para futuras alterações, preserve estas regras: destrua a instância Pixi no cleanup do `useEffect`, limite o FPS para efeitos decorativos, não use filtros pesados globalmente, mantenha `pointer-events: none` no canvas e forneça sempre um fallback funcional com o modo desligado.
+
+A integração inspirada no React Bits é modular e local: `AnimatedContent.js` usa GSAP e IntersectionObserver para entradas, `InteractionFX.js` cria faíscas curtas em cliques, `BorderGlowController.js` administra o brilho contextual de bordas, `GlareProfileController.js` administra tilt/glare em Inventário e Hangar, `ContextualSpotlightController.js` mostra um spotlight ciano suave atrás do elemento sob o cursor e `CalculatorWidget.js` concentra magnetismo, tilt e ripple da Calculadora. Não aplique mais de dois ou três efeitos fortes na mesma tela. Respeite `prefers-reduced-motion` e mantenha as microinterações fora das listas de milhares de registros.
+
+## 5. Arquitetura de execução
 
 O fluxo normal de inicialização é:
 
@@ -947,7 +967,7 @@ Sempre que uma nova função for adicionada, atualize o componente responsável,
 
 Ao corrigir um bug, registre no README o sintoma, a causa, os arquivos alterados, a regra que não pode ser quebrada e o comando usado para validar. Isso é especialmente importante para conversões de carga, qualidade mínima, IPC, integração UEX e migração do diretório central.
 
-Para qualquer mudança visual, prefira classes em `src/App.css` quando o comportamento for compartilhado. Use estilos inline apenas para valores derivados do estado, como cor de um minério, largura de uma barra de progresso ou destaque de um status. Toda tela com lista potencialmente grande precisa definir explicitamente qual container rola e preservar `min-height: 0` quando estiver dentro de um layout flex/grid.
+Para qualquer mudança visual, prefira classes em `src/App.css` quando o comportamento for compartilhado. Use estilos inline apenas para valores derivados do estado, como cor de um minério, largura de uma barra de progresso ou destaque de um status. Toda tela com lista potencialmente grande precisa definir explicitamente qual container rola e preservar `min-height: 0` quando estiver dentro de um layout flex/grid. Hover não deve alterar a geometria do layout: prefira borda, sombra e brilho a `translateY` ou `scale` em cards que contêm números e textos.
 
 ## 25. Checklist atualizado de entrega
 
@@ -976,7 +996,7 @@ Esta seção registra as alterações mais recentes para que a manutenção futu
 
 ### 26.1 Inventário global e localização padrão
 
-`src/pages/InventoryPage.js` mantém dois níveis de busca. Quando nenhum sistema está selecionado, a tela inicial exibe o campo **Pesquisa global do Inventário**, junto de **Selecione um Sistema Espacial**. A busca consulta `regularItems`, soma `quantity` e agrupa os resultados por `system` e `location_name`. O resumo global não deve misturar registros do Baú Desconhecido.
+`src/pages/InventoryPage.js` mantém dois níveis de busca. Quando nenhum sistema está selecionado, a tela inicial exibe o campo **Pesquisa global do Inventário**, junto de **Selecione um Sistema Espacial**. A busca consulta `regularItems`, soma `quantity` e agrupa os resultados por `system` e `location_name`. Registros antigos sem destino definido continuam ocultos por compatibilidade e não entram no resumo global.
 
 A preferência de destino para novos cadastros está em `src/data/inventoryPreferences.js` e usa a chave `sc_inventory_preferences_v1`. Ela armazena `defaultDestination`, com sistema, tipo de local e localização. A preferência deve ser aplicada somente quando um novo item é criado; ao editar um item existente, o sistema não pode sobrescrever o local escolhido pelo usuário.
 
@@ -1009,7 +1029,7 @@ O despacho novo fica em `src/data/missionRewardDispatch.js`. Quando a missão é
 
 Missões falhadas, abandonadas ou encerradas sem sucesso não podem creditar recompensas. Se não houver local padrão, a recompensa não deve ser descartada: o despacho deve retornar estado pendente ou falha com motivo legível para o usuário. A operação precisa ser idempotente, pois a conclusão pode chegar por mais de um caminho: monitor automático, alteração manual de status ou reprocessamento do evento.
 
-O Baú Desconhecido (`src/data/unknownVault.js`, chave `sc_unknown_vault_v1`) continua existindo para compatibilidade com dados antigos e para outros fluxos que ainda dependam dele. O novo fluxo de conclusão de missão não deve criar novas recompensas de scrip ou Secure Drive no Baú Desconhecido.
+O Baú Desconhecido foi removido da interface, da Dashboard, das categorias de backup e dos fluxos ativos. `src/data/unknownVault.js` e a chave `sc_unknown_vault_v1` permanecem somente como camada de compatibilidade para testes, migrações e dados antigos; nenhum fluxo novo deve gravar nessa chave. As recompensas de missão usam exclusivamente `missionRewardDispatch.js` e o local padrão do Inventário.
 
 ### 26.4 Distribuição de loot
 
@@ -1047,7 +1067,7 @@ Ao adicionar uma nova chave de `localStorage`, inclua-a no fluxo de backup selet
 
 | Chave | Módulo ou dado |
 |---|---|
-| `sc_unknown_vault_v1` | Recompensas antigas do Baú Desconhecido. |
+| `sc_unknown_vault_v1` | Chave legada mantida somente para compatibilidade; não é exportada por novas categorias nem exibida na interface. |
 | `sc_missions_v2` | Missões, status, tempo e recompensas. |
 | `sc_inventory_preferences_v1` | Destino padrão de novos itens e recompensas. |
 | `sc_inventory_taxonomy_v1` | Categorias e subcategorias administráveis. |
@@ -1097,3 +1117,97 @@ A última validação registrada durante esta documentação foi de **15 suítes
 [4]: https://www.electron.build/configuration/nsis "electron-builder — configuração NSIS"
 
 O README deve permanecer sincronizado com o código. Quando uma função mudar de caminho, quando uma chave de armazenamento for criada ou quando uma nova rota for adicionada, atualize este documento na mesma alteração para que o próximo programador consiga manter o projeto sem depender do histórico da equipe.
+
+
+
+## 30. Interface visual 2.0.0 e responsividade
+
+Esta seção registra as alterações visuais recentes e deve ser consultada antes de modificar `src/App.css`, `src/components/CalculatorWidget.js` ou os controladores de efeitos.
+
+### 30.1 Componentes visuais
+
+| Componente | Responsabilidade | Regra de manutenção |
+|---|---|---|
+| `VisualEffectsLayer.js` | Estrelas e ambientação espacial decorativa. | Deve permanecer sem interação e com `pointer-events: none`. O antigo Grid Scan foi removido. |
+| `AnimatedContent.js` | Entrada de páginas com GSAP e IntersectionObserver. | Usar para conteúdo de tela; não animar milhares de registros individualmente. |
+| `InteractionFX.js` | Faíscas curtas em cliques. | Não duplicar em controles que já tenham ripple próprio. |
+| `BorderGlowController.js` | Brilho contextual de bordas em cards e painéis. | O brilho não deve alterar a geometria do layout. |
+| `GlareProfileController.js` | Tilt e glare 3D no Inventário e Hangar. | Preservar cleanup, limites de rotação e desempenho em listas grandes. |
+| `ContextualSpotlightController.js` | Spotlight ciano suave atrás do elemento sob o cursor. | Deve usar `pointer-events: none`, ficar atrás do conteúdo e não bloquear cliques. |
+| `VisualEffectsDiagnostics.js` | Diagnóstico técnico local dos efeitos. | Não incluir inventário, tokens ou dados pessoais no log. |
+| `CalculatorWidget.js` | Calculadora flutuante com Magic Bento. | Preservar a lógica SCU/cSCU e o estado `window.__EMOTO_CALCULATOR_DEBUG__`. |
+
+### 30.2 Diagnóstico FX e Calculadora
+
+Ao investigar a Calculadora, abra o widget, abra **Diagnóstico FX** e clique em **Atualizar**. O JSON deve registrar a existência do painel, a quantidade de teclas e os estados de spotlight, magnetismo, tilt e click effect:
+
+```json
+{
+  "calculator": {
+    "panelVisible": true,
+    "buttonCount": 19,
+    "spotlightBehindKeypad": true,
+    "magnetism": true,
+    "tilt": true,
+    "clickEffect": true
+  },
+  "contextualSpotlight": {
+    "enabled": true,
+    "activeTargets": 1
+  }
+}
+```
+
+O estado `window.__EMOTO_CALCULATOR_DEBUG__` existe enquanto a calculadora está aberta e registra `keypadButtons`, `spotlightVariables`, `magnetism`, `tilt`, `clickEffect`, `visualMode` e `reducedMotion`. O log exportado contém apenas informações técnicas locais.
+
+O spotlight da Calculadora é controlado por `--key-spotlight-x` e `--key-spotlight-y` em `.calculator-bento-keypad`. Use apenas ciano translúcido e mantenha a camada atrás dos botões, textos e ícones. Não introduza gradientes amarelos fortes ou `z-index` acima do conteúdo.
+
+### 30.3 Responsividade e estabilidade no hover
+
+O patch final de `src/App.css` aplica `box-sizing: border-box`, `min-width: 0`, `max-width: 100%`, `overflow-wrap: anywhere` e `word-break: break-word` nos principais cards e conteúdos. Ele também remove deslocamentos físicos de cards e botões no hover. O feedback visual deve usar borda, sombra, cor e spotlight, sem alterar a geometria do fluxo.
+
+Antes de adicionar uma regra de hover, confirme que ela não usa `translateY`, `scale`, mudança de `padding`, `font-size` ou altura em cards que exibem números. Para listas grandes, mantenha `min-height: 0` nos containers flex/grid e defina claramente qual elemento possui rolagem.
+
+Os grids principais usam breakpoints para telas médias e estreitas. Em janelas pequenas, Inventário, Hangar, Dashboard, Armaduras, Notas e demais grids densos devem poder usar `minmax(0, 1fr)` e uma coluna. Botões e textos devem respeitar `max-width: 100%` e permitir quebra quando necessário.
+
+### 30.4 Transições de tela e carregamento
+
+A troca de página é montada em `App.js` com `AnimatedContent key={activePage}`. A nova tela entra com elevação vertical curta, brilho holográfico ciano e uma varredura suave. Os primeiros registros de grids principais entram em cascata controlada; itens depois do limite aparecem imediatamente para evitar centenas de animações simultâneas em listas com mais de 2.000 registros.
+
+A camada visual respeita o modo **Desligado**, **Econômico** e **Imersivo**. O fallback sem efeitos deve continuar funcional. O comportamento de `prefers-reduced-motion` não pode ser removido sem uma justificativa de acessibilidade.
+
+### 30.5 Diagnóstico rápido de problemas de layout
+
+| Sintoma | Verificação | Correção |
+|---|---|---|
+| Número pula no hover | Procure `transform` em `:hover` e no controlador 3D. | Remova o deslocamento; mantenha sombra/brilho. |
+| Texto sai da caixa | Verifique `min-width: 0`, `max-width` e quebra de palavras. | Corrija o container, não aumente a largura fixa. |
+| Botão ultrapassa o card | Verifique padding, `white-space` e largura mínima. | Use `max-width: 100%`, `line-height` e `overflow-wrap`. |
+| Spotlight cobre texto | Verifique `z-index`, `isolation` e filhos posicionados. | Spotlight inferior, conteúdo acima e `pointer-events: none`. |
+| Tooltip é cortado | Verifique `overflow: hidden` e `contain: paint`. | Use `overflow: visible` ou portal para o tooltip. |
+| Janela estreita cria rolagem horizontal | Verifique larguras fixas e grids. | Use `minmax(0, 1fr)`, `min-width: 0` e rolagem localizada. |
+
+### 30.6 Validação obrigatória
+
+Antes de entregar qualquer alteração:
+
+```powershell
+npm run test
+npm run react-build
+npm run check:electron
+npm run verify
+```
+
+O comando `npm run verify` é o mínimo obrigatório. Na última validação desta revisão foram aprovados **24 suítes e 104 testes**, o build React foi compilado e os arquivos Electron passaram na checagem sintática.
+
+### 30.7 Regras de documentação futura
+
+Ao criar uma nova função, atualize o componente, o módulo de domínio, a persistência, a tabela de navegação e o troubleshooting. Ao criar uma chave de `localStorage`, inclua-a no backup seletivo quando representar dados do usuário. Segredos UEX nunca devem entrar em README, logs, testes, backups compartilhados ou commits.
+
+Para mudanças visuais compartilhadas, prefira classes em `src/App.css`. Para valores derivados do estado, como cor de minério ou largura de progresso, estilos inline continuam aceitáveis. Sempre registre no README o sintoma, a causa, os arquivos modificados e o comando usado para validar.
+
+### 30.8 Referências adicionais
+
+[5]: https://pixijs.com/8.x/guides/getting-started/intro "PixiJS 8 — Getting Started"
+[6]: https://reactbits.dev/get-started/index "React Bits — Getting Started"
+[7]: https://gsap.com/docs/v3/ "GSAP — Documentation"

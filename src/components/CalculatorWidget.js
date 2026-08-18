@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Calculator, GripHorizontal, RotateCcw, X } from 'lucide-react';
+import { gsap } from 'gsap';
 import { SCU_CALCULATOR_UNITS, calculateScuValue } from '../data/scuCalculator';
 
 function formatNumberForDisplay(value) {
@@ -68,6 +69,24 @@ export default function CalculatorWidget() {
   const [scuInputUnit, setScuInputUnit] = useState('SCU');
   const [scuOutputUnit, setScuOutputUnit] = useState('SCU');
   const [scuSummary, setScuSummary] = useState(null);
+  const panelRef = useRef(null);
+  const keypadRef = useRef(null);
+
+  function handleBentoPointerMove(event) {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    panel.style.setProperty('--bento-x', `${event.clientX - rect.left}px`);
+    panel.style.setProperty('--bento-y', `${event.clientY - rect.top}px`);
+  }
+
+  function handleKeypadPointerMove(event) {
+    const keypad = keypadRef.current;
+    if (!keypad) return;
+    const rect = keypad.getBoundingClientRect();
+    keypad.style.setProperty('--key-spotlight-x', `${event.clientX - rect.left}px`);
+    keypad.style.setProperty('--key-spotlight-y', `${event.clientY - rect.top}px`);
+  }
 
   function resetCalculator() {
     setExpression('');
@@ -146,6 +165,126 @@ export default function CalculatorWidget() {
   }
 
   useEffect(() => {
+    if (!open || !keypadRef.current) return undefined;
+
+    const keypad = keypadRef.current;
+    const buttons = Array.from(keypad.querySelectorAll('.calculator-bento-action'));
+    const systemReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    let visualMode = 'economic';
+    try { visualMode = window.localStorage.getItem('companheiro_emoto_visual_mode_v2') || 'economic'; } catch { /* storage indisponível: mantém efeitos econômicos */ }
+    const reducedMotion = systemReducedMotion && visualMode === 'off';
+    try {
+      window.__EMOTO_CALCULATOR_DEBUG__ = {
+        initialized: true,
+        open: true,
+        keypadExists: true,
+        keypadButtons: buttons.length,
+        spotlightBehindKeypad: true,
+        spotlightVariables: ['--key-spotlight-x', '--key-spotlight-y'],
+        magnetism: !reducedMotion,
+        tilt: !reducedMotion,
+        clickEffect: !reducedMotion,
+        reducedMotion,
+        visualMode,
+        updatedAt: new Date().toISOString(),
+      };
+    } catch { /* diagnóstico opcional não deve afetar a calculadora */ }
+
+    const handleEnter = event => {
+      if (reducedMotion) return;
+      const button = event.currentTarget;
+      gsap.to(button, { scale: 1.035, duration: 0.22, ease: 'power2.out', overwrite: true });
+    };
+
+    const handleMove = event => {
+      if (reducedMotion) return;
+      const button = event.currentTarget;
+      const rect = button.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const rotateX = ((y - centerY) / Math.max(centerY, 1)) * -7;
+      const rotateY = ((x - centerX) / Math.max(centerX, 1)) * 7;
+      const magnetX = (x - centerX) * 0.045;
+      const magnetY = (y - centerY) * 0.045;
+
+      gsap.to(button, {
+        x: magnetX,
+        y: magnetY,
+        rotateX,
+        rotateY,
+        transformPerspective: 800,
+        transformOrigin: 'center center',
+        duration: 0.12,
+        ease: 'power2.out',
+        overwrite: true,
+      });
+    };
+
+    const handleLeave = event => {
+      const button = event.currentTarget;
+      gsap.to(button, {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotateX: 0,
+        rotateY: 0,
+        duration: reducedMotion ? 0 : 0.28,
+        ease: 'power2.out',
+        overwrite: true,
+      });
+    };
+
+    const handleClick = event => {
+      if (reducedMotion) return;
+      const button = event.currentTarget;
+      const rect = button.getBoundingClientRect();
+      const radius = Math.max(rect.width, rect.height) * 1.5;
+      const ripple = document.createElement('span');
+      ripple.className = 'calculator-bento-click-ripple';
+      ripple.style.width = `${radius * 2}px`;
+      ripple.style.height = `${radius * 2}px`;
+      ripple.style.left = `${event.clientX - rect.left - radius}px`;
+      ripple.style.top = `${event.clientY - rect.top - radius}px`;
+      button.appendChild(ripple);
+      gsap.fromTo(ripple, { scale: 0, opacity: 0.72 }, {
+        scale: 1,
+        opacity: 0,
+        duration: 0.55,
+        ease: 'power2.out',
+        onComplete: () => ripple.remove(),
+      });
+    };
+
+    buttons.forEach(button => {
+      button.addEventListener('mouseenter', handleEnter);
+      button.addEventListener('mousemove', handleMove);
+      button.addEventListener('mouseleave', handleLeave);
+      button.addEventListener('click', handleClick);
+    });
+
+    return () => {
+      buttons.forEach(button => {
+        button.removeEventListener('mouseenter', handleEnter);
+        button.removeEventListener('mousemove', handleMove);
+        button.removeEventListener('mouseleave', handleLeave);
+        button.removeEventListener('click', handleClick);
+        gsap.killTweensOf(button);
+      });
+      keypad.querySelectorAll('.calculator-bento-click-ripple').forEach(ripple => ripple.remove());
+      try {
+        window.__EMOTO_CALCULATOR_DEBUG__ = {
+          ...(window.__EMOTO_CALCULATOR_DEBUG__ || {}),
+          initialized: false,
+          open: false,
+          updatedAt: new Date().toISOString(),
+        };
+      } catch { /* diagnóstico opcional */ }
+    };
+  }, [open]);
+
+  useEffect(() => {
     function handleKeyDown(event) {
       if (!open) return;
       const key = event.key;
@@ -191,7 +330,7 @@ export default function CalculatorWidget() {
         </button>
       )}
       {open && (
-        <div className="calculator-panel" style={panelStyle} role="dialog" aria-label="Calculadora flutuante">
+        <div ref={panelRef} className="calculator-panel calculator-magic-bento" onPointerMove={handleBentoPointerMove} style={panelStyle} role="dialog" aria-label="Calculadora flutuante">
           <div className="calculator-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 11px',background:'rgba(56,189,248,0.07)',borderBottom:'1px solid rgba(56,189,248,0.18)'}}>
             <div style={{display:'flex',alignItems:'center',gap:7,color:'var(--accent-primary)',fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase'}}><Calculator size={14}/> Calculadora</div>
             <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -200,13 +339,13 @@ export default function CalculatorWidget() {
             </div>
           </div>
 
-          <div style={{display:'flex',gap:6,padding:'9px 11px 0'}}>
+          <div className="calculator-bento-card calculator-bento-modes" style={{display:'flex',gap:6,padding:'9px 11px 0'}}>
             <button type="button" onClick={()=>changeMode('normal')} style={modeButtonStyle(calculatorMode==='normal')}>Modo Normal</button>
             <button type="button" onClick={()=>changeMode('scu')} style={modeButtonStyle(calculatorMode==='scu')}>Modo SCU</button>
           </div>
 
           {calculatorMode === 'scu' && (
-            <div style={{padding:'8px 11px 0'}}>
+            <div className="calculator-bento-card calculator-bento-units" style={{padding:'8px 11px 0'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
                 <select aria-label="Unidade de entrada SCU" value={scuInputUnit} onChange={e=>{setScuInputUnit(e.target.value);setScuSummary(null);}} style={unitSelectStyle}>
                   {SCU_CALCULATOR_UNITS.map(unit=><option key={unit} value={unit}>{unit}</option>)}
@@ -220,7 +359,7 @@ export default function CalculatorWidget() {
             </div>
           )}
 
-          <div className="calculator-display" style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
+          <div className="calculator-display calculator-bento-card" style={{padding:'12px 12px 9px',background:'rgba(0,0,0,0.12)'}}>
             <div style={{minHeight:18,textAlign:'right',color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace',fontSize:12,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatExpressionForDisplay(expression) || '0'}</div>
             <div style={{minHeight:32,textAlign:'right',color:error?'var(--accent-red)':'var(--text-primary)',fontFamily:'Michroma,sans-serif',fontSize:22,fontWeight:800,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayResult}</div>
             {calculatorMode === 'scu' && scuSummary && (
@@ -228,9 +367,9 @@ export default function CalculatorWidget() {
             )}
           </div>
 
-          <div className="calculator-keypad" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
+          <div ref={keypadRef} className="calculator-keypad calculator-bento-card calculator-bento-keypad" onPointerMove={handleKeypadPointerMove} style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:11}}>
             {BUTTONS.map((button,index)=>(
-              <button className={`calculator-key ${button.tone ? `tone-${button.tone}` : ''}`} key={`${button.label}-${index}`} onClick={()=>handleButton(button)} style={buttonStyle(button)}>
+              <button className={`calculator-key calculator-bento-action ${button.tone ? `tone-${button.tone}` : ''}`} data-bento-card="true" key={`${button.label}-${index}`} onClick={()=>handleButton(button)} style={buttonStyle(button)}>
                 {button.icon ? <button.icon size={15}/> : button.label}
               </button>
             ))}

@@ -2,11 +2,11 @@ import { useEffect } from 'react';
 
 const INTERACTIVE_SELECTOR = 'button, a, [role="button"], input[type="checkbox"], input[type="radio"]';
 
-export default function InteractionFX() {
+export default function InteractionFX({ allowMotion = false }) {
   useEffect(() => {
     let lastSpark = 0;
     function handleClick(event) {
-      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      if (!allowMotion && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       const target = event.target?.closest?.(INTERACTIVE_SELECTOR);
       if (!target || target.disabled || target.dataset.noSpark === 'true') return;
       const now = performance.now();
@@ -23,7 +23,7 @@ export default function InteractionFX() {
 
     document.addEventListener('click', handleClick, true);
     return () => document.removeEventListener('click', handleClick, true);
-  }, []);
+  }, [allowMotion]);
 
   return null;
 }

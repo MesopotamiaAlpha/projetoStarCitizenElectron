@@ -54,7 +54,6 @@ export default function VisualEffectsLayer({ mode = 'economic', activePage = 'da
           }}
         />
       ))}
-      <span className="visual-effects-scanner" />
       <span className="visual-effects-corner visual-effects-corner-top" />
       <span className="visual-effects-corner visual-effects-corner-bottom" />
     </div>

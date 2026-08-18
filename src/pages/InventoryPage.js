@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
@@ -1354,9 +1355,9 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
       )}
 
       {/* Modal de detalhes */}
-      {showDetail && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}} onClick={()=>setShowDetail(false)}>
-          <div style={{background:'var(--bg-card)',border:`1px solid ${isScript?'rgba(162,155,254,0.4)':catColor+'44'}`,borderRadius:12,padding:22,width:'100%',maxWidth:580,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
+      {showDetail && typeof document !== 'undefined' && createPortal(
+        <div className="inventory-detail-modal-overlay" style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',display:'flex',alignItems:'flex-start',justifyContent:'center',zIndex:1000,padding:'clamp(12px, 4vh, 40px) 16px',overflowY:'auto',boxSizing:'border-box'}} onClick={()=>setShowDetail(false)}>
+          <div className="inventory-detail-modal" style={{background:'var(--bg-card)',border:`1px solid ${isScript?'rgba(162,155,254,0.4)':catColor+'44'}`,borderRadius:12,padding:22,width:'100%',maxWidth:580,maxHeight:'calc(100vh - clamp(24px, 8vh, 80px))',overflowY:'auto',boxSizing:'border-box',margin:'0 auto',flex:'0 0 auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
 
             {/* Header modal */}
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
@@ -1464,7 +1465,8 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

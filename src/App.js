@@ -31,12 +31,23 @@ import ContextHelpOverlay from './components/ContextHelpOverlay';
 import VisualEffectsLayer from './components/VisualEffectsLayer';
 import AnimatedContent from './components/AnimatedContent';
 import InteractionFX from './components/InteractionFX';
+import VisualEffectsDiagnostics from './components/VisualEffectsDiagnostics';
+import BorderGlowController from './components/BorderGlowController';
+import CardNavEnhancer from './components/CardNavEnhancer';
+import GlareProfileController from './components/GlareProfileController';
+import ContextualSpotlightController from './components/ContextualSpotlightController';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
+
 import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
 import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
+
+// Diagnóstico FX desativado para usuários finais.
+// Para ativar durante o desenvolvimento, descomente a próxima linha.
+let ENABLE_FX_DIAGNOSTICS = false;
+// ENABLE_FX_DIAGNOSTICS = true;
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -350,6 +361,10 @@ export default function App() {
   return (
     <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} visual-mode-${visualMode}`}>
       <VisualEffectsLayer mode={visualMode} activePage={activePage} />
+      <BorderGlowController mode={visualMode} />
+      <CardNavEnhancer mode={visualMode} />
+      <GlareProfileController mode={visualMode} />
+      <ContextualSpotlightController mode={visualMode} />
       <aside className="sidebar">
         <div className="sidebar-logo">
           <EmotoIcon size={30} className="logo-icon" />
@@ -392,12 +407,13 @@ export default function App() {
             <span className="visual-mode-dot" />
             <span>{visualMode === 'off' ? 'Efeitos desligados' : visualMode === 'economic' ? 'Efeitos econômicos' : 'Efeitos imersivos'}</span>
           </button>
+          {ENABLE_FX_DIAGNOSTICS && <VisualEffectsDiagnostics mode={visualMode} activePage={activePage} />}
           <span className="version-badge">v2.0.0</span>
         </div>
       </aside>
 
       <main className="main-content">
-        <AnimatedContent key={activePage} className="page-transition-shell" direction="vertical" distance={18} duration={0.45}>
+        <AnimatedContent key={activePage} className="page-transition-shell" direction="vertical" distance={18} duration={0.45} allowMotion={visualMode !== 'off'}>
           <div data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
           {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
@@ -432,7 +448,7 @@ export default function App() {
         </AnimatedContent>
       </main>
 
-      <InteractionFX />
+      <InteractionFX allowMotion={visualMode !== 'off'} />
       <UexNotificationBell onNavigate={goToPage} />
       <CalculatorWidget />
       <ContextHelpOverlay />

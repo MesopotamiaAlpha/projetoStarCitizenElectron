@@ -10,6 +10,7 @@ export default function AnimatedContent({
   delay = 0,
   threshold = 0.08,
   once = true,
+  allowMotion = false,
 }) {
   const ref = useRef(null);
   const playedRef = useRef(false);
@@ -17,7 +18,7 @@ export default function AnimatedContent({
   useEffect(() => {
     const node = ref.current;
     if (!node) return undefined;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (!allowMotion && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       gsap.set(node, { clearProps: 'all' });
       return undefined;
     }
@@ -41,7 +42,7 @@ export default function AnimatedContent({
       observer.disconnect();
       gsap.killTweensOf(node);
     };
-  }, [direction, distance, duration, delay, threshold, once]);
+  }, [direction, distance, duration, delay, threshold, once, allowMotion]);
 
   return <div ref={ref} className={`animated-content ${className}`}>{children}</div>;
 }

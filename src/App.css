@@ -138,7 +138,7 @@ body {
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--visual-accent), transparent);
   box-shadow: 0 0 18px var(--visual-accent);
-  animation: emoto-global-scanner 5.6s ease-in-out infinite;
+  animation: emoto-hourly-scanner 3600s linear infinite;
 }
 .visual-effects-corner {
   position: absolute;
@@ -191,7 +191,7 @@ body {
   z-index: 2;
   background: linear-gradient(90deg, transparent 0%, rgba(56,189,248,0.02) 25%, rgba(125,211,252,0.65) 50%, rgba(56,189,248,0.02) 75%, transparent 100%);
   box-shadow: 0 0 18px rgba(56,189,248,0.28);
-  animation: emoto-fallback-scanner 7s ease-in-out infinite;
+  animation: emoto-hourly-scanner 3600s linear infinite;
   opacity: 0.76;
 }
 .pixi-visual-canvas {
@@ -433,10 +433,17 @@ body {
 .sidebar-collapsed .nav-group-header,
 .sidebar-collapsed .nav-item-label,
 .sidebar-collapsed .nav-item-badge,
-.sidebar-collapsed .nav-arrow,
-.sidebar-collapsed .sidebar-footer {
+.sidebar-collapsed .nav-arrow {
   display: none;
 }
+.sidebar-collapsed .sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 4px;
+}
+.sidebar-collapsed .visual-diagnostics-trigger span { display: none; }
+
 .sidebar-collapsed .sidebar-toggle {
   margin: 0;
   background: var(--bg-card);
@@ -461,6 +468,57 @@ body {
   align-items: center;
   flex-shrink: 0;
 }
+
+.visual-diagnostics-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid rgba(56,189,248,0.26);
+  border-radius: 5px;
+  background: rgba(56,189,248,0.07);
+  color: var(--accent-primary);
+  font: 700 9px 'Exo 2', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.visual-diagnostics-trigger:hover { background: rgba(56,189,248,0.16); box-shadow: 0 0 14px rgba(56,189,248,0.18); }
+.visual-diagnostics-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(2,6,15,0.72);
+  backdrop-filter: blur(6px);
+}
+.visual-diagnostics-panel {
+  width: min(900px, 100%);
+  max-height: min(760px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(56,189,248,0.45);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(8,19,35,0.98), rgba(7,11,25,0.98));
+  box-shadow: 0 20px 80px rgba(0,0,0,0.6), 0 0 40px rgba(56,189,248,0.15);
+  animation: emoto-diagnostic-in 180ms ease-out both;
+}
+.visual-diagnostics-header { display:flex; justify-content:space-between; gap:15px; padding:16px 18px; border-bottom:1px solid rgba(56,189,248,0.18); }
+.visual-diagnostics-header strong { display:flex; align-items:center; gap:8px; color:var(--accent-primary); font:800 15px 'Exo 2', sans-serif; text-transform:uppercase; letter-spacing:.04em; }
+.visual-diagnostics-header small { display:block; margin-top:5px; color:var(--text-muted); font-size:10px; }
+.visual-diagnostics-header button { border:0; background:transparent; color:var(--text-muted); cursor:pointer; }
+.visual-diagnostics-summary { display:flex; flex-wrap:wrap; gap:8px; padding:11px 18px; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--text-secondary); font:700 11px 'Share Tech Mono', monospace; }
+.visual-diagnostics-summary span { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border-radius:5px; background:rgba(255,255,255,0.04); }
+.visual-diagnostics-summary .diag-ok { color:var(--accent-green); background:rgba(52,211,153,0.1); }
+.visual-diagnostics-summary .diag-fail { color:var(--accent-red); background:rgba(251,113,133,0.1); }
+.visual-diagnostics-log { flex:1; min-height:260px; margin:0; padding:16px 18px; overflow:auto; color:#b8dcf2; background:rgba(0,0,0,0.22); font:11px/1.55 'Share Tech Mono', monospace; white-space:pre-wrap; user-select:text; }
+.visual-diagnostics-actions { display:flex; flex-wrap:wrap; gap:8px; padding:13px 18px; border-top:1px solid rgba(56,189,248,0.16); }
+.visual-diagnostics-actions button { display:inline-flex; align-items:center; gap:6px; padding:8px 11px; border:1px solid rgba(56,189,248,0.3); border-radius:6px; background:rgba(56,189,248,0.09); color:var(--accent-primary); font:700 11px 'Exo 2', sans-serif; cursor:pointer; }
+.visual-diagnostics-actions button:disabled { opacity:.45; cursor:not-allowed; }
+@keyframes emoto-diagnostic-in { from { opacity:0; transform:translateY(12px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
 
 .version-badge, .game-version {
   font-family: 'Share Tech Mono', monospace;
@@ -582,6 +640,15 @@ button:not(:disabled):focus-visible, a:focus-visible, input:focus-visible, selec
   90% { opacity: 0.75; }
   100% { transform: translateY(100vh); opacity: 0; }
 }
+/* Passagem curta + pausa de 1 hora. A porcentagem inicial ocupa cerca de 6,5s do ciclo. */
+@keyframes emoto-hourly-scanner {
+  0% { transform: translateY(-5px); opacity: 0; }
+  0.02% { transform: translateY(-5px); opacity: 0; }
+  0.05% { transform: translateY(-5px); opacity: 0.78; }
+  0.12% { transform: translateY(calc(100vh - 4px)); opacity: 0.52; }
+  0.18% { transform: translateY(100vh); opacity: 0; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
 @keyframes emoto-grid-drift {
   from { background-position: 0 0, 0 0; }
   to { background-position: 44px 44px, 44px 44px; }
@@ -615,7 +682,18 @@ button:not(:disabled):focus-visible, a:focus-visible, input:focus-visible, selec
     scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
   }
-  .pixi-visual-layer, .visual-effects-layer { display: none; }
+  .pixi-visual-layer { display: none; }
+}
+/* A escolha explícita do usuário no Companheiro Emoto tem prioridade para a camada visual. */
+.visual-effects-economic .visual-effects-star,
+.visual-effects-immersive .visual-effects-star {
+  animation-duration: 8s !important;
+  animation-iteration-count: infinite !important;
+}
+.visual-effects-economic .visual-effects-scanner,
+.visual-effects-immersive .visual-effects-scanner {
+  animation-duration: 3600s !important;
+  animation-iteration-count: infinite !important;
 }
 .main-content {
   flex: 1;
@@ -7938,3 +8016,1019 @@ button[class*="add"]:hover {
   .useful-links-page .useful-links-form-actions button { flex: 1; }
   .useful-links-page .useful-link-card-actions .primary-btn { flex: 1; }
 }
+
+/* === REACT BITS BORDER GLOW === */
+.border-glow-card {
+  --border-glow-color: #38bdf8;
+  --border-glow-x: 50%;
+  --border-glow-y: 0%;
+  --border-glow-angle: 0deg;
+  --border-glow-opacity: 0;
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  border-color: color-mix(in srgb, var(--border-glow-color) 24%, var(--border-subtle, rgba(148,163,184,.18))) !important;
+  transition: border-color .28s ease, box-shadow .28s ease, transform .28s ease !important;
+}
+.border-glow-card::before,
+.border-glow-card::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+  transition: opacity .28s ease;
+}
+.border-glow-card::before {
+  z-index: -1;
+  inset: -1px;
+  padding: 1px;
+  background: conic-gradient(from var(--border-glow-angle), transparent 0deg, color-mix(in srgb, var(--border-glow-color) 85%, white) 16deg, transparent 38deg, transparent 180deg, color-mix(in srgb, var(--border-glow-color) 55%, white) 198deg, transparent 224deg);
+  opacity: calc(.2 + var(--border-glow-opacity) * .8);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.border-glow-card::after {
+  z-index: -2;
+  inset: -18px;
+  background: radial-gradient(110px circle at var(--border-glow-x) var(--border-glow-y), color-mix(in srgb, var(--border-glow-color) 45%, transparent), transparent 68%);
+  filter: blur(12px);
+  opacity: calc(var(--border-glow-opacity) * .8);
+}
+.border-glow-card.border-glow-near {
+  border-color: color-mix(in srgb, var(--border-glow-color) 74%, white 8%) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-glow-color) 25%, transparent), 0 0 22px color-mix(in srgb, var(--border-glow-color) 22%, transparent) !important;
+}
+.visual-mode-economic .border-glow-card:hover {
+  transform: translateY(-1px);
+}
+.visual-mode-immersive .border-glow-card:hover {
+  transform: translateY(-2px) scale(1.004);
+}
+.visual-mode-immersive .border-glow-card::before {
+  animation: emoto-border-glow-sweep 4.8s linear infinite;
+}
+.border-glow-card.border-glow-disabled,
+.visual-mode-off .border-glow-card {
+  border-color: var(--border-subtle, rgba(148,163,184,.18)) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.border-glow-card.border-glow-disabled::before,
+.border-glow-card.border-glow-disabled::after,
+.visual-mode-off .border-glow-card::before,
+.visual-mode-off .border-glow-card::after {
+  opacity: 0 !important;
+  animation: none !important;
+}
+@keyframes emoto-border-glow-sweep {
+  0%, 100% { opacity: .22; }
+  45% { opacity: .52; }
+  50% { opacity: .82; }
+  55% { opacity: .52; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .visual-mode-economic .border-glow-card:hover,
+  .visual-mode-immersive .border-glow-card:hover { transform: none; }
+  .visual-mode-immersive .border-glow-card::before { animation-duration: 8s !important; animation-iteration-count: infinite !important; }
+  .border-glow-card { transition-duration: .18s !important; }
+}
+@media (max-width: 680px) {
+  .border-glow-card::after { inset: -10px; filter: blur(8px); }
+  .visual-mode-immersive .border-glow-card:hover { transform: translateY(-1px); }
+}
+
+/* === CARD NAV — SIDEBAR === */
+.sidebar-nav {
+  perspective: 900px;
+}
+.nav-group {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  margin: 3px 7px;
+  overflow: visible;
+  transition: border-color .24s ease, background .24s ease, box-shadow .24s ease;
+}
+.nav-group::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--group-accent, var(--accent-primary)) 14%, transparent), transparent 58%);
+  opacity: .22;
+  pointer-events: none;
+  transition: opacity .24s ease, transform .24s ease;
+}
+.nav-group::after {
+  content: '';
+  position: absolute;
+  inset: -7px 8px;
+  z-index: -2;
+  border-radius: 14px;
+  background: radial-gradient(80% 55% at 14% 50%, color-mix(in srgb, var(--group-accent, var(--accent-primary)) 22%, transparent), transparent 72%);
+  filter: blur(9px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .24s ease;
+}
+.nav-group:hover,
+.nav-group.has-active {
+  border-color: color-mix(in srgb, var(--group-accent, var(--accent-primary)) 35%, transparent);
+  background: color-mix(in srgb, var(--group-accent, var(--accent-primary)) 5%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--group-accent, var(--accent-primary)) 12%, transparent);
+}
+.nav-group:hover::before,
+.nav-group.has-active::before { opacity: .65; transform: translateX(2px); }
+.nav-group:hover::after,
+.nav-group.has-active::after { opacity: .72; }
+.nav-group-header {
+  position: relative;
+  z-index: 1;
+  border-radius: 8px;
+  transition: padding-left .24s ease, color .24s ease, background .24s ease;
+}
+.nav-group:hover .nav-group-header { color: var(--text-primary); }
+.nav-group.has-active .nav-group-icon {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--group-accent, var(--accent-primary)) 42%, transparent);
+}
+.nav-group-items {
+  transform-origin: top center;
+}
+.nav-item {
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s ease, background .2s ease, color .2s ease, padding-left .2s ease;
+}
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--item-accent, var(--accent-primary));
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+.nav-item:hover {
+  transform: translateX(3px);
+  background: color-mix(in srgb, var(--item-accent, var(--accent-primary)) 10%, transparent) !important;
+}
+.nav-item:hover::before,
+.nav-item.active::before { transform: scaleY(1); box-shadow: 0 0 10px var(--item-accent, var(--accent-primary)); }
+.nav-item.active {
+  background: color-mix(in srgb, var(--item-accent, var(--accent-primary)) 12%, transparent) !important;
+  box-shadow: inset 0 0 16px color-mix(in srgb, var(--item-accent, var(--accent-primary)) 7%, transparent);
+}
+.sidebar-collapsed .nav-group { margin-left: 4px; margin-right: 4px; }
+.sidebar-collapsed .nav-group:hover { transform: translateY(-1px) scale(1.035); }
+@media (prefers-reduced-motion: reduce) {
+  .nav-group:hover, .nav-item:hover { transform: none; }
+  .nav-group, .nav-group::before, .nav-group::after, .nav-item { transition-duration: .12s !important; }
+}
+
+/* === GLARE HOVER + PROFILE CARD === */
+.glare-profile-card {
+  --glare-x: 50%;
+  --glare-y: 0%;
+  --profile-rotate-x: 0deg;
+  --profile-rotate-y: 0deg;
+  --profile-lift: 0px;
+  --profile-scale: 1;
+  position: relative;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform .34s cubic-bezier(.22,.61,.36,1), filter .34s ease !important;
+}
+.glare-profile-card::marker { display: none; }
+.glare-profile-card::after {
+  content: '';
+  position: absolute;
+  z-index: -3;
+  inset: -22px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--glare-x) var(--glare-y), color-mix(in srgb, var(--border-glow-color, #38bdf8) 42%, transparent), transparent 58%);
+  filter: blur(18px);
+  opacity: 0;
+  transition: opacity .42s ease, background-position .08s linear;
+}
+.glare-profile-card::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(125deg, transparent 28%, rgba(255,255,255,.13) 43%, rgba(125,211,252,.28) 50%, transparent 62%);
+  background-size: 260% 260%;
+  background-position: calc(100% - var(--glare-x)) calc(100% - var(--glare-y));
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity .65s ease, background-position .12s linear;
+}
+.glare-profile-card.glare-profile-active {
+  transform: perspective(900px) translateZ(var(--profile-lift, 0px)) scale(var(--profile-scale, 1)) rotateX(var(--profile-rotate-x)) rotateY(var(--profile-rotate-y));
+  filter: saturate(1.06) brightness(1.035);
+}
+.glare-profile-card.glare-profile-active::before { opacity: var(--glare-opacity, .62); }
+.glare-profile-card.glare-profile-active::after { opacity: var(--glow-opacity, .42); }
+.visual-mode-economic .glare-profile-card.glare-profile-active::before { --glare-opacity: .34; }
+.visual-mode-economic .glare-profile-card.glare-profile-active::after { --glow-opacity: .22; }
+.visual-mode-immersive .glare-profile-card.glare-profile-active::before { --glare-opacity: .72; }
+.visual-mode-immersive .glare-profile-card.glare-profile-active::after { --glow-opacity: .58; }
+.glare-profile-card.glare-profile-disabled,
+.visual-mode-off .glare-profile-card {
+  transform: none !important;
+  filter: none !important;
+}
+.glare-profile-card.glare-profile-disabled::before,
+.glare-profile-card.glare-profile-disabled::after,
+.visual-mode-off .glare-profile-card::before,
+.visual-mode-off .glare-profile-card::after { opacity: 0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  /* O app já possui override interno de movimento. Não anulamos o tilt aqui; apenas suavizamos a transição. */
+  .glare-profile-card { transition-duration: .18s !important; }
+}
+@media (max-width: 680px) {
+  .glare-profile-card.glare-profile-active { transform: none; }
+  .glare-profile-card::after { inset: -12px; filter: blur(10px); }
+}
+
+/* O modo visual escolhido dentro do app controla o Profile Card. */
+.visual-mode-economic .glare-profile-card,
+.visual-mode-immersive .glare-profile-card {
+  transition-duration: .34s !important;
+  transition-property: transform, filter !important;
+}
+.visual-mode-economic .glare-profile-card.glare-profile-active,
+.visual-mode-immersive .glare-profile-card.glare-profile-active {
+  transform: perspective(900px) translateZ(var(--profile-lift, 0px)) scale(var(--profile-scale, 1)) rotateX(var(--profile-rotate-x, 0deg)) rotateY(var(--profile-rotate-y, 0deg)) !important;
+}
+.visual-mode-off .glare-profile-card {
+  transform: none !important;
+  filter: none !important;
+}
+
+/* Moldura azul removida: os cards mantêm profundidade e glare sem contorno azul permanente. */
+.border-glow-card,
+.border-glow-card.border-glow-near,
+.border-glow-card.glare-profile-card {
+  border-color: var(--border-subtle, rgba(148,163,184,.18)) !important;
+}
+.border-glow-card.border-glow-near:not(.glare-profile-card) {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--border-glow-color, #38bdf8) 18%, transparent) !important;
+}
+.border-glow-card:not(.glare-profile-card)::before {
+  opacity: 0 !important;
+  animation: none !important;
+}
+.visual-mode-off .border-glow-card,
+.visual-mode-off .border-glow-card.border-glow-near,
+.visual-mode-off .border-glow-card.glare-profile-card {
+  border-color: var(--border-subtle, rgba(148,163,184,.18)) !important;
+  box-shadow: none !important;
+}
+
+
+/* Calculadora Magic Bento: spotlight local e cartões reativos sem alterar a lógica. */
+.calculator-magic-bento {
+  --bento-x: 50%;
+  --bento-y: 18%;
+  isolation: isolate;
+  border-color: rgba(56, 189, 248, 0.26) !important;
+  background:
+    radial-gradient(circle 190px at var(--bento-x) var(--bento-y), rgba(56, 189, 248, 0.12), transparent 70%),
+    linear-gradient(145deg, rgba(17, 30, 48, 0.98), rgba(7, 14, 25, 0.98)) !important;
+  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
+}
+
+.calculator-magic-bento::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle 120px at var(--bento-x) var(--bento-y), rgba(251, 191, 36, 0.08), transparent 72%);
+  opacity: 0.9;
+  transition: opacity 220ms ease;
+}
+
+.calculator-magic-bento::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: radial-gradient(circle 110px at var(--bento-x) var(--bento-y), rgba(56, 189, 248, 0.75), transparent 72%) border-box;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.42;
+  transition: opacity 220ms ease;
+}
+
+.calculator-magic-bento:hover {
+  border-color: rgba(56, 189, 248, 0.46) !important;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.58), 0 0 26px rgba(56, 189, 248, 0.11) !important;
+}
+
+.calculator-magic-bento:hover::after {
+  opacity: 0.82;
+}
+
+.calculator-bento-card {
+  position: relative;
+  z-index: 1;
+  border-radius: 8px;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.calculator-bento-modes:hover,
+.calculator-bento-units:hover,
+.calculator-display:hover,
+.calculator-keypad:hover {
+  background-color: rgba(56, 189, 248, 0.035) !important;
+}
+
+.calculator-bento-action {
+  position: relative;
+  overflow: hidden;
+}
+
+.calculator-bento-action::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.calculator-bento-action:active::after {
+  animation: calculatorBentoRipple 360ms ease-out;
+}
+
+.calculator-bento-action:focus-visible,
+.calculator-bento-modes button:focus-visible,
+.calculator-close:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.72);
+  outline-offset: 2px;
+}
+
+@keyframes calculatorBentoRipple {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(22); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calculator-magic-bento,
+  .calculator-magic-bento::before,
+  .calculator-magic-bento::after,
+  .calculator-bento-card {
+    transition: none !important;
+  }
+
+  .calculator-bento-action:active::after {
+    animation: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .calculator-magic-bento {
+    right: 8px !important;
+    bottom: 8px !important;
+    width: min(320px, calc(100vw - 16px)) !important;
+  }
+}
+
+/* Magic Bento da Calculadora: o spotlight fica atrás exclusivamente do teclado. */
+.calculator-magic-bento {
+  background: linear-gradient(145deg, rgba(17, 30, 48, 0.98), rgba(7, 14, 25, 0.98)) !important;
+}
+
+.calculator-magic-bento::before {
+  background: none;
+  opacity: 0;
+}
+
+.calculator-bento-keypad {
+  --key-spotlight-x: 50%;
+  --key-spotlight-y: 50%;
+  isolation: isolate;
+  overflow: visible !important;
+  background:
+    radial-gradient(circle 135px at var(--key-spotlight-x) var(--key-spotlight-y), rgba(56, 189, 248, 0.065), transparent 72%),
+    rgba(0, 0, 0, 0.08) !important;
+  transition: background 160ms ease, box-shadow 180ms ease;
+}
+
+.calculator-bento-keypad::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 9px;
+  background: radial-gradient(circle 115px at var(--key-spotlight-x) var(--key-spotlight-y), rgba(56, 189, 248, 0.075), transparent 72%);
+  opacity: 0.72;
+}
+
+.calculator-bento-keypad > * {
+  position: relative;
+  z-index: 1;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.calculator-bento-action {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: filter 160ms ease, box-shadow 160ms ease, border-color 160ms ease !important;
+}
+
+.calculator-bento-action:hover {
+  border-color: rgba(56, 189, 248, 0.54) !important;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.30), 0 0 15px rgba(56, 189, 248, 0.13);
+}
+
+.calculator-bento-action::after {
+  content: none !important;
+}
+
+.calculator-bento-click-ripple {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.26) 0%, rgba(56, 189, 248, 0.08) 32%, transparent 72%);
+  transform: scale(0);
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calculator-bento-keypad,
+  .calculator-bento-action {
+    transition: none !important;
+  }
+}
+
+/* Spotlight contextual global: aparece atrás do elemento atualmente sob o cursor. */
+.contextual-spotlight-target {
+  --contextual-spotlight-opacity: 0.56;
+  position: relative;
+  isolation: isolate;
+}
+
+.contextual-spotlight {
+  position: absolute;
+  z-index: -1;
+  width: 190px;
+  height: 190px;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(56, 189, 248, var(--contextual-spotlight-opacity)) 0%, rgba(56, 189, 248, calc(var(--contextual-spotlight-opacity) * .22)) 24%, transparent 70%);
+  filter: blur(16px);
+  mix-blend-mode: normal;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  will-change: left, top, opacity;
+}
+
+.contextual-spotlight-target:hover > .contextual-spotlight {
+  opacity: 0.58;
+}
+
+.visual-mode-off .contextual-spotlight,
+.contextual-spotlight-ignore > .contextual-spotlight {
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contextual-spotlight {
+    transition-duration: 80ms;
+    filter: blur(10px);
+  }
+}
+
+/* Composição: spotlight abaixo do conteúdo, textos e ícones acima. */
+.contextual-spotlight-target > .contextual-spotlight {
+  z-index: 0;
+  opacity: 0.48;
+}
+
+.contextual-spotlight-target > *:not(.contextual-spotlight) {
+  z-index: 1;
+}
+
+/* Ícones absolutos do Dashboard continuam fora do fluxo do conteúdo. */
+.contextual-spotlight-target > .stat-card-icon {
+  position: absolute;
+  z-index: 1;
+}
+
+.contextual-spotlight-target:hover > .contextual-spotlight {
+  opacity: 0.48;
+}
+
+.calculator-bento-keypad::before {
+  z-index: 0;
+  opacity: 0.58;
+}
+
+.calculator-bento-keypad > .calculator-bento-action {
+  z-index: 2;
+}
+
+/* Transição de navegação 2.0: varredura holográfica leve e profundidade de painel. */
+.page-transition-shell {
+  position: relative;
+  isolation: isolate;
+  perspective: 1200px;
+  animation: emotoPageEnterPro 520ms var(--ease-emoto-soft) both;
+}
+
+.page-transition-shell::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: -34%;
+  width: 24%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.09), rgba(167, 139, 250, 0.06), transparent);
+  filter: blur(3px);
+  transform: skewX(-18deg);
+  animation: emotoPageSweep 720ms cubic-bezier(.22,.61,.36,1) both;
+}
+
+.page-transition-shell::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, rgba(56, 189, 248, 0.055), transparent 56%);
+  opacity: 0;
+  animation: emotoPageAtmosphere 620ms ease-out both;
+}
+
+.page-transition-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.page-transition-shell > [data-active-page] {
+  transform-origin: 50% 0;
+  animation: emotoPageContentRise 520ms var(--ease-emoto-soft) both;
+}
+
+/* Apenas os primeiros 12 cards entram em cascata; os demais aparecem imediatamente. */
+.page-transition-shell .dashboard-grid > *,
+.page-transition-shell .type-progress-grid > *,
+.page-transition-shell .armor-grid > *,
+.page-transition-shell .armor-list > *,
+.page-transition-shell .inventory-items-grid > *,
+.page-transition-shell .inventory-items-list > *,
+.page-transition-shell .materials-list-panel > *,
+.page-transition-shell .materials-queue-panel > *,
+.page-transition-shell .hangar-grid > *,
+.page-transition-shell .hangar-owned-grid > *,
+.page-transition-shell .mission-list > *,
+.page-transition-shell .notes-grid > * {
+  animation-duration: 460ms;
+  animation-timing-function: var(--ease-emoto-soft);
+}
+
+.page-transition-shell .dashboard-grid > :nth-child(5),
+.page-transition-shell .type-progress-grid > :nth-child(5),
+.page-transition-shell .armor-grid > :nth-child(5),
+.page-transition-shell .inventory-items-grid > :nth-child(5),
+.page-transition-shell .inventory-items-list > :nth-child(5),
+.page-transition-shell .hangar-grid > :nth-child(5),
+.page-transition-shell .hangar-owned-grid > :nth-child(5),
+.page-transition-shell .mission-list > :nth-child(5),
+.page-transition-shell .notes-grid > :nth-child(5) { animation-delay: 175ms; }
+
+.page-transition-shell .dashboard-grid > :nth-child(6),
+.page-transition-shell .type-progress-grid > :nth-child(6),
+.page-transition-shell .armor-grid > :nth-child(6),
+.page-transition-shell .inventory-items-grid > :nth-child(6),
+.page-transition-shell .inventory-items-list > :nth-child(6),
+.page-transition-shell .hangar-grid > :nth-child(6),
+.page-transition-shell .hangar-owned-grid > :nth-child(6),
+.page-transition-shell .mission-list > :nth-child(6),
+.page-transition-shell .notes-grid > :nth-child(6) { animation-delay: 210ms; }
+
+.page-transition-shell .dashboard-grid > :nth-child(7),
+.page-transition-shell .type-progress-grid > :nth-child(7),
+.page-transition-shell .armor-grid > :nth-child(7),
+.page-transition-shell .inventory-items-grid > :nth-child(7),
+.page-transition-shell .inventory-items-list > :nth-child(7),
+.page-transition-shell .hangar-grid > :nth-child(7),
+.page-transition-shell .hangar-owned-grid > :nth-child(7),
+.page-transition-shell .mission-list > :nth-child(7),
+.page-transition-shell .notes-grid > :nth-child(7) { animation-delay: 245ms; }
+
+.page-transition-shell .dashboard-grid > :nth-child(8),
+.page-transition-shell .type-progress-grid > :nth-child(8),
+.page-transition-shell .armor-grid > :nth-child(8),
+.page-transition-shell .inventory-items-grid > :nth-child(8),
+.page-transition-shell .inventory-items-list > :nth-child(8),
+.page-transition-shell .hangar-grid > :nth-child(8),
+.page-transition-shell .hangar-owned-grid > :nth-child(8),
+.page-transition-shell .mission-list > :nth-child(8),
+.page-transition-shell .notes-grid > :nth-child(8) { animation-delay: 280ms; }
+
+.page-transition-shell .dashboard-grid > :nth-child(n+13),
+.page-transition-shell .type-progress-grid > :nth-child(n+13),
+.page-transition-shell .armor-grid > :nth-child(n+13),
+.page-transition-shell .armor-list > :nth-child(n+13),
+.page-transition-shell .inventory-items-grid > :nth-child(n+13),
+.page-transition-shell .inventory-items-list > :nth-child(n+13),
+.page-transition-shell .materials-list-panel > :nth-child(n+13),
+.page-transition-shell .materials-queue-panel > :nth-child(n+13),
+.page-transition-shell .hangar-grid > :nth-child(n+13),
+.page-transition-shell .hangar-owned-grid > :nth-child(n+13),
+.page-transition-shell .mission-list > :nth-child(n+13),
+.page-transition-shell .notes-grid > :nth-child(n+13) {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes emotoPageEnterPro {
+  from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.992); filter: saturate(.78) brightness(.82); }
+  55% { opacity: 1; filter: saturate(1.04) brightness(1.02); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: none; }
+}
+
+@keyframes emotoPageContentRise {
+  from { opacity: 0; transform: translate3d(0, 9px, 0) rotateX(1.5deg); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) rotateX(0); }
+}
+
+@keyframes emotoPageSweep {
+  from { left: -34%; opacity: 0; }
+  22% { opacity: .85; }
+  to { left: 118%; opacity: 0; }
+}
+
+@keyframes emotoPageAtmosphere {
+  from { opacity: 0; }
+  35% { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-shell,
+  .page-transition-shell::before,
+  .page-transition-shell::after,
+  .page-transition-shell > [data-active-page] {
+    animation-duration: 260ms !important;
+  }
+
+  .page-transition-shell::before,
+  .page-transition-shell::after {
+    display: none;
+  }
+}
+
+/* Correção global de responsividade após os efeitos 2.0: hover não desloca conteúdo. */
+.app,
+.app *,
+.app *::before,
+.app *::after {
+  box-sizing: border-box;
+}
+
+.app button,
+.app input,
+.app select,
+.app textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Os cards mantêm a posição; o feedback fica no brilho/borda, não no deslocamento. */
+.armor-card:hover,
+.stat-card:hover,
+.type-progress-card:hover,
+.dashboard-overview-card:hover,
+.dashboard-activity-card:hover,
+.dashboard-chart-card:hover,
+.inventory-item-card:hover,
+.blueprint-card:hover,
+.material-tracker-row:hover,
+.bp-queue-card:hover,
+.mission-card-responsive:hover,
+.mission-reuse-template-card:hover,
+.notes-card:hover,
+.note-card:hover,
+.clan-vault-card:hover,
+.ore-card:hover,
+.uex-insights-card:hover,
+.uex-insights-panel:hover,
+.market-alert-group-card:hover,
+.useful-link-card:hover {
+  transform: none !important;
+}
+
+/* Profile Card mantém o tilt 3D, mas sem deslocar o fluxo da página. */
+.glare-profile-card {
+  transform-origin: center center;
+  contain: layout paint;
+}
+
+.stat-card,
+.type-progress-card,
+.dashboard-overview-card,
+.dashboard-activity-card,
+.dashboard-chart-card,
+.armor-card,
+.inventory-item-card,
+.blueprint-card,
+.material-tracker-row,
+.bp-queue-card,
+.mission-card-responsive,
+.mission-reuse-template-card,
+.hangar-vehicle-card,
+.hangar-owned-card,
+.notes-card,
+.note-card,
+.clan-vault-card,
+.ore-card,
+.uex-insights-card,
+.uex-insights-panel,
+.market-alert-group-card,
+.useful-link-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.stat-card > *,
+.type-progress-card > *,
+.dashboard-overview-card > *,
+.dashboard-activity-card > *,
+.dashboard-chart-card > *,
+.armor-card > *,
+.inventory-item-card > *,
+.blueprint-card > *,
+.material-tracker-row > *,
+.bp-queue-card > *,
+.mission-card-responsive > *,
+.mission-reuse-template-card > *,
+.hangar-vehicle-card > *,
+.hangar-owned-card > *,
+.notes-card > *,
+.note-card > *,
+.clan-vault-card > *,
+.ore-card > *,
+.uex-insights-card > *,
+.uex-insights-panel > *,
+.market-alert-group-card > *,
+.useful-link-card > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stat-card-value,
+.stat-card-label,
+.stat-card-sub,
+.type-progress-name,
+.type-progress-count,
+.dashboard-overview-card-title,
+.dashboard-activity-card,
+.dashboard-chart-card,
+.card-title,
+.card-name,
+.item-name,
+.item-title,
+.item-value,
+.metric-value,
+.kpi-value {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.stat-card-value,
+.type-progress-count,
+.metric-value,
+.kpi-value {
+  font-variant-numeric: tabular-nums;
+  line-height: 1.12;
+}
+
+.app button {
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* Botões não alteram a geometria ao passar o mouse. */
+.action-btn:hover,
+.filter-chip:hover,
+.save-btn:hover,
+button[class*="primary"]:hover,
+button[class*="add"]:hover,
+.useful-links-page button.primary-btn:hover,
+.useful-links-page button.secondary-btn:hover {
+  transform: none !important;
+}
+
+@media (max-width: 980px) {
+  .dashboard-grid,
+  .armor-grid,
+  .type-progress-grid,
+  .collection-header-stats,
+  .hangar-grid,
+  .hangar-owned-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)) !important;
+  }
+
+  .page-header,
+  .page-body,
+  .dashboard-overview-block,
+  .dashboard-overview-card,
+  .dashboard-activity-card,
+  .dashboard-chart-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  .dashboard-grid,
+  .armor-grid,
+  .type-progress-grid,
+  .collection-header-stats,
+  .hangar-grid,
+  .hangar-owned-grid,
+  .inventory-items-grid,
+  .notes-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .page-header,
+  .page-header > *,
+  .toolbar,
+  .filter-bar,
+  .action-row,
+  .dashboard-section-heading,
+  .dashboard-section-heading > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .page-header,
+  .toolbar,
+  .filter-bar,
+  .action-row {
+    flex-wrap: wrap;
+  }
+
+  .stat-card-value {
+    font-size: clamp(20px, 7vw, 30px);
+  }
+}
+
+/* Spotlight interno: não cria área fora do card nem provoca overflow no layout. */
+.contextual-spotlight-target > .contextual-spotlight {
+  inset: 0;
+  width: auto;
+  height: auto;
+  left: 0;
+  top: 0;
+  border-radius: inherit;
+  transform: none;
+  background: radial-gradient(circle 92px at var(--contextual-spotlight-x, 50%) var(--contextual-spotlight-y, 50%), rgba(56, 189, 248, var(--contextual-spotlight-opacity, .30)), transparent 72%);
+  filter: blur(10px);
+}
+
+/* O Dashboard não deve mover cards de métricas ao passar o mouse. */
+button.dashboard-mini-metric,
+button.dashboard-mini-metric:hover,
+.dashboard-mini-metric {
+  transform: none !important;
+  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, color .18s ease !important;
+}
+
+.dashboard-mini-metric:hover {
+  background: rgba(56, 189, 248, .07);
+  border-color: rgba(56, 189, 248, .35);
+  box-shadow: 0 0 14px rgba(56, 189, 248, .08);
+}
+
+/* === HANGAR FOIL HOVER ===
+   Reflexo prismático inspirado em cartas foil, restrito aos cards de naves.
+   O overlay é não-interativo e o conteúdo permanece acima dele. */
+.hangar-vehicle-card.glare-profile-card,
+.hangar-owned-card.glare-profile-card {
+  --foil-x: var(--glare-x, 50%);
+  --foil-y: var(--glare-y, 50%);
+  --foil-opacity: 0;
+  --foil-border: rgba(125, 211, 252, .20);
+  overflow: hidden;
+  isolation: isolate;
+  border-color: var(--foil-border) !important;
+  transition: border-color .32s ease, box-shadow .32s ease, transform .34s cubic-bezier(.22,.61,.36,1), filter .34s ease !important;
+}
+
+.hangar-vehicle-card.glare-profile-card::before,
+.hangar-owned-card.glare-profile-card::before {
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  opacity: var(--foil-opacity);
+  background:
+    radial-gradient(ellipse 62% 48% at var(--foil-x) var(--foil-y), rgba(255,255,255,.28), transparent 46%),
+    linear-gradient(116deg,
+      transparent 22%,
+      rgba(89, 225, 255, .22) 34%,
+      rgba(255, 116, 211, .30) 42%,
+      rgba(255, 246, 190, .34) 48%,
+      rgba(121, 255, 226, .30) 54%,
+      rgba(169, 139, 255, .25) 62%,
+      transparent 75%),
+    repeating-linear-gradient(132deg,
+      rgba(255,255,255,.10) 0 1px,
+      transparent 1px 9px);
+  background-size: 145% 145%, 250% 250%, 180% 180%;
+  background-position: var(--foil-x) var(--foil-y), calc(100% - var(--foil-x)) calc(100% - var(--foil-y)), var(--foil-x) var(--foil-y);
+  mix-blend-mode: screen;
+  filter: saturate(1.18) contrast(1.04) blur(.1px);
+  transition: opacity .32s ease, background-position .12s linear;
+}
+
+.hangar-vehicle-card.glare-profile-card::after,
+.hangar-owned-card.glare-profile-card::after {
+  z-index: -1;
+  inset: -18px;
+  background: radial-gradient(ellipse 54% 46% at var(--foil-x) var(--foil-y), rgba(125,211,252,.18), rgba(244,114,182,.07) 38%, transparent 72%);
+  filter: blur(18px);
+  opacity: var(--foil-opacity);
+  transition: opacity .32s ease, background-position .12s linear;
+}
+
+.hangar-vehicle-card.glare-profile-card > *,
+.hangar-owned-card.glare-profile-card > * {
+  z-index: 1;
+}
+
+/* Elementos absolutos do card permanecem absolutos; o foil não pode reflowar o conteúdo. */
+.hangar-vehicle-card.glare-profile-card > [style*="position: absolute"],
+.hangar-owned-card.glare-profile-card > [style*="position: absolute"] {
+  position: absolute;
+}
+
+.hangar-vehicle-card.glare-profile-card.glare-profile-active,
+.hangar-owned-card.glare-profile-card.glare-profile-active {
+  --foil-opacity: .30;
+  --foil-border: rgba(196, 181, 253, .58);
+  filter: saturate(1.08) brightness(1.025);
+  box-shadow: 0 0 0 1px rgba(125,211,252,.08), 0 10px 28px rgba(105,75,160,.16), 0 0 24px rgba(244,114,182,.10) !important;
+}
+
+.visual-mode-economic .hangar-vehicle-card.glare-profile-card.glare-profile-active,
+.visual-mode-economic .hangar-owned-card.glare-profile-card.glare-profile-active {
+  --foil-opacity: .22;
+}
+
+.visual-mode-immersive .hangar-vehicle-card.glare-profile-card.glare-profile-active,
+.visual-mode-immersive .hangar-owned-card.glare-profile-card.glare-profile-active {
+  --foil-opacity: .38;
+}
+
+.visual-mode-off .hangar-vehicle-card.glare-profile-card::before,
+.visual-mode-off .hangar-vehicle-card.glare-profile-card::after,
+.visual-mode-off .hangar-owned-card.glare-profile-card::before,
+.visual-mode-off .hangar-owned-card.glare-profile-card::after,
+.hangar-vehicle-card.glare-profile-disabled::before,
+.hangar-vehicle-card.glare-profile-disabled::after,
+.hangar-owned-card.glare-profile-disabled::before,
+.hangar-owned-card.glare-profile-disabled::after {
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce), (max-width: 680px) {
+  /* O tilt do Hangar é controlado pelo modo visual do app; não anulá-lo globalmente. */
+}
+

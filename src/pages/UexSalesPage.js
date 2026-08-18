@@ -831,7 +831,7 @@ function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySu
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:2 }}>
             <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
-            {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
+            {item.quality !== null && item.quality !== undefined && String(item.quality).trim() !== '' && Number(item.quality) > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
             {suggestedQ && !item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.06)', color:'rgba(255,200,0,0.7)', border:'1px solid rgba(255,200,0,0.2)', fontStyle:'italic' }}>Q sugerida: {suggestedQ}</span>}
             {isExpired ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.35)', fontWeight:700 }}>⚠ ANÚNCIO EXPIRADO</span>
               : item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
@@ -1476,7 +1476,7 @@ function SalesTab({ sales, onDelete, onUpdate }) {
                   <div style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</div>
                   <div style={{ fontSize:10, color:'var(--text-muted)' }}>
                     {ptDateTime(s.date)}
-                    {s.quality && <span style={{ marginLeft:8, color:'var(--accent-gold)' }}>★ {s.quality}</span>}
+                    {s.quality !== null && s.quality !== undefined && String(s.quality).trim() !== '' && Number(s.quality) > 0 && <span style={{ marginLeft:8, color:'var(--accent-gold)' }}>★ {s.quality}</span>}
                     {s.buyer && <span style={{ marginLeft:8 }}>→ {s.buyer}</span>}
                     {s.notes && <span style={{ marginLeft:8, fontStyle:'italic' }}>{s.notes}</span>}
                   </div>
@@ -1693,7 +1693,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4, flexWrap:'wrap' }}>
                       <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
-                      {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
+                      {item.quality !== null && item.quality !== undefined && String(item.quality).trim() !== '' && Number(item.quality) > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
                       {variation !== null && (
                         <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color: variation>=0?'var(--accent-green)':'var(--accent-red)', fontWeight:700 }}>
                           {variation >= 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
@@ -2180,7 +2180,7 @@ export default function UexSalesPage({ armorSets = [] }) {
         {TABS.map(t => (
           <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
             <t.icon size={12}/>{t.label}
-            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
+            {t.badge !== null && t.badge !== undefined && String(t.badge).trim() !== '' && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
           </button>
         ))}
       </div>
