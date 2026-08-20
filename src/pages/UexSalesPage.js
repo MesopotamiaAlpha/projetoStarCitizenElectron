@@ -13,6 +13,7 @@ import { buildUexListingUrl } from '../data/uexNegotiations';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
 import { loadVault, consumeVaultEntries } from '../data/oreVault';
+import { mergeBulkImportCatalog } from '../data/uexImportBatch';
 import { CARGO_UNITS, isCargoUnit, areCargoUnitsCompatible, normalizeCargoUnit, cargoEquivalentTotal, toCargoBase } from '../data/cargoUnits';
 import { recommendDiscount, extractActiveCompetitorPrices } from '../data/uexDiscount';
 
@@ -620,7 +621,7 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
 }
 
 // ── Modal de confirmação / edição de listagem importada ───────────────────────
-function ImportConfirmModal({ listing, onConfirm, onSkip }) {
+function ImportConfirmModal({ listing, queueLength = 0, bulkImporting = false, onConfirm, onSkip, onAddAll }) {
   const suggestedQ = extractQualityFromTitle(listing.title || '');
   const [title,    setTitle]    = useState(listing.title || '');
   const [price,    setPrice]    = useState(String(listing.price || 0));
@@ -698,9 +699,12 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
         </div>
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onSkip} disabled={bulkImporting} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:bulkImporting?'not-allowed':'pointer', textTransform:'uppercase', opacity:bulkImporting ? 0.5 : 1 }}>
             Pular
           </button>
+          {queueLength > 1 && <button onClick={onAddAll} disabled={bulkImporting} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 14px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.35)', borderRadius:6, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:800, cursor:bulkImporting?'wait':'pointer', textTransform:'uppercase', opacity:bulkImporting ? 0.7 : 1 }}>
+            <CheckCircle2 size={12}/> {bulkImporting ? 'Adicionando...' : `Adicionar todos (${queueLength})`}
+          </button>}
           <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <CheckCircle2 size={12}/> Confirmar e Adicionar
           </button>
@@ -896,7 +900,21 @@ function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySu
       borderRadius:8, overflow:'hidden', marginBottom:6,
     }}>
       {/* Header row */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 13px', cursor:'pointer' }} onClick={() => setExpanded(!expanded)}>
+      <div
+        className="uex-catalog-item-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-controls={`uex-item-details-${item.id}`}
+        onClick={() => setExpanded(value => !value)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setExpanded(value => !value);
+          }
+        }}
+        style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'10px 13px', cursor:'pointer', textAlign:'left', color:'inherit', outline:'none' }}
+      >
         <Package size={14} style={{ color:'var(--accent-primary)', flexShrink:0 }}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:2 }}>
@@ -949,7 +967,7 @@ function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySu
 
       {/* Expanded: detalhes + mercado + estoque interno */}
       {expanded && (
-        <div style={{ padding:'8px 38px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
+        <div id={`uex-item-details-${item.id}`} style={{ padding:'8px 38px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 
             {/* Coluna 1: Dados do item + estoque interno */}
@@ -1860,7 +1878,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
 }
 
 // ── Página Principal ──────────────────────────────────────────────────────────
-export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
+export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onConsumeInventoryStock }) {
   const [catalog,   setCatalog]   = useState(() => loadCatalog());
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
@@ -1870,6 +1888,7 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
   const [loading,   setLoading]   = useState(false);
   const [syncMsg,   setSyncMsg]   = useState('');
   const [importQueue, setImportQueue] = useState([]); // listagens aguardando confirmação
+  const [bulkImporting, setBulkImporting] = useState(false);
   const [showManualSale, setShowManualSale] = useState(false);
   const [showEsgotadoForm, setShowEsgotadoForm] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username);
@@ -2009,6 +2028,18 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
   }
 
   // ── Confirmação de import — usa ref para evitar closure stale ──
+  function handleImportAll() {
+    const queue = [...importQueueRef.current];
+    if (!queue.length || bulkImporting) return;
+    setBulkImporting(true);
+    const { entries, catalog: updatedCatalog } = mergeBulkImportCatalog(catalogRef.current, queue, new Date().toISOString());
+    refreshCatalog(updatedCatalog);
+    importQueueRef.current = [];
+    setImportQueue([]);
+    setBulkImporting(false);
+    setSyncMsg(`✓ ${entries.length} novo${entries.length !== 1 ? 's' : ''} anúncio${entries.length !== 1 ? 's' : ''} adicionado${entries.length !== 1 ? 's' : ''} em lote. Catálogo: ${updatedCatalog.length} item${updatedCatalog.length !== 1 ? 's' : ''}.`);
+  }
+
   function handleImportConfirm(listing) {
     // Adicionar ao catálogo usando ref (valor sempre atualizado)
     const entry = { ...listing, id: listing.id, internal_stock: listing.in_stock || 0, notes: listing.notes || '', imported_at: new Date().toISOString() };
@@ -2105,10 +2136,17 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
   }
   async function consumeBoundArmor(target, quantity) {
-    if (!target || !onConsumeArmorStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false };
+    if (!target || !onConsumeArmorStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false, status:'not_linked' };
     const binding = getInventoryBinding(target);
-    if (!binding.armorPieceIds.length && !binding.armorSetIds.length) return { success:true, consumed:false };
+    if (!binding.armorPieceIds.length && !binding.armorSetIds.length) return { success:true, consumed:false, status:'not_linked' };
     return onConsumeArmorStock({ pieceIds: binding.armorPieceIds, setIds: binding.armorSetIds, quantity: Number(quantity) });
+  }
+
+  async function consumeBoundInventory(target, quantity) {
+    if (!target || !onConsumeInventoryStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false, status:'not_linked' };
+    const binding = getInventoryBinding(target);
+    if (!binding.locationKeys.length) return { success:true, consumed:false, status:'not_linked' };
+    return onConsumeInventoryStock({ name: target.title, locationKeys: binding.locationKeys, quantity: Number(quantity), listing: target });
   }
 
   async function handleManualSale(sale) {
@@ -2126,13 +2164,14 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
     if (sale.type === 'sold' && target) {
       const binding = target.vault_binding;
       const armorConsumption = await consumeBoundArmor(target, sale.qty);
+      const inventoryConsumption = await consumeBoundInventory(target, sale.qty);
       if (!armorConsumption.success) {
         setSyncMsg(`⚠ Venda registrada sem baixa da armadura: ${armorConsumption.message || 'estoque insuficiente.'}`);
       }
       const boxQuantity = Number(binding?.boxQuantity) || 1;
       const boxUnit = normalizeCargoUnit(binding?.boxUnit || 'un');
       const vaultConsumption = binding?.entryIds?.length ? consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit) : { success:true, consumed:false };
-      nextSale = { ...sale, armor_consumption_status: armorConsumption.success ? (armorConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', armor_consumed_at: armorConsumption.consumed ? new Date().toISOString() : null, armor_consumption_message: armorConsumption.message || '', vault_consumption_status: vaultConsumption.success ? 'consumed' : 'failed', vault_consumed_at: vaultConsumption.success ? new Date().toISOString() : null, vault_consumption_message: vaultConsumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding?.quality || '' };
+      nextSale = { ...sale, armor_consumption_status: armorConsumption.success ? (armorConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', armor_consumed_at: armorConsumption.consumed ? new Date().toISOString() : null, armor_consumption_message: armorConsumption.message || '', inventory_consumption_status: inventoryConsumption.success ? (inventoryConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', inventory_consumed_at: inventoryConsumption.consumed ? new Date().toISOString() : null, inventory_consumption_message: inventoryConsumption.message || '', vault_consumption_status: vaultConsumption.success ? 'consumed' : 'failed', vault_consumed_at: vaultConsumption.success ? new Date().toISOString() : null, vault_consumption_message: vaultConsumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding?.quality || '' };
       const nextStock = Math.max(0, (Number(target.in_stock) || 0) - sale.qty);
       updatedCatalog = updatedCatalog.map(item => String(item.id) === String(target.id) ? { ...item, in_stock:nextStock, is_sold_out:nextStock <= 0 ? 1 : 0, last_sale_at:new Date().toISOString() } : item);
       refreshCatalog(updatedCatalog);
@@ -2186,8 +2225,11 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
         <ImportConfirmModal
           key={importQueue[0]?.id || importQueue[0]?.title || 0}
           listing={importQueue[0]}
+          queueLength={importQueue.length}
+          bulkImporting={bulkImporting}
           onConfirm={handleImportConfirm}
           onSkip={handleImportSkip}
+          onAddAll={handleImportAll}
         />
       )}
       {showManualSale && (

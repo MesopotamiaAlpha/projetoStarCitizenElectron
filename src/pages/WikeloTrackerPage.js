@@ -12,6 +12,7 @@ import {
   buildWikeloDeliveryPlan,
   getInventoryItemQuantity,
   getWikeloMissionProgress,
+  publishWikeloUpdate,
   scanWikeloMissions,
 } from '../data/wikeloInventory';
 
@@ -485,7 +486,11 @@ export default function WikeloTrackerPage() {
 
   const wfTotal = useMemo(() => calcWikeloFavors(inventoryItems), [inventoryItems]);
 
-  function persist(updated) { setMissions(updated); saveMissions(updated); }
+  function persist(updated) {
+    setMissions(updated);
+    saveMissions(updated);
+    publishWikeloUpdate(updated);
+  }
 
   function handleCreateMission() {
     if (!newTitle.trim()) return;

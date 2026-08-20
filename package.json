@@ -1,6 +1,6 @@
 {
   "name": "companheiro-emoto",
-  "version": "2.4.3",
+  "version": "2.0.0",
   "description": "Companheiro Emoto 2.0.0 — Star Citizen Companion App",
   "author": "Companheiro Emoto",
   "main": "electron/main.js",
@@ -13,8 +13,9 @@
     "build:win": "npm run clean:dist && npm run react-build && electron-builder --win",
     "electron": "electron .",
     "check:electron": "node --check electron/main.js && node --check electron/preload.js && node --check electron/missionWatcher.js",
+    "test:electron": "node --test electron/*.test.cjs",
     "test": "react-scripts test --watchAll=false --passWithNoTests",
-    "verify": "npm run test && npm run react-build && npm run check:electron"
+    "verify": "npm run test && npm run test:electron && npm run react-build && npm run check:electron"
   },
   "dependencies": {
     "gsap": "^3.15.0",

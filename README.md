@@ -1354,3 +1354,28 @@ Para validar o monitor, edite uma ocorrência automática com Scrip e Secure Dri
 Antes de abrir uma entrega, confirme que o comportamento está implementado no renderer, no processo Electron quando houver persistência, no mock de desenvolvimento quando aplicável, nos testes e no README. Verifique também migração de dados, compatibilidade retroativa, estados vazios, exclusão, carregamento, erro, responsividade, desempenho com volume alto e preferência de movimento reduzido.
 
 A documentação deve registrar o motivo da alteração, a causa de bugs corrigidos, os arquivos envolvidos, as chaves persistidas, os comandos usados na validação e qualquer limitação específica do ambiente de build.
+
+
+## Flags de debug controladas pelo código
+
+As ferramentas de diagnóstico ficam centralizadas em `src/config/debugFlags.js`. Todas as flags são `false` por padrão, portanto a aplicação instalada não exibe o Diagnóstico FX nem grava telemetria técnica global desnecessária.
+
+Para ativar uma ferramenta durante a manutenção, abra esse arquivo e descomente somente a linha marcada com `ATIVAR`. Depois reinicie o servidor de desenvolvimento ou gere uma nova build. Para desligar novamente, comente a linha e recompile.
+
+| Flag | Ferramenta controlada |
+|---|---|
+| `ENABLE_FX_DIAGNOSTICS` | Botão e painel **Diagnóstico FX** no rodapé do menu lateral. |
+| `ENABLE_MISSION_MONITOR_DEBUG` | Logs detalhados do Monitor Automático de Missões no console. |
+| `ENABLE_CALCULATOR_DEBUG` | Estado técnico global da calculadora Magic Bento. |
+| `ENABLE_PROFILE_DEBUG` | Telemetria dos cards 3D/profile do Inventário e Hangar. |
+| `ENABLE_LAYOUT_DEBUG` | Reservada para diagnósticos técnicos de estabilidade de layout. |
+| `ENABLE_DEBUG_CONSOLE` | Reservada para logs técnicos auxiliares gerais. |
+
+Exemplo de ativação temporária:
+
+```js
+export const ENABLE_FX_DIAGNOSTICS = false;
+export const ENABLE_FX_DIAGNOSTICS = true; // ATIVAR: Diagnóstico FX visual
+```
+
+Não transforme essas flags em uma preferência de `localStorage`: elas existem para uso do programador e devem permanecer sob controle do código-fonte. Antes de publicar uma build, confirme que todas as linhas `ATIVAR` estão comentadas.

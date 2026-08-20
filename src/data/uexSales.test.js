@@ -63,7 +63,7 @@ describe('uexSales vault integration', () => {
     expect(sale.date_closed).toBe(1720000456);
   });
 
-  test('desconta uma caixa de minério ao registrar venda e não repete o desconto', () => {
+  test('desconta uma caixa de minério ao registrar venda e não repete o desconto', async () => {
     saveVault({ entries: [{ id: 'iron-q800', ore_name: 'Iron', quantity: 108, unit: 'cSCU', quality: '800', location: 'New Babbage' }] });
     saveUexCatalog([{
       id: 'listing-iron',
@@ -75,14 +75,45 @@ describe('uexSales vault integration', () => {
     }]);
 
     const negotiation = { hash:'neg-iron-1', listing_title:'Iron', deal_quantity:1, price:100000, in_stock:2, location:'New Babbage', buyer_username:'Buyer' };
-    const first = registerNegotiationSale(negotiation);
+    const first = await registerNegotiationSale(negotiation);
     expect(first.vaultConsumption.status).toBe('consumed');
     expect(loadVault().entries[0].quantity).toBe(54);
     expect(loadUexCatalog()[0].in_stock).toBe(1);
 
-    const second = registerNegotiationSale(negotiation);
+    const second = await registerNegotiationSale(negotiation);
     expect(second.vaultConsumption.status).toBe('consumed');
     expect(loadVault().entries[0].quantity).toBe(54);
+    expect(loadUexSales()).toHaveLength(1);
+  });
+
+  test('consome uma peça de armadura e o Inventário vinculado uma única vez', async () => {
+    saveUexCatalog([{
+      id: 'listing-armor',
+      title: 'Novikov Ascension Helmet',
+      in_stock: 2,
+      location: 'New Babbage',
+      inventory_binding: {
+        armorPieceIds: ['armor-piece-1'],
+        locationKeys: ['Stanton::Outpost::New Babbage'],
+      },
+    }]);
+    const armorCalls = [];
+    const inventoryCalls = [];
+    const negotiation = { hash: 'neg-armor-1', listing_title: 'Novikov Ascension Helmet', deal_quantity: 1, price: 250000, location: 'New Babbage' };
+    const consumers = {
+      onConsumeArmorStock: async payload => { armorCalls.push(payload); return { success: true, consumed: true, status: 'consumed', message: 'armadura baixa' }; },
+      onConsumeInventoryStock: async payload => { inventoryCalls.push(payload); return { success: true, consumed: true, status: 'consumed', message: 'item baixa' }; },
+    };
+
+    const first = await registerNegotiationSale(negotiation, {}, consumers);
+    const second = await registerNegotiationSale(negotiation, {}, consumers);
+
+    expect(first.armorConsumption.status).toBe('consumed');
+    expect(first.inventoryConsumption.status).toBe('consumed');
+    expect(armorCalls).toHaveLength(1);
+    expect(inventoryCalls).toHaveLength(1);
+    expect(second.armorConsumption.status).toBe('consumed');
+    expect(second.inventoryConsumption.status).toBe('consumed');
     expect(loadUexSales()).toHaveLength(1);
   });
 });

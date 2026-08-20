@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { MissionLogWatcher } = require('./missionWatcher');
+const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigrations');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
@@ -30,6 +31,14 @@ let legacyUserDataPath = null;
 let dataMigration = { copied: [], skipped: [], warnings: [] };
 let mainWindow;
 let missionLogWatcher;
+
+function assertTrustedRenderer(event) {
+  const url = String(event?.senderFrame?.url || event?.sender?.getURL?.() || '');
+  const allowed = isDev
+    ? url.startsWith('http://localhost:3000')
+    : url.startsWith('file://');
+  if (!allowed) throw new Error('Origem IPC não autorizada.');
+}
 
 function normalizeMissionMonitorStatus(raw = {}) {
   const status = raw && typeof raw === 'object' ? raw : {};
@@ -506,11 +515,12 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     installed_at TEXT DEFAULT (datetime('now'))
   )`);
 
+  const schemaMigration = applySchemaMigrations(db);
   const changed = seedData();
   const bpChanged = seedBlueprints();
   const scmdbChanged = seedScmdbBlueprints();
   const scmdbUnitsChanged = migrateScmdbFractionalUnits();
-  if (changed || bpChanged || scmdbChanged || scmdbUnitsChanged) saveDb();
+  if (changed || bpChanged || scmdbChanged || scmdbUnitsChanged || schemaMigration.tableReady) saveDb();
 }
 
 function queryAll(sql, params = []) {
@@ -2179,6 +2189,7 @@ ipcMain.handle('uex-test-token', async (event, token) => {
 });
 
 ipcMain.handle('uex-fetch', async (event, payload = {}) => {
+  assertTrustedRenderer(event);
   const { endpoint, token, secretKey } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey);
@@ -2267,6 +2278,7 @@ function fetchUexImage(rawUrl) {
 
 ipcMain.handle('uex-image', async (event, rawUrl) => {
   try {
+    assertTrustedRenderer(event);
     const dataUrl = await fetchUexImage(rawUrl);
     return { success: true, dataUrl };
   } catch (error) {
@@ -2276,6 +2288,7 @@ ipcMain.handle('uex-image', async (event, rawUrl) => {
 
 // POST genérico para a UEX (usado hoje para responder mensagens de negociação do Marketplace)
 ipcMain.handle('uex-post', async (event, payload = {}) => {
+  assertTrustedRenderer(event);
   const { endpoint, token, secretKey, body } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey, 'POST', body);
@@ -2364,6 +2377,7 @@ function dataInfo() {
     dataRoot,
     databasePath: dbPath,
     databaseExists: Boolean(dbPath && fs.existsSync(dbPath)),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     backupPath: path.join(dataRoot, 'backup'),
     exportPath: path.join(dataRoot, 'exportados'),
     pointerConfigPath: dataConfigPath,
@@ -2520,6 +2534,66 @@ ipcMain.handle('notes-download-attachment', async (event, payload = {}) => {
     return { success: true, path: result.filePath };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+const SELECTIVE_CLEANUP_SCOPES = {
+  armor_collection: {
+    countSql: 'SELECT COUNT(*) AS count FROM user_pieces WHERE owned=1 OR wishlist=1 OR quantity>0 OR COALESCE(notes, \'\')<>\'\' OR obtained_date IS NOT NULL',
+    clearSql: "UPDATE user_pieces SET owned=0, wishlist=0, notes='', obtained_date=NULL, quantity=0",
+  },
+  inventory_items: {
+    countSql: 'SELECT COUNT(*) AS count FROM inventory_items',
+    clearSql: 'DELETE FROM inventory_items',
+  },
+  blueprints_progress: {
+    countSql: 'SELECT COUNT(*) AS count FROM user_blueprints WHERE owned=1 OR wishlist=1 OR crafted_count>0 OR COALESCE(notes, \'\')<>\'\' OR obtained_date IS NOT NULL',
+    clearSql: "UPDATE user_blueprints SET owned=0, wishlist=0, crafted_count=0, notes='', obtained_date=NULL",
+  },
+};
+
+function selectiveCleanupCounts() {
+  const counts = {};
+  Object.entries(SELECTIVE_CLEANUP_SCOPES).forEach(([id, scope]) => {
+    counts[id] = Number(queryOne(scope.countSql)?.count || 0);
+  });
+  return counts;
+}
+
+function createSelectiveCleanupSnapshot(categoryId) {
+  if (!dataRoot || !dbPath || !fs.existsSync(dbPath)) return null;
+  const backupDir = ensureDirectory(path.join(dataRoot, 'backup', 'limpeza-seletiva'));
+  const stamp = makeBackupStamp();
+  const filename = `antes-da-limpeza-${categoryId}-${stamp}.db`;
+  const destination = path.join(backupDir, filename);
+  saveDb();
+  fs.copyFileSync(dbPath, destination);
+  return destination;
+}
+
+ipcMain.handle('data-selective-counts', () => {
+  try {
+    return { success: true, counts: selectiveCleanupCounts() };
+  } catch (error) {
+    return { success: false, error: error.message || 'Não foi possível contar os dados.' };
+  }
+});
+
+ipcMain.handle('data-selective-clear', (event, categoryId) => {
+  const id = String(categoryId || '').trim();
+  const scope = SELECTIVE_CLEANUP_SCOPES[id];
+  if (!scope) return { success: false, error: 'Categoria de limpeza inválida.' };
+  try {
+    const before = Number(queryOne(scope.countSql)?.count || 0);
+    const snapshotPath = createSelectiveCleanupSnapshot(id);
+    db.run('BEGIN');
+    db.run(scope.clearSql);
+    db.run('COMMIT');
+    saveDb();
+    return { success: true, categoryId: id, before, after: Number(queryOne(scope.countSql)?.count || 0), snapshotPath };
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch { /* rollback best effort */ }
+    return { success: false, error: error.message || 'Não foi possível limpar os dados selecionados.' };
   }
 });
 

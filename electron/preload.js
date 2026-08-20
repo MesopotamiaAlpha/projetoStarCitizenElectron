@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updatePieceQuantity: (id, qty) => ipcRenderer.invoke('update-piece-quantity', id, qty),
   // Diretório central de dados e backup completo
   dataGetInfo:          ()       => ipcRenderer.invoke('data-get-info'),
+  dataSelectiveCounts:  ()       => ipcRenderer.invoke('data-selective-counts'),
+  dataSelectiveClear:   (category) => ipcRenderer.invoke('data-selective-clear', category),
   dataChooseDirectory:  ()       => ipcRenderer.invoke('data-choose-directory'),
   dataOpenFolder:       ()       => ipcRenderer.invoke('data-open-folder'),
   dataRestartApp:       ()       => ipcRenderer.invoke('data-restart-app'),

@@ -1,3 +1,13 @@
+export const WIKELO_UPDATED_EVENT = 'sc_wikelo_updated';
+
+export function publishWikeloUpdate(missions = []) {
+  try {
+    window.dispatchEvent(new CustomEvent(WIKELO_UPDATED_EVENT, {
+      detail: { missions, updatedAt: new Date().toISOString() },
+    }));
+  } catch { /* ambiente sem DOM */ }
+}
+
 function normalizedName(value) {
   return String(value || '').trim().toLocaleLowerCase();
 }
@@ -162,6 +172,30 @@ export function applyWikeloDeliveryPlan(inventoryItems = [], plan) {
       return { ...item, quantity: allocation.afterQuantity };
     })
     .filter(item => Number(item.quantity) > 0);
+}
+
+export function getWikeloMissionShortages(missions = []) {
+  return (Array.isArray(missions) ? missions : []).flatMap(mission => {
+    if (!mission || mission.wikelo_delivered_at || mission.wikelo_delivery_status === 'delivered') return [];
+    const items = (Array.isArray(mission.items) ? mission.items : []).map(item => {
+      const needed = Math.max(0, Number(item?.needed) || 0);
+      const collected = Math.min(needed, Math.max(0, Number(item?.collected) || 0));
+      const remaining = Math.max(0, needed - collected);
+      if (!item?.name || remaining <= 0) return null;
+      return {
+        itemId: item.id ?? `${mission.id}:${item.name}`,
+        name: String(item.name).trim(),
+        unit: String(item.unit || 'un').trim() || 'un',
+        needed,
+        collected,
+        remaining,
+        inventoryAvailable: Math.max(0, Number(item.inventory_available) || 0),
+        missionId: mission.id,
+        missionTitle: String(mission.title || 'Missão Wikelo').trim(),
+      };
+    }).filter(Boolean);
+    return items;
+  });
 }
 
 export function getWikeloMissionProgress(mission) {

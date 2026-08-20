@@ -190,7 +190,7 @@ function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
   );
 }
 
-function NegotiationThread({ negotiation, onBack }) {
+function NegotiationThread({ negotiation, onBack, onConsumeArmorStock, onConsumeInventoryStock }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -427,19 +427,21 @@ function NegotiationThread({ negotiation, onBack }) {
     }
   }
 
-  function handleCloseNegotiation(status, saleOverrides = {}) {
+  async function handleCloseNegotiation(status, saleOverrides = {}) {
     if (closing || closure) return;
     setClosing(true);
     setCloseError('');
     try {
       let result = null;
-      if (status === 'success') result = registerNegotiationSale(negotiation, saleOverrides);
+      if (status === 'success') result = await registerNegotiationSale(negotiation, saleOverrides, { onConsumeArmorStock, onConsumeInventoryStock });
       const savedClosure = closeNegotiation(negotiation.hash, status, {
         role: 'seller',
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
         catalogCreated: result?.catalogCreated || false,
         vaultConsumption: result?.vaultConsumption || null,
+        armorConsumption: result?.armorConsumption || null,
+        inventoryConsumption: result?.inventoryConsumption || null,
       });
       setClosure({ ...savedClosure, sale: result?.sale || null });
       setSaleModalOpen(false);
@@ -531,6 +533,10 @@ function NegotiationThread({ negotiation, onBack }) {
             {closure.status === 'success' && closure.vaultConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Baú atualizado: {closure.vaultConsumption.boxes} caixa{closure.vaultConsumption.boxes === 1 ? '' : 's'} de {closure.vaultConsumption.boxQuantity} {closure.vaultConsumption.boxUnit} descontada{closure.vaultConsumption.boxes === 1 ? '' : 's'}{closure.vaultConsumption.quality ? ` · qualidade ${closure.vaultConsumption.quality}` : ''}.</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Baú não foi descontado: {closure.vaultConsumption.message}</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'not_linked' && <><br/><span style={{ color:'var(--text-muted)' }}>O anúncio não possui vínculo com o Baú; nenhuma quantidade foi descontada.</span></>}
+            {closure.status === 'success' && closure.armorConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Coleção de armaduras atualizada: estoque vendido descontado.</span></>}
+            {closure.status === 'success' && closure.armorConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas a coleção de armaduras não foi descontada: {closure.armorConsumption.message || 'estoque insuficiente ou vínculo inválido.'}</span></>}
+            {closure.status === 'success' && closure.inventoryConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Inventário de Itens atualizado: quantidade vendida descontada.</span></>}
+            {closure.status === 'success' && closure.inventoryConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Inventário de Itens não foi descontado: {closure.inventoryConsumption.message || 'estoque insuficiente ou vínculo inválido.'}</span></>}
           </span>
         </div>
       ) : (
@@ -688,7 +694,7 @@ function NegotiationThread({ negotiation, onBack }) {
   );
 }
 
-export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed }) {
+export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed, onConsumeArmorStock, onConsumeInventoryStock }) {
   const [negotiations, setNegotiations] = useState([]);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState('');
@@ -804,7 +810,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
         )}
 
         {selected ? (
-          <NegotiationThread negotiation={selected} onBack={() => setSelected(null)} />
+          <NegotiationThread negotiation={selected} onBack={() => setSelected(null)} onConsumeArmorStock={onConsumeArmorStock} onConsumeInventoryStock={onConsumeInventoryStock} />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {loading && negotiations.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Carregando...</div>}

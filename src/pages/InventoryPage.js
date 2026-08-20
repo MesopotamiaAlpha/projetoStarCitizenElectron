@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, useDeferredValue } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
@@ -1757,6 +1757,9 @@ export default function InventoryPage() {
   }, [invAPI, loadData]);
 
   // ── Derivados para navegação ──
+  // A busca permanece responsiva durante a digitação; os agrupamentos e filtros
+  // pesados usam o valor diferido para evitar bloquear a interface em coleções grandes.
+  const deferredSearch = useDeferredValue(search);
   const regularItems = useMemo(() => itens.filter(item => !isLegacyUnassignedItem(item)), [itens]);
   // Sistemas que têm itens
   const systemsWithItems = useMemo(() => {
@@ -1785,17 +1788,17 @@ export default function InventoryPage() {
   const displayItems = useMemo(() => filterInventoryItems(regularItems, {
     system: selSystem,
     location: selLocation,
-    search,
+    search: deferredSearch,
     category: filterCat,
     sortBy,
-  }), [regularItems, selSystem, selLocation, search, filterCat, sortBy]);
+  }), [regularItems, selSystem, selLocation, deferredSearch, filterCat, sortBy]);
 
   const totalValor     = itens.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const catList        = [...new Set(displayItems.map(i=>i.category))].sort();
 
   const consolidatedSearch = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
+    const query = deferredSearch.trim().toLocaleLowerCase();
     if (!query) return null;
     const matches = regularItems.filter(item => String(item?.name || '').toLocaleLowerCase().includes(query));
     const totalQuantity = matches.reduce((sum, item) => sum + Math.max(0, Number(item?.quantity) || 0), 0);
@@ -1821,7 +1824,7 @@ export default function InventoryPage() {
         .map(group => ({ ...group, locations: [...group.locations.values()].sort((a, b) => b.quantity - a.quantity || a.location.localeCompare(b.location)) }))
         .sort((a, b) => b.quantity - a.quantity || a.system.localeCompare(b.system)),
     };
-  }, [regularItems, search]);
+  }, [regularItems, deferredSearch]);
 
   const SS = { padding:'5px 22px 5px 8px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none', appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 5px center' };
 

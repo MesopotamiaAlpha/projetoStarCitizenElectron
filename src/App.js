@@ -44,6 +44,8 @@ import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutom
 import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
+import { planInventoryStockConsumption } from './data/inventoryStockConsumption';
+import { publishInventoryUpdate } from './data/inventoryEvents';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -431,6 +433,28 @@ export default function App() {
     }
   }, [sets, refreshArmorStats, loadData]);
 
+  const handleConsumeInventoryStock = useCallback(async ({ name, locationKeys = [], quantity = 1 } = {}) => {
+    const inventoryApi = window.electronAPI;
+    if (!inventoryApi?.inventoryGetAll || !inventoryApi?.inventoryUpdate) {
+      return { success: false, consumed: 0, status: 'failed', message: 'A API segura do Inventário não está disponível.' };
+    }
+    try {
+      const currentItems = await inventoryApi.inventoryGetAll();
+      const plan = planInventoryStockConsumption(currentItems, { name, locationKeys, quantity });
+      if (!plan.success) return { ...plan, status: 'failed' };
+      for (const allocation of plan.allocations) {
+        const current = (Array.isArray(currentItems) ? currentItems : []).find(item => String(item.id) === String(allocation.inventoryId));
+        if (!current) throw new Error(`Registro de Inventário ${allocation.inventoryId} não encontrado durante a baixa.`);
+        await inventoryApi.inventoryUpdate({ ...current, quantity: allocation.afterQuantity });
+      }
+      const refreshed = await inventoryApi.inventoryGetAll();
+      publishInventoryUpdate(Array.isArray(refreshed) ? refreshed : []);
+      return { ...plan, success: true, consumed: plan.consumed > 0, status: plan.consumed > 0 ? 'consumed' : 'not_linked', message: `${plan.consumed} unidade(s) descontada(s) do Inventário de Itens.` };
+    } catch (error) {
+      return { success: false, consumed: 0, status: 'failed', message: error.message || 'Falha ao persistir a baixa do Inventário de Itens.' };
+    }
+  }, []);
+
   if (loading) return (
     <div className="app-loading">
       <div className="loading-inner">
@@ -522,11 +546,13 @@ export default function App() {
           {activePage==='clanvault' && <ClanVaultPage />}
           {activePage==='missions'   && <MissionTrackerPage />}
           {activePage==='orevault'   && <OreVaultPage />}
-          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} onConsumeArmorStock={handleConsumeArmorStock} />}
+          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} onConsumeArmorStock={handleConsumeArmorStock} onConsumeInventoryStock={handleConsumeInventoryStock} />}
           {activePage==='uexnegotiations' && (
             <UexNegotiationsPage
               targetNegotiationHash={pendingNegotiationHash}
               onTargetNegotiationConsumed={() => setPendingNegotiationHash('')}
+              onConsumeArmorStock={handleConsumeArmorStock}
+              onConsumeInventoryStock={handleConsumeInventoryStock}
             />
           )}
           {activePage==='wikelo'     && <WikeloTrackerPage />}

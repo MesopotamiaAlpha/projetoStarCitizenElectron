@@ -3,6 +3,7 @@ import {
   buildWikeloDeliveryPlan,
   getInventoryItemQuantity,
   getWikeloMissionProgress,
+  getWikeloMissionShortages,
   scanWikeloItem,
   scanWikeloMissions,
 } from './wikeloInventory';
@@ -52,6 +53,22 @@ describe('escaneamento e entrega de itens do Wikelo', () => {
 
     expect(getWikeloMissionProgress(pending)).toEqual({ total: 2, completed: 1, totalNeeded: 7, totalCollected: 6, percent: 86, complete: false });
     expect(getWikeloMissionProgress(complete)).toEqual({ total: 2, completed: 2, totalNeeded: 7, totalCollected: 7, percent: 100, complete: true });
+  });
+
+  test('gera pendências por missão para o Dashboard e ignora itens completos ou entregues', () => {
+    const shortages = getWikeloMissionShortages([
+      { id: 'asgard', title: 'Asgard', items: [
+        { id: 'favor', name: 'Wikelo Favor', needed: 25, collected: 5, unit: 'un' },
+        { id: 'medal', name: 'Medal', needed: 2, collected: 2, unit: 'un' },
+      ] },
+      { id: 'done', title: 'Entregue', wikelo_delivery_status: 'delivered', items: [
+        { id: 'iron', name: 'Iron', needed: 10, collected: 0, unit: 'un' },
+      ] },
+    ]);
+
+    expect(shortages).toEqual([expect.objectContaining({
+      missionId: 'asgard', missionTitle: 'Asgard', name: 'Wikelo Favor', remaining: 20, unit: 'un',
+    })]);
   });
 
   test('monta plano distribuído entre locais e aplica consumo somente ao confirmar', () => {

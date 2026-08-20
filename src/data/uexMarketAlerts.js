@@ -94,13 +94,49 @@ export function manualMatchModeLabel(value) {
   return MARKET_ALERT_MANUAL_MATCH_MODES.find(mode => mode.value === normalizeManualMatchMode(value))?.label || MARKET_ALERT_MANUAL_MATCH_MODES[0].label;
 }
 
+function editDistance(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = row[j];
+      row[j] = left[i - 1] === right[j - 1]
+        ? diagonal
+        : Math.min(diagonal + 1, row[j] + 1, row[j - 1] + 1);
+      diagonal = above;
+    }
+  }
+  return row[right.length];
+}
+
+function similarSearchToken(needle, candidate) {
+  if (needle === candidate) return true;
+  if (needle.length < 5 || candidate.length < 5) return false;
+  return editDistance(needle, candidate) <= 1;
+}
+
 function containsNormalizedPhrase(text, phrase) {
   const haystack = normalizeItemSearch(text);
   const needle = normalizeItemSearch(phrase);
   if (!haystack || !needle) return false;
-  const haystackWords = haystack.split(' ');
-  const needleWords = needle.split(' ');
-  return haystackWords.some((_, index) => needleWords.every((word, offset) => haystackWords[index + offset] === word));
+  const haystackWords = haystack.split(' ').filter(Boolean);
+  const needleWords = needle.split(' ').filter(Boolean);
+  if (haystackWords.some((_, index) => needleWords.every((word, offset) => haystackWords[index + offset] === word))) return true;
+
+  // A UEX pode inverter a ordem do nome ou ter uma pequena variação textual,
+  // como "Carinite (Pure)" para uma busca por "Pure Caranite". Para busca
+  // manual, a aceitação é limitada: todos os tokens procurados precisam ter
+  // um token correspondente, e no máximo uma diferença de edição é permitida.
+  const used = new Set();
+  return needleWords.every(word => {
+    const index = haystackWords.findIndex((candidate, candidateIndex) => !used.has(candidateIndex) && similarSearchToken(word, candidate));
+    if (index < 0) return false;
+    used.add(index);
+    return true;
+  });
 }
 
 function manualMatchFields(listing = {}) {
@@ -148,8 +184,20 @@ export function listingQuality1000(row) {
   return titleQuality1000(row);
 }
 
+function listingPriceValue(value) {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    // Preços UEX são inteiros em UEC. Preserve agrupamentos como
+    // "20.000.000" antes da heurística decimal genérica.
+    if (/^\d{1,3}(?:\.\d{3})+$/.test(text)) return Number(text.replace(/\./g, ''));
+  }
+  return numberValue(value, 0);
+}
+
 export function listingPrice(row) {
-  return numberValue(row?.price, numberValue(row?.price_auec, 0));
+  const primary = row?.price;
+  if (primary !== null && primary !== undefined && primary !== '') return listingPriceValue(primary);
+  return listingPriceValue(row?.price_auec);
 }
 
 export function listingDateAddedMs(row) {
@@ -251,6 +299,12 @@ function exactName(value) {
 
 function rowIds(row = {}) {
   return [row.id_item, row.item_id, row.id_commodity, row.commodity_id, row.id]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean);
+}
+
+function listingItemIds(row = {}) {
+  return [row.id_item, row.item_id, row.item_uuid]
     .map(value => String(value ?? '').trim())
     .filter(Boolean);
 }
@@ -602,6 +656,22 @@ export async function fetchMarketListingsForAlert(alert) {
   // título, nunca pela descrição, no modo específico.
   if (!itemIds.length || localMiningMatches(itemName).length > 0) {
     await fetchRows({ operation: 'sell' });
+  }
+
+  // Busca manual: o endpoint sem id pode devolver apenas uma janela global de
+  // anúncios. Use um anúncio que já corresponda ao nome para descobrir o
+  // id_item e então consulte a coleção completa desse item.
+  if (itemName && alert?.itemMode === 'manual') {
+    const discoveredIds = new Set();
+    Array.from(rowsByKey.values())
+      .filter(listing => listingManualMatchReason(alert, listing))
+      .forEach(listing => listingItemIds(listing).forEach(id => discoveredIds.add(id)));
+    for (const id of discoveredIds) {
+      if (!itemIds.includes(id)) {
+        itemIds.push(id);
+        await fetchRows({ id_item: id, operation: 'sell' });
+      }
+    }
   }
 
   const rows = Array.from(rowsByKey.values()).filter(listing => {

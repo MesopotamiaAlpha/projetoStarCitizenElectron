@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const HELP_DELAY_MS = 10000;
+const HELP_DELAY_MS = 2600;
 const INTERACTIVE_SELECTOR = [
   'button',
   'input:not([type="hidden"])',
@@ -9,7 +9,9 @@ const INTERACTIVE_SELECTOR = [
   '[role="button"]',
   '[role="checkbox"]',
   '[role="tab"]',
+  'label',
   '[data-help]',
+  '[data-help-anchor]',
 ].join(',');
 
 function cleanText(value) {
@@ -17,6 +19,9 @@ function cleanText(value) {
 }
 
 function getLabelText(element) {
+  if (element.matches('label')) {
+    return cleanText(element.cloneNode(true).textContent);
+  }
   if (element.id) {
     const label = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
     if (label) return cleanText(label.textContent);
@@ -32,6 +37,18 @@ function getElementHelp(element) {
 
   const explicit = cleanText(element.getAttribute('data-help'));
   if (explicit) return explicit;
+
+  const anchorHelp = cleanText(element.getAttribute('data-help-anchor'));
+  if (anchorHelp) return anchorHelp;
+
+  if (element.matches('label')) {
+    const field = element.querySelector('input, select, textarea');
+    const fieldName = cleanText(element.textContent);
+    if (fieldName && field) {
+      const kind = field.tagName.toLowerCase() === 'select' ? 'selecione' : 'preencha';
+      return `Ajuda do campo “${fieldName}”: ${kind} esta informação para usar o filtro ou salvar o registro.`;
+    }
+  }
 
   const aria = cleanText(element.getAttribute('aria-label'));
   const title = cleanText(element.getAttribute('title'));
@@ -60,7 +77,11 @@ function getElementHelp(element) {
   if (type === 'number') return 'Informe um valor numérico válido neste campo.';
   if (tag === 'button' || element.getAttribute('role') === 'button' || element.getAttribute('role') === 'tab') {
     const action = text || value || 'esta ação';
-    return `Clique para executar: ${action}.`;
+    return `Clique ou pressione Enter para executar: ${action}.`;
+  }
+
+  if (element.matches('[data-help-anchor]')) {
+    return 'Passe o cursor ou use o teclado para consultar a explicação desta área.';
   }
 
   return '';

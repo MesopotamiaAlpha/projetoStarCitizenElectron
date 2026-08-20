@@ -96,6 +96,7 @@ export function formatCargoBreakdown(amount, unit) {
 }
 
 export function parseCargoInput(value, unit = '') {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   const raw = String(value ?? '').trim().replace(/\s+/g, '');
   if (!raw) return 0;
 
@@ -122,7 +123,13 @@ export function parseCargoInput(value, unit = '') {
 
 export function normalizeCargoQuantity(value, unit) {
   const normalized = normalizeCargoUnit(unit);
-  if (isCargoUnit(normalized)) return roundCargo(parseCargoInput(value, normalized));
+  if (isCargoUnit(normalized)) {
+    // Valores numéricos internos não devem passar pela heurística de milhar
+    // usada para texto brasileiro (ex.: "2.000.000"). Sem esta distinção,
+    // 109.891 SCU poderia ser interpretado como 109.891 unidades.
+    if (typeof value === 'number') return roundCargo(Number.isFinite(value) ? value : 0);
+    return roundCargo(parseCargoInput(value, normalized));
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 }
