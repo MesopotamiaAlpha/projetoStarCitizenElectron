@@ -524,6 +524,8 @@ function eventFromListing(alert, listing, rank = 0, referencePrice = 0) {
     stock: listingStock(listing),
     opportunityScore: listingOpportunityScore(listing, referencePrice),
     resultRank: rank + 1,
+    resultSort: normalizeResultSort(alert.resultSort),
+    referencePrice: numberValue(alert.referencePrice, 0),
     source: listing.source || '',
     matchMode: alert.itemMode === 'manual' ? normalizeManualMatchMode(alert.manualMatchMode) : 'catalog',
     matchReason: matchReason || 'Correspondência do anúncio',
@@ -553,6 +555,15 @@ export function sortMarketAlertListings(alert, listings = []) {
     if (sort === 'newest') return (listingDateAddedMs(b) || 0) - (listingDateAddedMs(a) || 0) || listingPrice(a) - listingPrice(b);
     return listingPrice(a) - listingPrice(b) || (listingQuality1000(b) ?? -1) - (listingQuality1000(a) ?? -1);
   });
+}
+
+export function compareMarketAlertEvents(a = {}, b = {}) {
+  const sort = normalizeResultSort(a.resultSort || b.resultSort);
+  const referencePrice = numberValue(a.referencePrice ?? b.referencePrice, 0);
+  if (sort === 'quality') return (Number(b.quality) || -1) - (Number(a.quality) || -1) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  if (sort === 'value') return (Number(b.opportunityScore) || -Infinity) - (Number(a.opportunityScore) || -Infinity) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  if (sort === 'newest') return (listingDateAddedMs(b.listing || b) || Number(b.dateAdded) || 0) - (listingDateAddedMs(a.listing || a) || Number(a.dateAdded) || 0) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  return (Number(a.price) || 0) - (Number(b.price) || 0) || (Number(b.quality) || -1) - (Number(a.quality) || -1);
 }
 
 /**
@@ -614,8 +625,13 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     return { newEvents: [], checkedAt: new Date(checkTimestamp).toISOString(), checkedAlerts: 0 };
   }
   const previousEvents = loadMarketAlertEvents();
-  const previousKeys = new Set(previousEvents.map(row => row.key));
-  const knownListingIds = new Set(previousEvents.map(row => row.listingId).filter(value => value !== null && value !== undefined).map(String));
+  const alertById = new Map(configuredAlerts.map(alert => [String(alert.id), alert]));
+  const validPreviousEvents = previousEvents.filter(event => {
+    const alert = alertById.get(String(event.alertId || ''));
+    return !alert || !event.listing || listingMatchesAlert(alert, event.listing);
+  });
+  const previousKeys = new Set(validPreviousEvents.map(row => row.key));
+  const knownListingIds = new Set(validPreviousEvents.map(row => row.listingId).filter(value => value !== null && value !== undefined).map(String));
   const dismissedKeys = loadDismissedMarketAlertKeys();
   const seenKeysThisCheck = new Set(previousKeys);
   const newEvents = [];
@@ -661,7 +677,7 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     groupLimits.set(key, Math.max(groupLimits.get(key) || 0, clampMaxResults(alert.maxResults)));
   });
   const eventsByGroup = new Map();
-  [...newEvents, ...previousEvents].forEach(event => {
+  [...newEvents, ...validPreviousEvents].forEach(event => {
     const key = event.groupKey || marketAlertGroupKey(event);
     const rows = eventsByGroup.get(key) || [];
     rows.push(event);
@@ -669,8 +685,9 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     eventsByGroup.set(key, rows);
   });
   const limitedEvents = Array.from(eventsByGroup.entries()).flatMap(([key, rows]) => rows
-    .sort((a, b) => Number(a.price || 0) - Number(b.price || 0) || Number(b.dateAdded || 0) - Number(a.dateAdded || 0))
-    .slice(0, groupLimits.get(key) || DEFAULT_MARKET_ALERT_MAX_RESULTS));
+    .sort(compareMarketAlertEvents)
+    .slice(0, groupLimits.get(key) || DEFAULT_MARKET_ALERT_MAX_RESULTS)
+    .map((event, index) => ({ ...event, resultRank: index + 1 })));
   saveMarketAlertEvents(limitedEvents);
   saveMarketAlertSettings({ lastCheckAt: checkTimestamp, nextCheckAt });
   emit(MARKET_ALERTS_CHECKED_EVENT, { newEvents, checkedAt, nextCheckAt });

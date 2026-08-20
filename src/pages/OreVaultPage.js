@@ -6,7 +6,7 @@ import {
   Gem, Minus, ArrowLeft, Camera, Download, Copy,
   Diamond, Sprout
 } from 'lucide-react';
-import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry, wipeVault } from '../data/oreVault';
+import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry, wipeVault, loadOreVaultPreferences, saveOreVaultDefaultDestination, clearOreVaultDefaultDestination, ORE_VAULT_PREFERENCES_UPDATED_EVENT } from '../data/oreVault';
 import TransferModal from '../components/TransferModal';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { getOreColor as getSharedOreColor } from '../data/oreColors';
@@ -217,8 +217,8 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
 }
 
 // ── OreForm ───────────────────────────────────────────────────────────────────
-function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion = 0 }) {
-  const empty = { id:null, ore_name:preselectedOre||'', quantity:'', unit:'un', quality:'', location:'', refined:false, notes:'' };
+function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion = 0, defaultDestination = null }) {
+  const empty = { id:null, ore_name:preselectedOre||'', quantity:'', unit:'un', quality:'', location:defaultDestination?.label || '', refined:false, notes:'' };
   const [d, setD] = useState(() => {
     if (!initial) return empty;
     const display = getStoredDisplay(initial);
@@ -697,11 +697,20 @@ export default function OreVaultPage() {
   const [exportDataUrl, setExportDataUrl] = useState(null);
   const [generatingImg, setGeneratingImg] = useState(false);
   const [locationsVersion, setLocationsVersion] = useState(0);
+  const [oreVaultDefaultDestination, setOreVaultDefaultDestination] = useState(() => loadOreVaultPreferences().defaultDestination);
+  const [showOreVaultDefault, setShowOreVaultDefault] = useState(false);
 
   useEffect(() => {
     const refreshLocations = () => setLocationsVersion(version => version + 1);
+    const refreshOrePreference = event => setOreVaultDefaultDestination(event?.detail?.defaultDestination || loadOreVaultPreferences().defaultDestination || null);
     window.addEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
-    return () => window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+    window.addEventListener(ORE_VAULT_PREFERENCES_UPDATED_EVENT, refreshOrePreference);
+    window.addEventListener('storage', refreshOrePreference);
+    return () => {
+      window.removeEventListener(LOCATIONS_UPDATED_EVENT, refreshLocations);
+      window.removeEventListener(ORE_VAULT_PREFERENCES_UPDATED_EVENT, refreshOrePreference);
+      window.removeEventListener('storage', refreshOrePreference);
+    };
   }, []);
 
   const transferDestinations = useMemo(
@@ -710,6 +719,14 @@ export default function OreVaultPage() {
   );
 
   function refresh() { setVault(loadVault()); }
+
+  function handleOreVaultDefaultChange(key) {
+    const selected = transferDestinations.find(option => option.key === key) || null;
+    const next = selected ? { key: selected.key, label: selected.label, system: selected.system, location_type: selected.location_type, location_name: selected.location_name } : null;
+    setOreVaultDefaultDestination(next);
+    if (next) saveOreVaultDefaultDestination(next);
+    else clearOreVaultDefaultDestination();
+  }
 
   function handleTransfer(entry, destination, quantity) {
     const result = transferOreEntry(entry.id, destination.value || destination.label || destination, quantity);
@@ -904,6 +921,19 @@ export default function OreVaultPage() {
         </div>
       </div>
 
+      <div className="ore-vault-default-bar" style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',padding:'9px 16px',background:'rgba(251,191,36,0.045)',borderBottom:'1px solid rgba(251,191,36,0.16)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,flex:'1 1 250px',minWidth:0}}>
+          <MapPin size={14} style={{color:'var(--accent-gold)',flexShrink:0}}/>
+          <div style={{minWidth:0}}>
+            <strong style={{display:'block',color:'var(--accent-gold)',fontSize:10,textTransform:'uppercase',letterSpacing:'0.08em'}}>Local padrão do Baú de Minério</strong>
+            <span style={{display:'block',marginTop:2,color:'var(--text-muted)',fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{oreVaultDefaultDestination?.label || 'Nenhum local definido — cada registro usará o local informado no formulário'}</span>
+          </div>
+        </div>
+        <button type="button" onClick={() => setShowOreVaultDefault(value => !value)} className="ore-vault-default-toggle"><MapPin size={12}/>{oreVaultDefaultDestination ? 'Alterar padrão do Baú' : 'Definir padrão do Baú'}</button>
+        {oreVaultDefaultDestination && <button type="button" onClick={() => handleOreVaultDefaultChange('')} className="ore-vault-default-clear"><X size={12}/> Limpar</button>}
+        {showOreVaultDefault && <select className="filter-select ore-vault-default-select" value={oreVaultDefaultDestination?.key || ''} onChange={event => handleOreVaultDefaultChange(event.target.value)}><option value="">Sem local padrão</option>{transferDestinations.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}</select>}
+      </div>
+
       <div style={{flex:1,display:'grid',gridTemplateColumns:'240px 1fr',overflow:'hidden'}}>
 
         {/* ── PAINEL ESQUERDO: Resumo total ── */}
@@ -951,7 +981,7 @@ export default function OreVaultPage() {
 
           {/* Formulário */}
           {(showForm||editEntry) && (
-            <OreForm initial={editEntry} preselectedOre={preOre} locationsVersion={locationsVersion} onSave={handleSave} onCancel={()=>{setShowForm(false);setEditEntry(null);setPreOre(null);}}/>
+            <OreForm initial={editEntry} preselectedOre={preOre} locationsVersion={locationsVersion} defaultDestination={editEntry ? null : oreVaultDefaultDestination} onSave={handleSave} onCancel={()=>{setShowForm(false);setEditEntry(null);setPreOre(null);}}/>
           )}
 
           {/* Breadcrumb */}

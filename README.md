@@ -1198,7 +1198,7 @@ npm run check:electron
 npm run verify
 ```
 
-O comando `npm run verify` é o mínimo obrigatório. Na última validação desta revisão foram aprovados **24 suítes e 104 testes**, o build React foi compilado e os arquivos Electron passaram na checagem sintática.
+O comando `npm run verify` é o mínimo obrigatório. Na validação mais recente foram aprovadas **29 suítes e 121 testes**, o build React foi compilado e `electron/main.js` passou na checagem sintática. Sempre repita os comandos após modificar o processo principal, pois o build React não valida automaticamente os handlers IPC.
 
 ### 30.7 Regras de documentação futura
 
@@ -1211,3 +1211,146 @@ Para mudanças visuais compartilhadas, prefira classes em `src/App.css`. Para va
 [5]: https://pixijs.com/8.x/guides/getting-started/intro "PixiJS 8 — Getting Started"
 [6]: https://reactbits.dev/get-started/index "React Bits — Getting Started"
 [7]: https://gsap.com/docs/v3/ "GSAP — Documentation"
+
+
+## 31. Estado funcional atual — revisão de manutenção
+
+Esta seção complementa o manual técnico com as funções implementadas na revisão atual. Ela deve ser consultada antes de alterar os módulos de Armaduras, Inventário, Missões ou UEX.
+
+### 31.1 Inventário de Itens
+
+O `src/pages/InventoryPage.js` é responsável pelo cadastro, edição, filtragem, transferência, reservas, scripts, PAF, itens craftados e visualização detalhada dos itens. A busca global na tela inicial pesquisa todos os sistemas e locais, consolida a quantidade por sistema e local e exibe os registros correspondentes sem duplicá-los. A busca contextual aparece apenas depois que um sistema ou local foi selecionado.
+
+A filtragem foi centralizada em `src/data/inventorySearch.js`. O utilitário `filterInventoryItems()` deve ser usado como fonte única para filtrar e ordenar os registros. Não crie um segundo `map()` de `displayItems` para a mesma pesquisa: esse foi o motivo de uma correção anterior que duplicava cards e barras de busca.
+
+A opção de visualizar todos os itens de um sistema usa o marcador interno `__all_in_system`. Esse valor representa uma seleção virtual e nunca deve ser tratado como `location_name` real.
+
+Cada item pode ter uma imagem principal vinculada no campo `item_image`. O formulário apresenta os botões **Vincular imagem**, **Cadastrar imagem** ou **Substituir imagem**, conforme o estado do registro. A imagem é pré-visualizada no formulário, aparece no card e no modal de detalhes, pode ser removida antes do salvamento e é limitada a 4 MB nos formatos PNG, JPEG, WEBP e GIF.
+
+O campo `item_image` é persistido como texto JSON no SQLite. A normalização ocorre em `normalizeItemImage()` e aceita tanto o formato JSON atual quanto um data URL legado. Ao alterar o modelo, mantenha sincronizados os quatro pontos abaixo:
+
+| Camada | Local | Responsabilidade |
+|---|---|---|
+| Modelo React | `emptyItem()` | Define o valor inicial `item_image: null`. |
+| Normalização | `normalizeItemImage()` | Converte texto, objeto e data URL em um formato seguro para a interface. |
+| Processo Electron | `electron/main.js` | Cria/migra a coluna `item_image` e grava o valor nos handlers `inventory-create` e `inventory-update`. |
+| Testes | `src/data/inventoryItemImage.test.js` | Verifica JSON, data URL legado e valores vazios. |
+
+A migração existente deve permanecer idempotente:
+
+```js
+try { db.run(`ALTER TABLE inventory_items ADD COLUMN item_image TEXT DEFAULT ''`); } catch (e) {}
+```
+
+Nunca remova a coluna em uma atualização normal. Bancos de usuários podem ter sido criados antes da versão atual.
+
+### 31.2 Cadastro e coleção de armaduras
+
+A seção de armaduras utiliza uma hierarquia lógica de **Base → Variante → Peças**. `AllArmorsPage.js` apresenta o catálogo; `CustomArmorPage.js` administra armaduras personalizadas; `MyCollectionPage.js` controla posse, wishlist, quantidade física, peças obtidas e sets completos.
+
+O cadastro personalizado possui tipos de peça configuráveis. Helmet, Torso, Arms, Legs e Backpack continuam compatíveis com registros antigos, enquanto tipos como **Undersuit** e **Camiseta** podem ser cadastrados pelo gerenciador da tela. Ao remover um tipo, o sistema deve bloquear a operação se ele estiver sendo usado por alguma peça.
+
+A coleção calcula sets completos com base nas peças realmente cadastradas na variante. A quantidade de sets completos é a menor quantidade disponível entre todas as peças necessárias. Não use uma lista fixa de quatro peças: tipos personalizados podem fazer parte de uma variante e devem ser considerados pela estrutura salva.
+
+A limpeza de duplicidades utiliza `src/data/armorDedup.js`. A identidade canônica normaliza acentos, pontuação, base e variante. Formatos como `Novikov "Ascension"` com variante `Base` e `Novikov` com variante `Ascension` devem ser reconhecidos como a mesma identidade. A tela deve preservar um registro de referência e permitir remover somente a duplicata escolhida, com confirmação.
+
+### 31.3 Estoque Interno UEX e armaduras
+
+`src/pages/UexSalesPage.js` permite vincular anúncios a múltiplos locais do Inventário, ao Baú de Minério, a peças individuais da coleção e a sets completos de armaduras. O vínculo de uma peça reduz somente a quantidade daquela peça. O vínculo de um set reduz uma unidade de cada peça necessária.
+
+A baixa é validada antes da persistência. Se qualquer peça estiver em quantidade insuficiente, nenhuma redução parcial deve ser gravada. O registro da venda deve informar quando o consumo de armadura não foi possível.
+
+Os anúncios da UEX podem acrescentar descritores comerciais, por exemplo `Novikov "Ascension" Exploration Suit Set`. A normalização em `UexSalesPage.js` deve ignorar apenas sufixos descritivos como `Suit Set`, `Armor Set`, `Complete Set` e equivalentes, sem alterar o nome real salvo na coleção. A regra de correspondência é testada em `src/pages/UexSalesArmorMatching.test.js`.
+
+### 31.4 Monitor Automático de Missões
+
+O leitor do Game.log está dividido entre `electron/missionWatcher.js`, responsável pela leitura e emissão dos eventos, e `src/data/missionAutoMonitor.js`, responsável pela persistência e reconciliação com `sc_missions_v2`.
+
+Missões automáticas devem conservar o nome humano/canônico mesmo quando o Game.log apresentar um identificador técnico. A identidade da ocorrência usa GUID quando disponível; o nome canônico é utilizado para reaproveitar informações históricas entre ocorrências diferentes.
+
+Preferências de recompensas são persistidas na chave `sc_mission_reward_preferences_v1`. Quando uma missão automática é editada e recebe MG Scrip, Council Scrip ou ASD Secure Drive, `rememberMissionRewardPreferences()` salva a configuração por nome canônico. Uma nova ocorrência da mesma missão recebe automaticamente o tipo e a quantidade configurados. O evento posterior da ocorrência atual não deve sobrescrever uma edição manual já salva.
+
+Os campos principais são:
+
+| Campo | Função |
+|---|---|
+| `scrip_type` | `mg_scrip`, `council_scrip` ou `null`. |
+| `scrip_qty` | Quantidade inteira do Scrip. |
+| `secure_drive_enabled` | Indica se a missão entrega ASD Secure Drive. |
+| `secure_drive_qty` | Quantidade inteira de Secure Drive. |
+| `scrip_dispatched` | Indica se o despacho para o Inventário padrão já foi realizado. |
+| `secure_drive_dispatched` | Indica se o despacho do Secure Drive já foi realizado. |
+
+Os testes principais ficam em `src/data/missionAutoMonitor.test.js` e `src/data/missionAutoMonitor.integration.test.js`. Toda alteração no parser deve ser validada com missão ativa, concluída, abandonada, falha, nome técnico e reprocessamento do Game.log.
+
+### 31.5 Alertas de Compra UEX
+
+`src/data/uexMarketAlerts.js` contém o modelo, a filtragem, o ranking, a persistência e a verificação automática dos alertas. `src/pages/MarketAlertsPage.js` é a tela dedicada aos Alertas de Compra.
+
+Quando o alerta possui limite de cinco anúncios, o sistema deve buscar os anúncios elegíveis, remover os ignorados pelo usuário, combinar os resultados atuais com os novos, ordenar pelo critério configurado e manter somente os cinco melhores. Um novo anúncio melhor substitui automaticamente o anúncio na pior posição. A posição `resultRank` deve ser recalculada após a substituição.
+
+A remoção manual de um resultado não significa que ele pode voltar imediatamente na consulta seguinte. O anúncio removido deve permanecer ignorado pelo identificador correspondente. Anúncios diferentes, que posteriormente atendam aos critérios, podem ocupar a vaga liberada.
+
+Os critérios suportados incluem preço, qualidade, oportunidade, recência, estoque, disponibilidade, atividade do vendedor e quantidade máxima de resultados. Ao modificar a ordenação, atualize o comparador, a seleção dos candidatos, a persistência do evento e os testes em `src/data/uexMarketAlerts.test.js`.
+
+### 31.6 Persistência e diretório de dados
+
+O processo principal usa `sql.js`: o banco SQLite é carregado em memória, alterado e exportado para o arquivo de dados após cada operação. O código de negócio não deve acessar diretamente o arquivo `.db` a partir do renderer.
+
+As operações novas devem seguir este fluxo:
+
+```text
+React → window.electronAPI → preload.js → ipcMain.handle() → sql.js → saveDb()
+```
+
+Para qualquer nova coluna SQL, atualize simultaneamente o `CREATE TABLE`, a migração `ALTER TABLE`, o `INSERT`, o `UPDATE` e os testes. Para dados do `localStorage`, verifique se a chave deve participar do backup seletivo e documente a chave no README.
+
+O diretório central é configurado pelo processo principal. Não use caminhos absolutos de desenvolvimento, não grave dados dentro de `build/`, `dist/` ou do diretório do código e não inclua bancos de usuário no artefato do instalador.
+
+### 31.7 Convenções de desenvolvimento
+
+A interface continua baseada em React sem React Router. A navegação usa `activePage` em `src/App.js`. Ao criar uma tela, atualize o grupo de navegação, o switch de renderização, a tabela de páginas do README e, se necessário, o backup seletivo.
+
+Regras de manutenção importantes:
+
+| Regra | Motivo |
+|---|---|
+| Use `useMemo` para filtros e agrupamentos derivados. | Evita recalcular milhares de registros a cada renderização. |
+| Use `React.memo` em cards pesados. | Reduz renders ao alterar busca ou estado local. |
+| Não anime cada item de listas grandes. | Preserva desempenho acima de 2.000 registros. |
+| Não use `transform` que altere a geometria no hover de cards numéricos. | Evita textos e números pulando de linha. |
+| Preserve `min-width: 0` e `box-sizing: border-box`. | Evita overflow e quebra de layout. |
+| Não coloque tokens UEX em logs, testes, README ou backups compartilhados. | Protege credenciais do usuário. |
+| Mantenha `pointer-events: none` nas camadas visuais. | Garante que efeitos não bloqueiem cliques. |
+
+### 31.8 Testes e validação antes de entregar
+
+Use os comandos abaixo na raiz do projeto:
+
+```powershell
+npm install
+npm run test
+npm run react-build
+npm run check:electron
+npm run verify
+```
+
+Para validar uma função específica:
+
+```powershell
+npm test -- --watchAll=false --runInBand src/data/inventoryItemImage.test.js
+npm test -- --watchAll=false --runInBand src/data/missionAutoMonitor.test.js
+npm test -- --watchAll=false --runInBand src/data/uexMarketAlerts.test.js
+```
+
+Para validar a imagem de um item, crie um item sem imagem, salve, edite e use **Vincular imagem**. Depois substitua a imagem, remova-a, salve novamente e reabra o item. Também valide um banco existente anterior à coluna `item_image` para confirmar que a migração não impede a inicialização.
+
+Para validar filtros, cadastre dois itens diferentes, pesquise por apenas um e confirme que existe uma única barra de busca e um único card. Para validar o UEX, configure cinco resultados, remova o pior, injete ou aguarde uma oferta melhor e confirme que o limite é preenchido sem trazer de volta anúncios ignorados.
+
+Para validar o monitor, edite uma ocorrência automática com Scrip e Secure Drive, salve, inicie uma nova ocorrência com o mesmo nome canônico e confirme que os campos são preenchidos sem edição manual.
+
+### 31.9 Checklist para novas funcionalidades
+
+Antes de abrir uma entrega, confirme que o comportamento está implementado no renderer, no processo Electron quando houver persistência, no mock de desenvolvimento quando aplicável, nos testes e no README. Verifique também migração de dados, compatibilidade retroativa, estados vazios, exclusão, carregamento, erro, responsividade, desempenho com volume alto e preferência de movimento reduzido.
+
+A documentação deve registrar o motivo da alteração, a causa de bugs corrigidos, os arquivos envolvidos, as chaves persistidas, os comandos usados na validação e qualquer limitação específica do ambiente de build.

@@ -4,6 +4,9 @@ const { MissionLogWatcher } = require('./missionWatcher');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
+// Debug do Monitor Automático — descomente a próxima linha durante manutenção.
+const ENABLE_MISSION_MONITOR_DEBUG = false;
+// const ENABLE_MISSION_MONITOR_DEBUG = true; // ATIVAR: logs do processo Electron
 
 const APP_DIR_NAME = 'CompanheiroEmoto';
 const APP_ID = 'com.companheiroemoto.app';
@@ -53,13 +56,13 @@ function getMissionLogWatcher() {
   if (missionLogWatcher) return missionLogWatcher;
   missionLogWatcher = new MissionLogWatcher(
     event => {
-      console.info('[MissionAutoMonitor][main][event->renderer]', { type: event?.type, guid: event?.guid || event?.missionGuid || null, activeCount: missionLogWatcher?.active?.size || 0 });
+      if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][event->renderer]', { type: event?.type, guid: event?.guid || event?.missionGuid || null, activeCount: missionLogWatcher?.active?.size || 0 });
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-event', event);
       else console.warn('[MissionAutoMonitor][main] renderer indisponível para evento');
     },
     status => {
       const normalizedStatus = normalizeMissionMonitorStatus(status);
-      console.info('[MissionAutoMonitor][main][status->renderer]', { running: normalizedStatus.running, logPath: normalizedStatus.logPath, phase: normalizedStatus.debug.phase, fileExists: normalizedStatus.debug.fileExists, readCount: normalizedStatus.debug.readCount, activeCount: normalizedStatus.debug.activeCount, statusShape: normalizedStatus.debug.statusShape, legacyStatusShape: normalizedStatus.debug.legacyStatusShape, watcherVersion: normalizedStatus.debug.watcherVersion });
+      if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][status->renderer]', { running: normalizedStatus.running, logPath: normalizedStatus.logPath, phase: normalizedStatus.debug.phase, fileExists: normalizedStatus.debug.fileExists, readCount: normalizedStatus.debug.readCount, activeCount: normalizedStatus.debug.activeCount, statusShape: normalizedStatus.debug.statusShape, legacyStatusShape: normalizedStatus.debug.legacyStatusShape, watcherVersion: normalizedStatus.debug.watcherVersion });
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-status', normalizedStatus);
       else console.warn('[MissionAutoMonitor][main] renderer indisponível para status');
     },
@@ -434,6 +437,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
       craft_status  TEXT DEFAULT '[]',
       craft_materials TEXT DEFAULT '[]',
       craft_attachments TEXT DEFAULT '[]',
+      item_image     TEXT DEFAULT '',
       reservations TEXT DEFAULT '[]',
       created_at    TEXT DEFAULT (datetime('now')),
       updated_at    TEXT DEFAULT (datetime('now'))
@@ -487,6 +491,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_status TEXT DEFAULT '[]'`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_materials TEXT DEFAULT '[]'`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_attachments TEXT DEFAULT '[]'`); } catch(e) {}
+  try { db.run(`ALTER TABLE inventory_items ADD COLUMN item_image TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN reservations TEXT DEFAULT '[]'`); } catch(e) {}
   // Migração idempotente: quantidade positiva representa cópias possuídas.
   try { db.run(`ALTER TABLE user_pieces ADD COLUMN quantity INTEGER DEFAULT 0`); } catch(e) {}
@@ -2293,8 +2298,8 @@ ipcMain.handle('inventory-create', (event, item) => {
   db.run(`INSERT INTO inventory_items
     (name,category,subcategory,system,location_type,location_name,container,
      quantity,unit,size,grade,manufacturer,condition,value_auec,is_contraband,notes,
-           is_crafted,craft_status,craft_materials,craft_attachments,reservations)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           is_crafted,craft_status,craft_materials,craft_attachments,item_image,reservations)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [item.name, item.category||'Miscellaneous', item.subcategory||'',
      item.system||'Stanton', item.location_type||'Station',
      item.location_name||'', item.container||'',
@@ -2302,7 +2307,7 @@ ipcMain.handle('inventory-create', (event, item) => {
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
      item.is_contraband?1:0, item.notes||'',
-      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[])]);
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), String(item.item_image||''), JSON.stringify(item.reservations||[])]);
   const id = queryOne('SELECT last_insert_rowid() as id').id;
   saveDb();
   return { success: true, id };
@@ -2312,15 +2317,15 @@ ipcMain.handle('inventory-update', (event, item) => {
   db.run(`UPDATE inventory_items SET
     name=?,category=?,subcategory=?,system=?,location_type=?,location_name=?,
     container=?,quantity=?,unit=?,size=?,grade=?,manufacturer=?,condition=?,
-         value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,craft_materials=?,craft_attachments=?,reservations=?,updated_at=datetime('now')
+         value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,craft_materials=?,craft_attachments=?,item_image=?,reservations=?,updated_at=datetime('now')
      WHERE id=?`,
     [item.name, item.category, item.subcategory||'',
      item.system, item.location_type, item.location_name,
      item.container||'', (Number(item.quantity) >= 0 ? Number(item.quantity) : 0), item.unit||'un',
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
-     item.is_contraband?1:0, item.notes||'',
-      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[]), item.id]);
+      item.is_contraband?1:0, item.notes||'',
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), String(item.item_image||''), JSON.stringify(item.reservations||[]), item.id]);
   saveDb();
   return { success: true };
 });
@@ -2622,9 +2627,9 @@ ipcMain.handle('mission-monitor-choose-log', async () => {
 });
 
 ipcMain.handle('mission-monitor-start', async (_event, logPath) => {
-  console.info('[MissionAutoMonitor][main][ipc.start.received]', { logPath, type: typeof logPath });
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.start.received]', { logPath, type: typeof logPath });
   const status = normalizeMissionMonitorStatus(await getMissionLogWatcher().start(logPath));
-  console.info('[MissionAutoMonitor][main][ipc.start.return]', { logPath: status.logPath, running: status.running, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.start.return]', { logPath: status.logPath, running: status.running, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
   return status;
 });
 
@@ -2635,7 +2640,7 @@ ipcMain.handle('mission-monitor-stop', async () => {
 
 ipcMain.handle('mission-monitor-status', () => {
   const status = normalizeMissionMonitorStatus(missionLogWatcher ? missionLogWatcher.status() : { running: false, logPath: null, channel: 'UNKNOWN', activeMissions: [] });
-  console.info('[MissionAutoMonitor][main][ipc.status.return]', { running: status.running, logPath: status.logPath, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.status.return]', { running: status.running, logPath: status.logPath, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
   return status;
 });
 

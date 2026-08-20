@@ -27,6 +27,7 @@ import {
   getInventorySubcategoryOptions,
   loadInventoryTaxonomy,
 } from '../data/inventoryTaxonomy';
+import { filterInventoryItems } from '../data/inventorySearch';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Script Items — conversão especial
@@ -139,6 +140,21 @@ export function getReservedQuantity(item) {
 
 export function getAvailableQuantity(item) {
   return Math.max(0, (Number(item?.quantity) || 0) - getReservedQuantity(item));
+}
+
+export function normalizeItemImage(value) {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && parsed.dataUrl) return { name: String(parsed.name || 'Imagem do item'), type: String(parsed.type || 'image/*'), dataUrl: String(parsed.dataUrl), addedAt: parsed.addedAt || null };
+    } catch { /* valor legado pode ser diretamente um data URL */ }
+    return raw.startsWith('data:image/') ? { name: 'Imagem do item', type: raw.slice(5, raw.indexOf(';')) || 'image/*', dataUrl: raw, addedAt: null } : null;
+  }
+  if (typeof value === 'object' && value.dataUrl) return { name: String(value.name || 'Imagem do item'), type: String(value.type || 'image/*'), dataUrl: String(value.dataUrl), addedAt: value.addedAt || null };
+  return null;
 }
 
 export function normalizeCraftAttachments(value) {
@@ -553,6 +569,19 @@ function ptDateTimeBrasil(isoStr) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock API helpers (browser fallback)
 // ─────────────────────────────────────────────────────────────────────────────
+export function serializeInventoryItem(item) {
+  const image = normalizeItemImage(item?.item_image);
+  return { ...item, item_image: image ? JSON.stringify(image) : '' };
+}
+
+export function buildTransferredTarget(target, source, quantity) {
+  return {
+    ...target,
+    quantity: (Number(target?.quantity) || 0) + (Number(quantity) || 0),
+    item_image: normalizeItemImage(target?.item_image) || normalizeItemImage(source?.item_image) || null,
+  };
+}
+
 function getMockInvAPI() {
   const KEY = 'sc_inventory_v1';
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY))||{itens:[],nextId:1}; } catch { return {itens:[],nextId:1}; } };
@@ -561,14 +590,14 @@ function getMockInvAPI() {
     getAll: async () => load().itens,
     create: async (item) => {
       const s = load();
-      const newItem = { ...item, id: s.nextId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      const newItem = { ...serializeInventoryItem(item), id: s.nextId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
       s.itens.push(newItem); s.nextId++;
       save(s); return { success:true, id: newItem.id };
     },
     update: async (item) => {
       const s = load();
       const idx = s.itens.findIndex(i => i.id === item.id);
-      if (idx !== -1) { s.itens[idx] = { ...item, updated_at: new Date().toISOString() }; save(s); }
+      if (idx !== -1) { s.itens[idx] = { ...serializeInventoryItem(item), updated_at: new Date().toISOString() }; save(s); }
       return { success:true };
     },
     delete: async (id) => {
@@ -609,7 +638,7 @@ const emptyItem = () => ({
   container:'', quantity:0, unit:'un',
   size:'', grade:'', manufacturer:'', condition:'Bom',
   value_auec:0, is_contraband:false, notes:'',
-  is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], reservations:[],
+  is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], item_image:null, reservations:[],
 });
 
 function newCraftMaterialRow() { return { id: Date.now()+Math.random(), material:'', quality:'', quantity:'', unit:'un' }; }
@@ -618,9 +647,9 @@ function newCraftStatusRow() { return { id: Date.now()+Math.random(), status:'',
 function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation = null }) {
   const [data, setData] = useState(() => {
     const base = initial
-      ? { is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], ...initial }
+      ? { is_crafted:false, craft_materials:[], craft_status:[], craft_attachments:[], item_image:null, ...initial }
       : { ...emptyItem(), ...(defaultLocation || {}) };
-    return { ...base, craft_materials: normalizeCraftMaterials(base.craft_materials), craft_status: normalizeCraftStatus(base.craft_status), craft_attachments: normalizeCraftAttachments(base.craft_attachments) };
+    return { ...base, item_image: normalizeItemImage(base.item_image), craft_materials: normalizeCraftMaterials(base.craft_materials), craft_status: normalizeCraftStatus(base.craft_status), craft_attachments: normalizeCraftAttachments(base.craft_attachments) };
   });
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
@@ -639,6 +668,17 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
   function updateCraftStatus(index, patch) {
     set('craft_status', data.craft_status.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
   }
+  function handleItemImageFile(event) {
+    const file = Array.from(event.target.files || []).find(candidate => candidate.type.startsWith('image/'));
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { setError('A imagem do item deve ter no máximo 4 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => set('item_image', { name: file.name, type: file.type, dataUrl: String(reader.result || ''), addedAt: new Date().toISOString() });
+    reader.onerror = () => setError('Não foi possível ler a imagem selecionada.');
+    reader.readAsDataURL(file);
+  }
+
   function handleCraftImageFiles(event) {
     const files = Array.from(event.target.files || []).filter(file => file.type.startsWith('image/'));
     files.forEach(file => {
@@ -949,6 +989,22 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
             {subcatOptions.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
         </div>
+      </div>
+
+      {/* Imagem principal do item */}
+      <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', marginBottom:12, padding:'10px 12px', background:'rgba(56,189,248,0.045)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:7 }}>
+        <div style={{ flex:'1 1 220px', minWidth:0 }}>
+          <label style={LS}>Imagem do item</label>
+          <div style={{ color:'var(--text-muted)', fontSize:10, lineHeight:1.45 }}>Vincule uma imagem principal para identificar este registro. JPG, PNG, WEBP ou GIF até 4 MB.</div>
+        </div>
+        <label type="button" style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'7px 11px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:5, color:'var(--accent-primary)', fontSize:11, fontWeight:800, cursor:'pointer', textTransform:'uppercase', whiteSpace:'nowrap' }}>
+          <ImageIcon size={14}/>{data.item_image ? 'Substituir imagem' : (initial?.id ? 'Cadastrar imagem' : 'Vincular imagem')}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleItemImageFile} style={{ display:'none' }}/>
+        </label>
+        {data.item_image && <div style={{ position:'relative', width:78, height:58, flexShrink:0, border:'1px solid rgba(56,189,248,0.35)', borderRadius:5, overflow:'hidden', background:'var(--bg-base)' }}>
+          <img src={data.item_image.dataUrl} alt={data.item_image.name || 'Imagem do item'} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+          <button type="button" onClick={()=>set('item_image', null)} title="Remover imagem" style={{ position:'absolute', top:3, right:3, width:20, height:20, border:0, borderRadius:4, background:'rgba(0,0,0,0.72)', color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><X size={11}/></button>
+        </div>}
       </div>
 
       {/* Row 2: Sistema + Localização Tipo + Localização */}
@@ -1269,6 +1325,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
   const craftStatus = normalizeCraftStatus(item.craft_status);
   const craftMaterials = normalizeCraftMaterials(item.craft_materials);
   const craftAttachments = normalizeCraftAttachments(item.craft_attachments);
+  const itemImage = normalizeItemImage(item.item_image);
   const [showTransfer, setShowTransfer] = useState(false);
   const [delConf,    setDelConf]    = useState(false);
   const catColor = CATEGORY_COLORS[item.category] || 'var(--text-muted)';
@@ -1294,6 +1351,8 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
       }}
       onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow=`0 6px 20px rgba(0,0,0,0.3), 0 0 0 1px ${isScript?WIKELO_COLOR:catColor}44`;}}
       onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
+
+        {itemImage && <img src={itemImage.dataUrl} alt={itemImage.name || displayName} title="Imagem vinculada ao item" style={{ width:'100%', height:78, objectFit:'cover', borderRadius:5, border:`1px solid ${catColor}44`, display:'block' }} />}
 
         {/* Linha 1: nome + badges */}
         <div className="inventory-item-card-header" style={{display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
@@ -1360,6 +1419,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
           <div className="inventory-detail-modal" style={{background:'var(--bg-card)',border:`1px solid ${isScript?'rgba(162,155,254,0.4)':catColor+'44'}`,borderRadius:12,padding:22,width:'100%',maxWidth:580,maxHeight:'calc(100vh - clamp(24px, 8vh, 80px))',overflowY:'auto',boxSizing:'border-box',margin:'0 auto',flex:'0 0 auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
 
             {/* Header modal */}
+            {itemImage && <div style={{ marginBottom:14, borderRadius:7, overflow:'hidden', border:`1px solid ${catColor}55`, background:'var(--bg-base)' }}><img src={itemImage.dataUrl} alt={itemImage.name || displayName} style={{ display:'block', width:'100%', maxHeight:220, objectFit:'cover' }}/></div>}
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}>
@@ -1540,8 +1600,8 @@ export default function InventoryPage() {
     if (window.electronAPI) {
       return {
         getAll:  () => window.electronAPI.inventoryGetAll(),
-        create:  (i) => window.electronAPI.inventoryCreate(i),
-        update:  (i) => window.electronAPI.inventoryUpdate(i),
+        create:  (i) => window.electronAPI.inventoryCreate(serializeInventoryItem(i)),
+        update:  (i) => window.electronAPI.inventoryUpdate(serializeInventoryItem(i)),
         delete:  (id) => window.electronAPI.inventoryDelete(id),
         getStats:() => window.electronAPI.inventoryGetStats(),
       };
@@ -1556,6 +1616,7 @@ export default function InventoryPage() {
       const normalized = (Array.isArray(all) ? all : []).map(item => ({
         ...item,
         name: normalizeUexItemName(item.name),
+        item_image: normalizeItemImage(item.item_image),
         craft_status: normalizeCraftStatus(item.craft_status),
         reservations: normalizeReservations(item.reservations),
       }));
@@ -1576,6 +1637,7 @@ export default function InventoryPage() {
   const handleSave = useCallback(async (data) => {
     const normalizedData = {
     ...data,
+    item_image: data.item_image?.dataUrl ? JSON.stringify(data.item_image) : '',
     name: normalizeUexItemName(data.name),
     craft_status: normalizeCraftStatus(data.craft_status),
     reservations: normalizeReservations(data.reservations),
@@ -1640,7 +1702,7 @@ export default function InventoryPage() {
         await invAPI.update({ ...item, ...destinationFields });
       } else if (target) {
         // Primeiro atualiza o destino; se a origem falhar, tenta desfazer o incremento.
-        const updatedTarget = { ...target, quantity:(Number(target.quantity)||0) + amount };
+        const updatedTarget = buildTransferredTarget(target, item, amount);
         await invAPI.update(updatedTarget);
         try {
           if (sourceRemaining === 0) await invAPI.delete(item.id);
@@ -1720,31 +1782,13 @@ export default function InventoryPage() {
   }, [regularItems, selSystem]);
 
   // Itens filtrados para exibição
-  const displayItems = useMemo(() => {
-    let res = [...regularItems];
-    if (selSystem)   res = res.filter(i => i.system === selSystem);
-    if (selLocation) res = res.filter(i => i.location_name === selLocation);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      res = res.filter(i =>
-        i.name?.toLowerCase().includes(q) ||
-        i.category?.toLowerCase().includes(q) ||
-        i.location_name?.toLowerCase().includes(q) ||
-        i.manufacturer?.toLowerCase().includes(q) ||
-        i.notes?.toLowerCase().includes(q)
-      );
-    }
-    if (filterCat !== 'all') res = res.filter(i => i.category === filterCat);
-    res.sort((a,b) => {
-      switch(sortBy) {
-        case 'value':    return (b.value_auec*b.quantity)-(a.value_auec*a.quantity);
-        case 'qty':      return b.quantity - a.quantity;
-        case 'category': return (a.category||'').localeCompare(b.category||'');
-        default:         return (a.name||'').localeCompare(b.name||'');
-      }
-    });
-    return res;
-  }, [regularItems, selSystem, selLocation, search, filterCat, sortBy]);
+  const displayItems = useMemo(() => filterInventoryItems(regularItems, {
+    system: selSystem,
+    location: selLocation,
+    search,
+    category: filterCat,
+    sortBy,
+  }), [regularItems, selSystem, selLocation, search, filterCat, sortBy]);
 
   const totalValor     = itens.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
   const displayValor   = displayItems.reduce((a,i)=>a+(i.value_auec||0)*(i.quantity||1),0);
@@ -1801,10 +1845,14 @@ export default function InventoryPage() {
           <button onClick={()=>setShowDefaultLocation(value=>!value)} title="Definir o local preenchido automaticamente em novos itens" style={{display:'flex',alignItems:'center',gap:6,padding:'8px 11px',background:defaultLocation?'rgba(52,211,153,0.09)':'rgba(255,255,255,0.03)',border:`1px solid ${defaultLocation?'rgba(52,211,153,0.35)':'var(--border-subtle)'}`,borderRadius:7,color:defaultLocation?'var(--accent-green)':'var(--text-secondary)',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,cursor:'pointer'}}>
             <MapPin size={13}/> {defaultLocation ? 'Local padrão ativo' : 'Definir local padrão'}
           </button>
-          <button onClick={()=>{setShowForm(true);setEditItem(null);}} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'rgba(56,189,248,0.1)',border:'1px solid rgba(56,189,248,0.35)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:'pointer',letterSpacing:'0.06em'}}>
-            <Plus size={14}/> Novo Item
-          </button>
         </div>
+      </div>
+
+      <div className="inventory-action-bar">
+        <div className="inventory-action-context"><Package size={15}/><span>Gerenciar registros do inventário</span></div>
+        <button type="button" className="inventory-new-item-action" onClick={()=>{setShowForm(true);setEditItem(null);}} title="Cadastrar um novo item no inventário">
+          <Plus size={16}/><span>Novo item</span>
+        </button>
       </div>
 
       {showDefaultLocation && (
@@ -2006,13 +2054,13 @@ export default function InventoryPage() {
         {/* NÍVEL 3 — Cards de itens */}
         {(selLocation || selSystem==='__all' || search.trim()) && (
           <div>
-            {/* Controles */}
+            {/* Controles: a tela inicial usa a busca global acima; aqui a busca é contextual. */}
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
-              <div style={{position:'relative',flex:1,minWidth:160}}>
+              {(selSystem || selLocation) && <div style={{position:'relative',flex:1,minWidth:160}}>
                 <Search size={11} style={{position:'absolute',left:8,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',pointerEvents:'none'}}/>
                 <input style={{width:'100%',padding:'6px 10px 6px 26px',background:'var(--bg-base)',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,outline:'none',boxSizing:'border-box'}}
                   placeholder="Buscar item..." value={search} onChange={e=>setSearch(e.target.value)}/>
-              </div>
+              </div>}
               <select style={SS} value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
                 <option value="all">Todas as categorias</option>
                 {catList.map(c=><option key={c} value={c}>{c}</option>)}
@@ -2075,27 +2123,7 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Busca global — mesmo sem sistema selecionado */}
-        {!selSystem && search.trim() && (
-          <div>
-            <div style={{fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:14}}>
-              Resultados para "{search}"
-            </div>
-            <div className="inventory-items-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
-              {displayItems.map(item=>(
-                <ItemCard key={item.id} item={item}
-                  onEdit={i=>{setEditItem(i);setShowForm(false);}}
-                  onDelete={handleDelete}
-                  onScriptUpdate={handleScriptUpdate}
-                  allItems={itens}
-                  transferDestinations={transferDestinations}
-                                        onTransfer={handleTransfer}
-                      onReservationUpdate={handleReservationUpdate}/>
-                ))}
 
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

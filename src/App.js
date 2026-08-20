@@ -38,16 +38,12 @@ import GlareProfileController from './components/GlareProfileController';
 import ContextualSpotlightController from './components/ContextualSpotlightController';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
+import { ENABLE_FX_DIAGNOSTICS } from './config/debugFlags';
 
 import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
 import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
-
-// Diagnóstico FX desativado para usuários finais.
-// Para ativar durante o desenvolvimento, descomente a próxima linha.
-let ENABLE_FX_DIAGNOSTICS = false;
-// ENABLE_FX_DIAGNOSTICS = true;
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -353,10 +349,87 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleTogglePiece         = async id     => { await api.togglePiece(id);         await loadData(); };
-  const handleTogglePieceWishlist = async id     => { await api.togglePieceWishlist(id);  await loadData(); };
-  const handleupdatePieceNotes    = async (id,n) => { await api.updatePieceNotes(id,n);   await loadData(); };
-  const handleUpdatePieceQuantity = async (id,qty) => { await api.updatePieceQuantity(id,qty); await loadData(); };
+  const refreshArmorStats = useCallback(async () => {
+    try { setStats(await api.getStats()); } catch (error) { console.error('[Armor] stats refresh failed', error); }
+  }, []);
+
+  const updateLocalArmorPiece = useCallback((pieceId, updater) => {
+    setSets(current => current.map(set => ({
+      ...set,
+      pieces: (set.pieces || []).map(piece => String(piece.id) === String(pieceId) ? { ...piece, ...updater(piece) } : piece),
+    })));
+  }, []);
+
+  const handleTogglePiece = async id => {
+    updateLocalArmorPiece(id, piece => ({ owned: !piece.owned, quantity: !piece.owned ? Math.max(1, Number(piece.quantity) || 1) : 0, obtained_date: !piece.owned ? new Date().toISOString() : null }));
+    try { await api.togglePiece(id); await refreshArmorStats(); } catch (error) { await loadData(); console.error('[Armor] toggle failed', error); }
+  };
+  const handleTogglePieceWishlist = async id => {
+    updateLocalArmorPiece(id, piece => ({ wishlist: !piece.wishlist }));
+    try { await api.togglePieceWishlist(id); } catch (error) { await loadData(); console.error('[Armor] wishlist toggle failed', error); }
+  };
+
+  const handleDeleteArmorSet = async id => {
+    try {
+      const result = await api.deleteCustomSet(id);
+      if (result?.success) await loadData();
+      return result;
+    } catch (error) {
+      return { success:false, error:error.message || 'Não foi possível excluir a armadura.' };
+    }
+  };
+  const handleupdatePieceNotes = async (id, notes) => {
+    updateLocalArmorPiece(id, () => ({ notes }));
+    try { await api.updatePieceNotes(id, notes); } catch (error) { await loadData(); console.error('[Armor] notes update failed', error); }
+  };
+  const handleUpdatePieceQuantity = async (id, qty) => {
+    const nextQuantity = Math.max(1, Number(qty) || 1);
+    updateLocalArmorPiece(id, () => ({ quantity: nextQuantity, owned: true }));
+    try { await api.updatePieceQuantity(id, nextQuantity); await refreshArmorStats(); } catch (error) { await loadData(); console.error('[Armor] quantity update failed', error); }
+  };
+
+  const handleConsumeArmorStock = useCallback(async ({ pieceIds = [], setIds = [], quantity = 1 } = {}) => {
+    const requested = Math.max(1, Math.floor(Number(quantity) || 1));
+    const piecesById = new Map(sets.flatMap(set => (set.pieces || []).map(piece => [String(piece.id), { ...piece, set_id: set.id }])));
+    const deductions = new Map();
+    const errors = [];
+    const addDeduction = (piece, amount) => {
+      if (!piece || amount <= 0) return;
+      const available = piece.owned ? Math.max(0, Number(piece.quantity ?? 1) || 0) : 0;
+      const already = deductions.get(String(piece.id)) || 0;
+      if (already + amount > available) errors.push(`${piece.piece_name || piece.piece_type}: disponível ${available}, necessário ${already + amount}`);
+      deductions.set(String(piece.id), already + amount);
+    };
+    (pieceIds || []).map(id => piecesById.get(String(id))).forEach(piece => addDeduction(piece, requested));
+    (setIds || []).map(id => sets.find(set => String(set.id) === String(id))).forEach(set => {
+      const pieces = (set?.pieces || []).filter(piece => piece.piece_type || piece.type);
+      if (!pieces.length) { errors.push('Set sem peças cadastradas'); return; }
+      const byType = new Map();
+      pieces.forEach(piece => {
+        const type = String(piece.piece_type || piece.type);
+        if (!byType.has(type)) byType.set(type, []);
+        byType.get(type).push(piece);
+      });
+      byType.forEach(typePieces => {
+        const piece = typePieces.find(candidate => (candidate.owned ? Number(candidate.quantity ?? 1) : 0) > 0);
+        if (!piece) errors.push(`${set.base_name || set.set_name || 'Set'}: peça ${typePieces[0].piece_type || typePieces[0].type} ausente`);
+        else addDeduction(piece, requested);
+      });
+    });
+    if (errors.length) return { success:false, consumed:false, message:`Estoque de armadura insuficiente. ${errors.slice(0, 3).join(' · ')}` };
+    try {
+      for (const [pieceId, amount] of deductions) {
+        const piece = piecesById.get(pieceId);
+        await api.updatePieceQuantity(pieceId, Math.max(0, Math.floor(Number(piece.quantity ?? 1) - amount)));
+      }
+      setSets(current => current.map(set => ({ ...set, pieces:(set.pieces || []).map(piece => deductions.has(String(piece.id)) ? { ...piece, quantity:Math.max(0, Math.floor(Number(piece.quantity ?? 1) - deductions.get(String(piece.id)))), owned:Math.max(0, Math.floor(Number(piece.quantity ?? 1) - deductions.get(String(piece.id)))) > 0 } : piece) })));
+      await refreshArmorStats();
+      return { success:true, consumed:deductions.size > 0, message:`${deductions.size} peça(s) de armadura consumida(s).` };
+    } catch (error) {
+      await loadData();
+      return { success:false, consumed:false, message:error.message || 'Falha ao persistir a baixa da armadura.' };
+    }
+  }, [sets, refreshArmorStats, loadData]);
 
   if (loading) return (
     <div className="app-loading">
@@ -439,7 +512,7 @@ export default function App() {
           <div data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
           {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
-          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
+          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} onDeleteArmorSet={handleDeleteArmorSet} />}
           {activePage==='inventory'  && <InventoryPage />}
           {activePage==='blueprints' && <BlueprintPage />}
           {activePage==='materials'  && <MaterialTrackerPage />}
@@ -449,7 +522,7 @@ export default function App() {
           {activePage==='clanvault' && <ClanVaultPage />}
           {activePage==='missions'   && <MissionTrackerPage />}
           {activePage==='orevault'   && <OreVaultPage />}
-          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} />}
+          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} onConsumeArmorStock={handleConsumeArmorStock} />}
           {activePage==='uexnegotiations' && (
             <UexNegotiationsPage
               targetNegotiationHash={pendingNegotiationHash}

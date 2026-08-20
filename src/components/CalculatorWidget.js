@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Calculator, GripHorizontal, RotateCcw, X } from 'lucide-react';
 import { gsap } from 'gsap';
 import { SCU_CALCULATOR_UNITS, calculateScuValue } from '../data/scuCalculator';
+import { ENABLE_CALCULATOR_DEBUG } from '../config/debugFlags';
 
 function formatNumberForDisplay(value) {
   const raw = String(value ?? '');
@@ -174,7 +175,7 @@ export default function CalculatorWidget() {
     try { visualMode = window.localStorage.getItem('companheiro_emoto_visual_mode_v2') || 'economic'; } catch { /* storage indisponível: mantém efeitos econômicos */ }
     const reducedMotion = systemReducedMotion && visualMode === 'off';
     try {
-      window.__EMOTO_CALCULATOR_DEBUG__ = {
+      if (ENABLE_CALCULATOR_DEBUG) window.__EMOTO_CALCULATOR_DEBUG__ = {
         initialized: true,
         open: true,
         keypadExists: true,
@@ -188,6 +189,7 @@ export default function CalculatorWidget() {
         visualMode,
         updatedAt: new Date().toISOString(),
       };
+      else delete window.__EMOTO_CALCULATOR_DEBUG__;
     } catch { /* diagnóstico opcional não deve afetar a calculadora */ }
 
     const handleEnter = event => {
@@ -274,7 +276,7 @@ export default function CalculatorWidget() {
       });
       keypad.querySelectorAll('.calculator-bento-click-ripple').forEach(ripple => ripple.remove());
       try {
-        window.__EMOTO_CALCULATOR_DEBUG__ = {
+        if (ENABLE_CALCULATOR_DEBUG) window.__EMOTO_CALCULATOR_DEBUG__ = {
           ...(window.__EMOTO_CALCULATOR_DEBUG__ || {}),
           initialized: false,
           open: false,

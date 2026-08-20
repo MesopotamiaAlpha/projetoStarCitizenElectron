@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
+import { ENABLE_PROFILE_DEBUG } from '../config/debugFlags';
 
 const PROFILE_SELECTOR = '.inventory-item-card, .hangar-vehicle-card, .hangar-owned-card, .hangar-vehicle-list-row, .hangar-owned-list-row';
 const CARD_SELECTOR = PROFILE_SELECTOR;
 
 function getDebug() {
-  if (typeof window === 'undefined') return null;
+  if (!ENABLE_PROFILE_DEBUG || typeof window === 'undefined') return null;
   if (!window.__EMOTO_PROFILE_DEBUG__) {
     window.__EMOTO_PROFILE_DEBUG__ = {
       initialized: false,

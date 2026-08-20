@@ -1,4 +1,4 @@
-import { upsertAutomaticMissionRecord } from './missionAutoMonitor';
+import { upsertAutomaticMissionRecord, rememberMissionRewardPreferences, findMissionRewardPreferences } from './missionAutoMonitor';
 import { loadUnknownVault } from './unknownVault';
 
 beforeEach(() => {
@@ -6,6 +6,38 @@ beforeEach(() => {
 });
 
 describe('recompensa histórica do Monitor Automático', () => {
+  test('memoriza Scrip e Secure Drive e reaplica na próxima ocorrência automática', () => {
+    rememberMissionRewardPreferences({
+      auto: true,
+      title: 'Desafio de Combate - Cenário 5',
+      canonical_title: 'Desafio de Combate - Cenário 5',
+      scrip_type: 'mg_scrip',
+      scrip_qty: 12,
+      secure_drive_enabled: true,
+      secure_drive_qty: 2,
+    });
+
+    expect(findMissionRewardPreferences({ debugName: 'Desafio de Combate - Cenário 5' })).toMatchObject({
+      scrip_type: 'mg_scrip',
+      scrip_qty: 12,
+      secure_drive_enabled: true,
+      secure_drive_qty: 2,
+    });
+
+    const nextMission = upsertAutomaticMissionRecord({
+      type: 'mission_start',
+      guid: 'reward-preference-new-guid',
+      debugName: 'Desafio de Combate - Cenário 5',
+      reward: 0,
+      startTs: Date.parse('2026-08-16T10:00:00.000Z'),
+    }, ['Outro']);
+
+    expect(nextMission.scrip_type).toBe('mg_scrip');
+    expect(nextMission.scrip_qty).toBe(12);
+    expect(nextMission.secure_drive_enabled).toBe(true);
+    expect(nextMission.secure_drive_qty).toBe(2);
+  });
+
   test('preenche o último aUEC conhecido para o mesmo nome de missão', () => {
     window.localStorage.setItem('sc_missions_v2', JSON.stringify([
       {

@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Shield } from 'lucide-react';
-import ArmorSetCard from '../components/ArmorSetCard';
+import { Search, Shield, ChevronDown, ChevronUp } from 'lucide-react';
 import ArmorSetModal from '../components/ArmorSetModal';
 
 const TYPE_LABELS = { Light:'Leve', Médio:'Médio', Heavy:'Pesado', Special:'Especial' };
@@ -11,6 +10,45 @@ const SORT_OPTIONS = [
   { value:'type',     label:'Tipo' },
 ];
 const RARITY_ORDER = { Comum:1, Incomum:2, Raro:3, Legendary:4 };
+const PIECE_LABELS = { Helmet:'Capacete', Torso:'Torso', Arms:'Braços', Legs:'Pernas', Backpack:'Mochila' };
+
+function ArmorBaseGroupCard({ group, onSelect, onTogglePiece, onUpdatePieceQuantity }) {
+  const [expanded, setExpanded] = useState(null);
+  return (
+    <section className="armor-base-group-card">
+      <header className="armor-base-group-heading">
+        <div>
+          <strong>{group.baseName}</strong>
+          <span>{group.manufacturer || 'Fabricante não informado'} · {group.typeLabel || group.type}</span>
+        </div>
+        <b>{group.variants.length} variante{group.variants.length === 1 ? '' : 's'}</b>
+      </header>
+      <div className="armor-base-variants">
+        {group.variants.map(variant => {
+          const pieces = variant.pieces || [];
+          const owned = pieces.filter(piece => piece.owned).length;
+          const isOpen = expanded === variant.id;
+          return (
+            <article className={`armor-base-variant ${owned === pieces.length && pieces.length ? 'is-complete' : ''}`} key={variant.id}>
+              <button type="button" className="armor-base-variant-summary" onClick={() => setExpanded(isOpen ? null : variant.id)}>
+                <span className="armor-base-variant-name"><strong>{variant.variant_name && variant.variant_name !== 'Base' ? variant.variant_name : 'Variante Base'}</strong><small>{variant.manufacturer || group.manufacturer || 'Fabricante não informado'} · {variant.rarity || 'Raridade não informada'}</small></span>
+                <span className="armor-base-variant-progress">{owned}/{pieces.length} peças</span>
+                {isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              </button>
+              <div className="armor-base-variant-bar"><span style={{ width: `${pieces.length ? Math.round((owned / pieces.length) * 100) : 0}%` }} /></div>
+              {isOpen && (
+                <div className="armor-base-variant-pieces">
+                  {pieces.map(piece => <div key={piece.id} className={`armor-base-piece-chip ${piece.owned ? 'is-owned' : ''}`} title={piece.piece_name || PIECE_LABELS[piece.piece_type] || piece.piece_type}><button type="button" className="armor-base-piece-toggle" onClick={() => onTogglePiece(piece.id)}><Shield size={11} /><span>{PIECE_LABELS[piece.piece_type] || piece.piece_type}<small>{piece.piece_name || (piece.owned ? 'Obtida' : 'Faltando')}</small></span></button>{piece.owned && <span className="armor-base-piece-quantity"><button type="button" onClick={() => onUpdatePieceQuantity(piece.id, Math.max(1, Number(piece.quantity || 1) - 1))} disabled={Number(piece.quantity || 1) <= 1}>−</button><b>{Math.max(1, Number(piece.quantity || 1))}</b><button type="button" onClick={() => onUpdatePieceQuantity(piece.id, Number(piece.quantity || 1) + 1)}>+</button></span>}</div>)}
+                  <button type="button" className="armor-base-open-details" onClick={() => onSelect(variant)}>Abrir detalhes</button>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWishlist, onUpdatePieceNotes, onUpdatePieceQuantity }) {
   const [search,       setSearch]       = useState('');
@@ -19,7 +57,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy,       setOrdenarBy]       = useState('name');
   const [selectedSet,  setSelectedSet]  = useState(null);
-  const [groupByBase,  setGroupByBase]  = useState(false);
+  const [groupByBase,  setGroupByBase]  = useState(true);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 48;
 
@@ -65,29 +103,19 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
       }
     });
     return result;
-  }, [sets, search, typeFilter, rarityFilter, statusFilter, sortBy]);
+  }, [sets, search, typeFilter, rarityFilter, statusFilter, sortBy, groupByBase]);
 
-  // When grouped, show one card per base_name+type, with aggregated piece progress
+  // Hierarquia real: base -> variantes -> peças. Nunca mesclar peças de variantes diferentes.
   const displayItens = useMemo(() => {
-    if (!groupByBase) return filtered.map(s => ({ key: String(s.id), set: s, grouped: false }));
+    if (!groupByBase) return filtered.map(set => ({ key: String(set.id), baseName: set.base_name, variants: [set], grouped: false }));
     const map = new Map();
-    for (const s of filtered) {
-      const k = `${s.type}||${s.base_name}`;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(s);
+    for (const set of filtered) {
+      const key = `${String(set.base_name || 'Sem base').trim()}||${String(set.type || 'Médio').trim()}||${String(set.manufacturer || '').trim()}`;
+      const group = map.get(key) || { key, baseName: set.base_name || 'Sem base', manufacturer: set.manufacturer, type: set.type, typeLabel: TYPE_LABELS[set.type] || set.type, variants: [] };
+      group.variants.push(set);
+      map.set(key, group);
     }
-    return [...map.entries()].map(([k, variants]) => {
-      const rep = variants[0];
-      // Merge all pieces across variants for the group card
-      const allPieces = variants.flatMap(v => v.pieces||[]);
-      return {
-        key: k,
-        grouped: variants.length > 1,
-        variantCount: variants.length,
-        set: { ...rep, set_name: rep.base_name, variant_name: `${variants.length} variante${variants.length>1?'s':''}`, pieces: allPieces },
-        originalSet: rep,
-      };
-    });
+    return [...map.values()].map(group => ({ ...group, variants: [...group.variants].sort((a, b) => String(a.variant_name || 'Base').localeCompare(String(b.variant_name || 'Base'))) }));
   }, [filtered, groupByBase]);
 
   const totalPieces = useMemo(() => sets.reduce((a,s)=>a+(s.pieces||[]).length, 0), [sets]);
@@ -110,7 +138,7 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
           onClick={() => setGroupByBase(g=>!g)}
           style={{ display:'flex',alignItems:'center',gap:6 }}
         >
-          {groupByBase ? 'Ver Variantes' : 'Agrupar por Nome'}
+              {groupByBase ? 'Ver variantes individuais' : 'Agrupar por base'}
         </button>
       </div>
 
@@ -164,19 +192,21 @@ export default function TodosArmorsPage({ sets, onTogglePiece, onTogglePieceWish
       </div>
 
       <div className="page-body">
-        {filtered.length === 0 ? (
+        {displayItens.length === 0 ? (
           <div className="empty-state">
             <Shield size={64} className="empty-state-icon" />
             <div className="empty-state-title">NENHUMA ARMADURA ENCONTRADA</div>
             <div className="empty-state-text">Ajuste os filtros para encontrar o que procura.</div>
           </div>
         ) : (
-            <div className="armor-grid">
+            <div className="armor-base-group-grid">
             {visibleItems.map(item => (
-              <ArmorSetCard
+              <ArmorBaseGroupCard
                 key={item.key}
-                set={item.set}
-                onClick={() => setSelectedSet(item.originalSet || item.set)}
+                group={item}
+                onSelect={set => setSelectedSet(set)}
+                onTogglePiece={onTogglePiece}
+                onUpdatePieceQuantity={onUpdatePieceQuantity}
               />
             ))}
           </div>

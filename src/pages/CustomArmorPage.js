@@ -1,12 +1,24 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, Edit3, Save, X, Shield, HardHat, Shirt, Dumbbell, Footprints, Backpack, ChevronDown, ChevronUp, AlertTriangle, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Search, Shield, HardHat, Shirt, Dumbbell, Footprints, Backpack, ChevronDown, ChevronUp, AlertTriangle, Download, RefreshCw, CheckCircle2, Settings2 } from 'lucide-react';
 import { setProvenance, SOURCES } from '../data/provenance';
 import { getMissingArmorGroups, getArmorSyncStats } from '../data/uexArmorImport';
 import { getDuplicateArmorGroups, getArmorIdentity } from '../data/armorDedup';
 
-const PIECE_TYPES = ['Helmet','Torso','Arms','Legs','Backpack'];
-const PIECE_ICONS = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack };
-const PIECE_PT    = { Helmet:'Capacete', Torso:'Torso', Arms:'Braços', Legs:'Pernas', Backpack:'Mochila' };
+const PIECE_TYPES_KEY = 'sc_custom_armor_piece_types_v1';
+const DEFAULT_PIECE_TYPES = ['Helmet','Torso','Arms','Legs','Backpack','Undersuit','Camiseta'];
+const PIECE_ICONS = { Helmet:HardHat, Torso:Shirt, Arms:Dumbbell, Legs:Footprints, Backpack:Backpack, Undersuit:Shirt, Camiseta:Shirt };
+const PIECE_PT    = { Helmet:'Capacete', Torso:'Torso', Arms:'Braços', Legs:'Pernas', Backpack:'Mochila', Undersuit:'Undersuit', Camiseta:'Camiseta' };
+
+function loadPieceTypes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PIECE_TYPES_KEY) || '[]');
+    return [...new Set([...DEFAULT_PIECE_TYPES, ...(Array.isArray(saved) ? saved : [])].map(value => String(value || '').trim()).filter(Boolean))];
+  } catch { return [...DEFAULT_PIECE_TYPES]; }
+}
+
+function savePieceTypes(types) {
+  try { localStorage.setItem(PIECE_TYPES_KEY, JSON.stringify(types)); } catch { /* armazenamento pode estar indisponível */ }
+}
 const TYPES       = ['Light','Médio','Heavy','Special'];
 const RARITIES    = ['Comum','Incomum','Raro','Legendary'];
 
@@ -35,7 +47,7 @@ function NumInput({ label, name, value, onChange }) {
   );
 }
 
-function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
+function PieceForm({ piece, index, onChange, onRemove, canRemove, pieceTypes }) {
   const [open, setAbrir] = useState(index === 0);
   const Icon = PIECE_ICONS[piece.piece_type]||Shield;
   const set = (k,v) => onChange({...piece,[k]:v});
@@ -64,7 +76,7 @@ function PieceForm({ piece, index, onChange, onRemove, canRemove }) {
             <div>
               <label style={{ fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 }}>Tipo de Peça</label>
               <select value={piece.piece_type} onChange={e=>set('piece_type',e.target.value)} className="filter-select" style={{ width:'100%' }}>
-                {PIECE_TYPES.map(t=><option key={t} value={t}>{PIECE_PT[t]}</option>)}
+                {pieceTypes.map(t=><option key={t} value={t}>{PIECE_PT[t] || t}</option>)}
               </select>
             </div>
             <div>
@@ -282,14 +294,65 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
   const [duplicateSelection, setDuplicateSelection] = useState([]);
   const [duplicateBusy, setDuplicateBusy] = useState(false);
   const [duplicateNotice, setDuplicateNotice] = useState('');
-  const customSets = sets.filter(s=>s.is_custom);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [expandedBases, setExpandedBases] = useState(() => new Set());
+  const [pieceTypes, setPieceTypes] = useState(() => loadPieceTypes());
+  const [showPieceTypeManager, setShowPieceTypeManager] = useState(false);
+  const [newPieceType, setNewPieceType] = useState('');
+  const customSets = useMemo(() => sets.filter(s=>s.is_custom), [sets]);
+  useEffect(() => {
+    const typesFromData = sets.flatMap(set => (set.pieces || []).map(piece => String(piece.piece_type || '').trim()).filter(Boolean));
+    const missing = [...new Set(typesFromData)].filter(type => !pieceTypes.includes(type));
+    if (missing.length) {
+      const next = [...pieceTypes, ...missing];
+      setPieceTypes(next);
+      savePieceTypes(next);
+    }
+  }, [sets]);
   const duplicateGroups = useMemo(() => getDuplicateArmorGroups(customSets), [customSets]);
   const duplicateCount = duplicateGroups.reduce((total, group) => total + group.entries.length, 0);
+  const customGroups = useMemo(() => {
+    const query = catalogSearch.trim().toLocaleLowerCase('pt-BR');
+    const map = new Map();
+    customSets.forEach(set => {
+      const pieces = Array.isArray(set.pieces) ? set.pieces : [];
+      const haystack = [set.base_name, set.variant_name, set.manufacturer, set.category, set.type, set.rarity, set.description, ...pieces.map(piece => `${piece.piece_type} ${piece.piece_name}`)].join(' ').toLocaleLowerCase('pt-BR');
+      if (query && !haystack.includes(query)) return;
+      const key = `${String(set.base_name || 'Sem base').trim()}::${String(set.manufacturer || '').trim()}`;
+      const group = map.get(key) || { key, baseName: set.base_name || 'Sem base', manufacturer: set.manufacturer || 'Fabricante não informado', sets: [] };
+      group.sets.push(set);
+      map.set(key, group);
+    });
+    return [...map.values()].map(group => ({ ...group, sets: group.sets.sort((a, b) => String(a.variant_name || 'Base').localeCompare(String(b.variant_name || 'Base'))) })).sort((a, b) => a.baseName.localeCompare(b.baseName));
+  }, [customSets, catalogSearch]);
   useEffect(() => {
     const removeByDefault = duplicateGroups.flatMap(group => group.entries.slice(1).map(entry => entry.id));
     setDuplicateSelection(previous => previous.length ? previous.filter(id => removeByDefault.includes(id)) : removeByDefault);
   }, [duplicateGroups]);
   const api = window.electronAPI;
+
+  function addPieceType() {
+    const value = newPieceType.trim();
+    if (!value) return;
+    const exists = pieceTypes.some(type => type.toLocaleLowerCase('pt-BR') === value.toLocaleLowerCase('pt-BR'));
+    if (exists) return;
+    const next = [...pieceTypes, value];
+    setPieceTypes(next);
+    savePieceTypes(next);
+    setNewPieceType('');
+  }
+
+  function removePieceType(type) {
+    if (DEFAULT_PIECE_TYPES.includes(type)) return;
+    const inUse = sets.some(set => (set.pieces || []).some(piece => piece.piece_type === type)) || pieces.some(piece => piece.piece_type === type);
+    if (inUse) {
+      setError(`Não é possível remover "${type}" porque ele já está sendo usado em uma armadura.`);
+      return;
+    }
+    const next = pieceTypes.filter(value => value !== type);
+    setPieceTypes(next);
+    savePieceTypes(next);
+  }
 
   function startNew() {
     setEditingId(null); setsetData(emptySet());
@@ -378,7 +441,7 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
 
   const addPiece = () => {
     const existing = pieces.map(p=>p.piece_type);
-    const next = PIECE_TYPES.find(t=>!existing.includes(t))||'Torso';
+    const next = pieceTypes.find(t=>!existing.includes(t)) || pieceTypes[0] || 'Helmet';
     setPieces([...pieces, emptyPiece(next)]);
   };
 
@@ -387,14 +450,17 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
   const LS = { fontSize:10,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em',display:'block',marginBottom:4 };
 
   return (
-    <div style={{ display:'flex',flexDirection:'column',height:'100%',overflow:'hidden' }}>
-      <div className="page-header">
+    <div className="custom-armor-page" style={{ display:'flex',flexDirection:'column',height:'100%',minHeight:0,overflow:'hidden' }}>
+      <div className="page-header custom-armor-page-header">
         <div>
           <div className="page-title">ARMADURAS PERSONALIZADAS</div>
           <div className="page-subtitle">Cadastre armaduras que não estão no banco de dados</div>
         </div>
         {!showForm&&(
-          <div style={{ display:'flex',gap:8 }}>
+          <div className="custom-armor-header-actions" style={{ display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end' }}>
+            <button type="button" className="custom-armor-type-manager-toggle" onClick={()=>{ setShowPieceTypeManager(value => !value); setError(''); }}>
+              <Settings2 size={15}/> Tipos de Peça
+            </button>
             <button onClick={()=>setShowImport(v=>!v)} style={{
               display:'flex',alignItems:'center',gap:8,padding:'10px 20px',
               background: showImport?'rgba(56,189,248,0.15)':'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.35)',
@@ -416,11 +482,30 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
       </div>
 
       <div className="page-body">
+        {showPieceTypeManager && !showForm && (
+          <section className="custom-armor-type-manager">
+            <div className="custom-armor-type-manager-heading">
+              <div>
+                <strong>TIPOS DE PEÇA</strong>
+                <small>Use categorias padrão ou crie novas categorias para os detalhes das suas armaduras.</small>
+              </div>
+              <button type="button" onClick={()=>setShowPieceTypeManager(false)} aria-label="Fechar gerenciador de tipos"><X size={14}/></button>
+            </div>
+            <div className="custom-armor-type-manager-add">
+              <input value={newPieceType} onChange={event=>setNewPieceType(event.target.value)} onKeyDown={event=>{ if (event.key === 'Enter') addPieceType(); }} placeholder="Ex.: Casaco, Luvas, Calça, Jaqueta..." />
+              <button type="button" onClick={addPieceType} disabled={!newPieceType.trim()}><Plus size={14}/> Adicionar tipo</button>
+            </div>
+            {error && <div className="custom-armor-type-manager-error"><AlertTriangle size={13}/> {error}</div>}
+            <div className="custom-armor-type-list">
+              {pieceTypes.map(type => <span className={`custom-armor-type-chip ${DEFAULT_PIECE_TYPES.includes(type) ? 'built-in' : 'custom'}`} key={type}><span>{PIECE_PT[type] || type}</span>{!DEFAULT_PIECE_TYPES.includes(type) && <button type="button" onClick={()=>removePieceType(type)} aria-label={`Remover tipo ${type}`}><X size={11}/></button>}</span>)}
+            </div>
+          </section>
+        )}
         {showImport&&!showForm&&(
           <UexImportPanel sets={sets} onAtualizar={onAtualizar} onClose={()=>setShowImport(false)}/>
         )}
         {showForm&&(
-          <div style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'24px',marginBottom:24 }}>
+          <div className="custom-armor-editor-card" style={{ background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:10,padding:'24px',marginBottom:24,minWidth:0 }}>
             <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20 }}>
               <h3 style={{ fontFamily:'Michroma,sans-serif',fontSize:15,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.08em' }}>
                 {editingId?'EDITAR ARMADURA':'NOVA ARMADURA'}
@@ -433,7 +518,7 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
             {/* Set fields */}
             <div style={{ marginBottom:20 }}>
               <div className="modal-section-title">Informações do Set</div>
-              <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12 }}>
+              <div className="custom-armor-set-grid" style={{ display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:12,marginBottom:12 }}>
                 <div><label style={LS}>Nome Base *</label><input style={IS} value={setData.base_name} onChange={e=>sf('base_name',e.target.value)} placeholder="ex: Citadel"/></div>
                 <div><label style={LS}>Variante</label><input style={IS} value={setData.variant_name} onChange={e=>sf('variant_name',e.target.value)} placeholder="ex: Base, Brimstone, Desert..."/></div>
                 <div><label style={LS}>Fabricante *</label><input style={IS} value={setData.manufacturer} onChange={e=>sf('manufacturer',e.target.value)} placeholder="ex: Clark Defense Systems"/></div>
@@ -477,7 +562,8 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
                   <PieceForm key={i} piece={p} index={i}
                     onChange={updated=>{const a=[...pieces];a[i]=updated;setPieces(a);}}
                     onRemove={()=>setPieces(pieces.filter((_,j)=>j!==i))}
-                    canRemove={pieces.length>1}/>
+                    canRemove={pieces.length>1}
+                    pieceTypes={pieceTypes}/>
                 ))}
               </div>
             </div>
@@ -549,12 +635,22 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
             <div>
               <div className="section-divider">
                 <span className="section-divider-label" style={{ color:'var(--text-secondary)' }}>
-                  {customSets.length} armadura{customSets.length!==1?'s':''} personalizada{customSets.length!==1?'s':''}
+                  {customGroups.length} base{customGroups.length!==1?'s':''} · {customSets.length} variante{customSets.length!==1?'s':''}
                 </span>
                 <div className="section-divider-line"/>
               </div>
-              <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
-                {customSets.map(set=>{
+              <div className="custom-armor-manager-toolbar">
+                <div className="custom-armor-manager-search"><Search size={14}/><input value={catalogSearch} onChange={event => setCatalogSearch(event.target.value)} placeholder="Buscar base, variante, fabricante ou peça..." /></div>
+                <span className="custom-armor-manager-hint">Edite uma variante sem abrir registros não relacionados.</span>
+              </div>
+              <div className="custom-armor-base-groups">
+                {customGroups.map(group => {
+                  const open = expandedBases.has(group.key);
+                  return <section className="custom-armor-base-group" key={group.key}>
+                    <button type="button" className="custom-armor-base-heading" onClick={() => setExpandedBases(previous => { const next = new Set(previous); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; })}>
+                      <span><strong>{group.baseName}</strong><small>{group.manufacturer} · {group.sets.length} variante{group.sets.length !== 1 ? 's' : ''}</small></span>{open ? <ChevronUp size={15}/> : <ChevronDown size={15}/>} 
+                    </button>
+                    {open && <div className="custom-armor-variant-list">{group.sets.map(set => {
                   const pieces=set.pieces||[];
                   const owned=pieces.filter(p=>p.owned).length;
                   const typeClass=`type-${set.type?.toLowerCase()}`;
@@ -603,6 +699,8 @@ export default function CustomArmorPage({ sets, onAtualizar }) {
                       </div>
                     </div>
                   );
+                    })}</div>}
+                  </section>;
                 })}
               </div>
             </div>

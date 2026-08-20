@@ -2,6 +2,7 @@ import {
   listingMatchesAlert,
   marketAlertDefaults,
   sortMarketAlertListings,
+  compareMarketAlertEvents,
   selectMarketAlertMatches,
   filterMarketAlertsForAutomaticCheck,
   shouldCheckMarketAlertAutomatically,
@@ -50,6 +51,20 @@ describe('UEX market alerts', () => {
 
     const selectedAfterSecondRemoval = selectMarketAlertMatches(baseAlert, listings, new Set(['id:1', 'id:2']));
     expect(selectedAfterSecondRemoval.map(row => row.id)).toEqual([3, 4, 5, 6]);
+  });
+
+  test('uma nova oferta melhor ocupa a janela e substitui o pior resultado', () => {
+    const current = [
+      { key: 'id:1', price: 100000, resultSort: 'price' },
+      { key: 'id:2', price: 120000, resultSort: 'price' },
+      { key: 'id:3', price: 150000, resultSort: 'price' },
+      { key: 'id:4', price: 180000, resultSort: 'price' },
+      { key: 'id:5', price: 220000, resultSort: 'price' },
+    ];
+    const newOffer = { key: 'id:6', price: 110000, resultSort: 'price' };
+    const window = [...current, newOffer].sort(compareMarketAlertEvents).slice(0, 5);
+    expect(window.map(event => event.key)).toEqual(['id:1', 'id:6', 'id:2', 'id:3', 'id:4']);
+    expect(window.some(event => event.key === 'id:5')).toBe(false);
   });
 
   test('filtra qualidade desconhecida quando solicitado', () => {

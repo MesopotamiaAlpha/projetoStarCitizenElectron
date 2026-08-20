@@ -159,7 +159,8 @@ function getInventoryBinding(item) {
   ];
   const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
   const armorPieceIds = [...new Set((Array.isArray(raw.armorPieceIds) ? raw.armorPieceIds : Array.isArray(raw.armor_piece_ids) ? raw.armor_piece_ids : []).map(id => String(id || '').trim()).filter(Boolean))];
-  return { locationKeys, armorPieceIds, linked: locationKeys.length > 0 || armorPieceIds.length > 0, updatedAt: raw.updatedAt || null };
+  const armorSetIds = [...new Set((Array.isArray(raw.armorSetIds) ? raw.armorSetIds : Array.isArray(raw.armor_set_ids) ? raw.armor_set_ids : []).map(id => String(id || '').trim()).filter(Boolean))];
+  return { locationKeys, armorPieceIds, armorSetIds, linked: locationKeys.length > 0 || armorPieceIds.length > 0 || armorSetIds.length > 0, updatedAt: raw.updatedAt || null };
 }
 
 function getVaultBinding(item) {
@@ -296,11 +297,55 @@ function VaultStockLinkModal({ listing, vaultEntries, onSave, onClose }) {
   );
 }
 
+function armorPieceQuantity(piece) {
+  return piece?.owned ? Math.max(0, Number(piece.quantity ?? 1) || 0) : 0;
+}
+
 function getArmorCollectionMatches(listing, armorSets = []) {
   const target = normalizeInventoryName(listing?.title);
   if (!target) return [];
-  return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
+  return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_id: set.id, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
     .filter(piece => normalizeInventoryName(piece.piece_name) === target);
+}
+
+function getCompleteArmorSetQuantity(set) {
+  const pieces = Array.isArray(set?.pieces) ? set.pieces : [];
+  if (!pieces.length) return 0;
+  const byType = new Map();
+  pieces.forEach(piece => {
+    const type = String(piece.piece_type || piece.type || piece.id);
+    const current = byType.get(type);
+    const quantity = armorPieceQuantity(piece);
+    byType.set(type, current === undefined ? quantity : Math.min(current, quantity));
+  });
+  return Math.max(0, Math.min(...byType.values()));
+}
+
+export function normalizeArmorSetListingName(value) {
+  let normalized = normalizeInventoryName(value);
+  // A UEX costuma acrescentar um descritor comercial ao título do anúncio.
+  // Esses termos não devem obrigar o usuário a renomear o set na coleção.
+  normalized = normalized
+    .replace(/\s+(?:suit\s+set|armor\s+set|armour\s+set|complete\s+set|set\s+completo)$/i, '')
+    .replace(/\s+(?:suit|armor|armour)$/i, '')
+    .trim();
+  return normalized;
+}
+
+export function getArmorSetNameCandidates(set) {
+  const base = String(set?.base_name || set?.set_name || '').trim();
+  const variant = String(set?.variant_name || '').trim();
+  const candidates = [base, set?.set_name];
+  if (variant && normalizeArmorSetListingName(variant) !== 'base') candidates.push(`${base} ${variant}`);
+  return [...new Set(candidates.map(normalizeArmorSetListingName).filter(Boolean))];
+}
+
+export function getArmorSetOptions(listing, armorSets = []) {
+  const target = normalizeArmorSetListingName(listing?.title);
+  if (!target) return [];
+  return (Array.isArray(armorSets) ? armorSets : [])
+    .map(set => ({ ...set, completeQuantity: getCompleteArmorSetQuantity(set), armorMatchName: getArmorSetNameCandidates(set).find(candidate => candidate === target) }))
+    .filter(set => Boolean(set.armorMatchName));
 }
 
 function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = []) {
@@ -309,8 +354,12 @@ function getInventoryStockSummary(listing, inventoryItems = [], managedLocations
     .filter(entry => normalizeInventoryName(entry?.name) === name);
   const binding = getInventoryBinding(listing);
   const armorMatches = getArmorCollectionMatches(listing, armorSets);
+  const armorSetOptions = getArmorSetOptions(listing, armorSets);
   const linkedArmor = armorMatches.filter(piece => binding.armorPieceIds.includes(String(piece.id)));
-  const armorQuantity = linkedArmor.reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
+  const linkedSets = armorSetOptions.filter(set => binding.armorSetIds.includes(String(set.id)));
+  const armorPieceQuantityTotal = linkedArmor.reduce((total, piece) => total + armorPieceQuantity(piece), 0);
+  const armorSetQuantity = linkedSets.reduce((total, set) => total + set.completeQuantity, 0);
+  const armorQuantity = armorPieceQuantityTotal + armorSetQuantity;
   const locationMap = new Map((managedLocations || []).map(location => [location.key, location]));
   const locationRows = [...new Map(matches.map(entry => {
     const key = inventoryLocationKey(entry);
@@ -349,11 +398,15 @@ function getInventoryStockSummary(listing, inventoryItems = [], managedLocations
     name,
     matches,
     armorMatches,
+    armorSetOptions,
     linkedArmor,
+    linkedSets,
+    armorPieceQuantityTotal,
+    armorSetQuantity,
     armorQuantity,
     locationRows,
     binding,
-    hasMatch: matches.length > 0 || armorMatches.length > 0,
+    hasMatch: matches.length > 0 || armorMatches.length > 0 || armorSetOptions.length > 0,
     isLinked: binding.linked,
     allQuantity,
     allReservedQuantity,
@@ -459,10 +512,12 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
   const summary = getInventoryStockSummary(listing, inventoryItems, managedLocations, armorSets);
   const [selectedKeys, setSelectedKeys] = useState(() => summary.binding.locationKeys);
   const [selectedArmorIds, setSelectedArmorIds] = useState(() => summary.binding.armorPieceIds);
+  const [selectedArmorSetIds, setSelectedArmorSetIds] = useState(() => summary.binding.armorSetIds);
   const selectedQuantity = summary.locationRows
     .filter(row => selectedKeys.includes(row.key))
     .reduce((total, row) => total + row.quantity, 0);
-  const selectedArmorQuantity = summary.armorMatches.filter(piece => selectedArmorIds.includes(String(piece.id))).reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
+  const selectedArmorQuantity = summary.armorMatches.filter(piece => selectedArmorIds.includes(String(piece.id))).reduce((total, piece) => total + armorPieceQuantity(piece), 0);
+  const selectedArmorSetQuantity = summary.armorSetOptions.filter(set => selectedArmorSetIds.includes(String(set.id))).reduce((total, set) => total + set.completeQuantity, 0);
 
   function toggleLocation(key) {
     setSelectedKeys(previous => previous.includes(key)
@@ -475,8 +530,13 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
     setSelectedArmorIds(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key]);
   }
 
+  function toggleArmorSet(id) {
+    const key = String(id);
+    setSelectedArmorSetIds(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key]);
+  }
+
   function handleSave() {
-    onSave(selectedKeys.length || selectedArmorIds.length ? { locationKeys: selectedKeys, armorPieceIds: selectedArmorIds, updatedAt: new Date().toISOString() } : null);
+    onSave(selectedKeys.length || selectedArmorIds.length || selectedArmorSetIds.length ? { locationKeys: selectedKeys, armorPieceIds: selectedArmorIds, armorSetIds: selectedArmorSetIds, updatedAt: new Date().toISOString() } : null);
   }
 
   return (
@@ -497,11 +557,21 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
           </div>
         ) : (
           <>
-            {summary.armorMatches.length > 0 && (
+            {(summary.armorMatches.length > 0 || summary.armorSetOptions.length > 0) && (
               <div style={{ marginBottom:12, padding:10, border:'1px solid rgba(167,139,250,0.28)', background:'rgba(167,139,250,0.06)', borderRadius:7 }}>
                 <div style={{ color:'var(--accent-purple)', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Coleção de armaduras</div>
-                <div style={{ color:'var(--text-muted)', fontSize:10, marginBottom:8 }}>Selecione as peças que devem alimentar este anúncio. A quantidade é lida diretamente da sua coleção.</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10, marginBottom:8 }}>Escolha peças avulsas ou um set completo. A quantidade é lida diretamente da sua coleção e a baixa será feita somente após a venda.</div>
+                {summary.armorSetOptions.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:5, marginBottom:8 }}>
+                  {summary.armorSetOptions.map(set => {
+                    const selected = selectedArmorSetIds.includes(String(set.id));
+                    return <label key={`set-${set.id}`} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', border:`1px solid ${selected ? 'rgba(52,211,153,0.48)' : 'var(--border-subtle)'}`, background:selected ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.02)', borderRadius:6, cursor:set.completeQuantity > 0 ? 'pointer' : 'not-allowed', opacity:set.completeQuantity > 0 ? 1 : 0.55 }}>
+                      <input type="checkbox" checked={selected} disabled={set.completeQuantity <= 0} onChange={() => toggleArmorSet(set.id)} />
+                      <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}><strong style={{ color:'var(--accent-green)' }}>SET COMPLETO</strong> · {set.base_name || set.set_name}{set.variant_name && set.variant_name !== 'Base' ? ` · ${set.variant_name}` : ''}<small style={{ display:'block', marginTop:3, color:'var(--text-muted)', fontSize:9 }}>Correspondência automática: o sufixo descritivo do anúncio foi ignorado.</small></span>
+                      <strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:11 }}>{set.completeQuantity} set{set.completeQuantity === 1 ? '' : 's'}</strong>
+                    </label>;
+                  })}
+                </div>}
+                {summary.armorMatches.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
                   {summary.armorMatches.map(piece => {
                     const quantity = Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0);
                     const selected = selectedArmorIds.includes(String(piece.id));
@@ -511,8 +581,8 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
                       <strong style={{ color:'var(--accent-purple)', fontFamily:'Share Tech Mono,monospace', fontSize:11 }}>{quantity} un</strong>
                     </label>;
                   })}
-                </div>
-                <div style={{ marginTop:8, color:'var(--text-secondary)', fontSize:10 }}>Coleção selecionada: <strong style={{ color:'var(--accent-purple)' }}>{selectedArmorQuantity} unidades</strong></div>
+                </div>}
+                <div style={{ marginTop:8, color:'var(--text-secondary)', fontSize:10 }}>Coleção selecionada: <strong style={{ color:'var(--accent-purple)' }}>{selectedArmorQuantity} peças + {selectedArmorSetQuantity} sets completos</strong></div>
               </div>
             )}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
@@ -522,7 +592,7 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
               </div>
               <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
                 <div style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</div>
-                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity + selectedArmorQuantity} unidade{selectedQuantity + selectedArmorQuantity === 1 ? '' : 's'}</strong>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity + selectedArmorQuantity + selectedArmorSetQuantity} unidade{selectedQuantity + selectedArmorQuantity + selectedArmorSetQuantity === 1 ? '' : 's'}</strong>
               </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -1790,7 +1860,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
 }
 
 // ── Página Principal ──────────────────────────────────────────────────────────
-export default function UexSalesPage({ armorSets = [] }) {
+export default function UexSalesPage({ armorSets = [], onConsumeArmorStock }) {
   const [catalog,   setCatalog]   = useState(() => loadCatalog());
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
@@ -2020,8 +2090,9 @@ export default function UexSalesPage({ armorSets = [] }) {
     ];
     const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
     const armorPieceIds = [...new Set((Array.isArray(binding?.armorPieceIds) ? binding.armorPieceIds : []).map(id => String(id || '').trim()).filter(Boolean))];
-    const normalizedBinding = locationKeys.length || armorPieceIds.length
-      ? { locationKeys, armorPieceIds, updatedAt: binding?.updatedAt || new Date().toISOString() }
+    const armorSetIds = [...new Set((Array.isArray(binding?.armorSetIds) ? binding.armorSetIds : []).map(id => String(id || '').trim()).filter(Boolean))];
+    const normalizedBinding = locationKeys.length || armorPieceIds.length || armorSetIds.length
+      ? { locationKeys, armorPieceIds, armorSetIds, updatedAt: binding?.updatedAt || new Date().toISOString() }
       : null;
     const updated = catalogRef.current.map(item => item.id === itemId
       ? { ...item, inventory_binding: normalizedBinding }
@@ -2033,19 +2104,35 @@ export default function UexSalesPage({ armorSets = [] }) {
   function handleDeleteItem(itemId) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
   }
-  function handleManualSale(sale) {
+  async function consumeBoundArmor(target, quantity) {
+    if (!target || !onConsumeArmorStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false };
+    const binding = getInventoryBinding(target);
+    if (!binding.armorPieceIds.length && !binding.armorSetIds.length) return { success:true, consumed:false };
+    return onConsumeArmorStock({ pieceIds: binding.armorPieceIds, setIds: binding.armorSetIds, quantity: Number(quantity) });
+  }
+
+  async function handleManualSale(sale) {
     let nextSale = sale;
     let updatedCatalog = catalogRef.current;
-    const boundCandidates = updatedCatalog.filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(sale.title) && item.vault_binding?.entryIds?.length);
+    const boundCandidates = updatedCatalog.filter(item => {
+      if (normalizeInventoryName(item.title) !== normalizeInventoryName(sale.title)) return false;
+      const vault = getVaultBinding(item);
+      const inventory = getInventoryBinding(item);
+      return vault.linked || inventory.linked;
+    });
     const target = sale.listingId
       ? updatedCatalog.find(item => String(item.id) === String(sale.listingId))
       : boundCandidates.length === 1 ? boundCandidates[0] : null;
-    if (sale.type === 'sold' && target?.vault_binding?.entryIds?.length) {
+    if (sale.type === 'sold' && target) {
       const binding = target.vault_binding;
-      const boxQuantity = Number(binding.boxQuantity) || 1;
-      const boxUnit = normalizeCargoUnit(binding.boxUnit || 'un');
-      const consumption = consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit);
-      nextSale = { ...sale, vault_consumption_status: consumption.success ? 'consumed' : 'failed', vault_consumed_at: consumption.success ? new Date().toISOString() : null, vault_consumption_message: consumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding.quality || '' };
+      const armorConsumption = await consumeBoundArmor(target, sale.qty);
+      if (!armorConsumption.success) {
+        setSyncMsg(`⚠ Venda registrada sem baixa da armadura: ${armorConsumption.message || 'estoque insuficiente.'}`);
+      }
+      const boxQuantity = Number(binding?.boxQuantity) || 1;
+      const boxUnit = normalizeCargoUnit(binding?.boxUnit || 'un');
+      const vaultConsumption = binding?.entryIds?.length ? consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit) : { success:true, consumed:false };
+      nextSale = { ...sale, armor_consumption_status: armorConsumption.success ? (armorConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', armor_consumed_at: armorConsumption.consumed ? new Date().toISOString() : null, armor_consumption_message: armorConsumption.message || '', vault_consumption_status: vaultConsumption.success ? 'consumed' : 'failed', vault_consumed_at: vaultConsumption.success ? new Date().toISOString() : null, vault_consumption_message: vaultConsumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding?.quality || '' };
       const nextStock = Math.max(0, (Number(target.in_stock) || 0) - sale.qty);
       updatedCatalog = updatedCatalog.map(item => String(item.id) === String(target.id) ? { ...item, in_stock:nextStock, is_sold_out:nextStock <= 0 ? 1 : 0, last_sale_at:new Date().toISOString() } : item);
       refreshCatalog(updatedCatalog);

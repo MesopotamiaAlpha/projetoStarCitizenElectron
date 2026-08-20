@@ -22,7 +22,7 @@ import {
   saveUexInsight,
   snapshotFreshness,
 } from '../data/uexInsights';
-import { loadUexItemsDB } from '../data/uexItemsDB';
+import { loadUexItemsDB, searchUexItems } from '../data/uexItemsDB';
 import { loadUexSales } from '../data/uexSales';
 import { DEFAULT_MARKET_ALERT_INTERVAL_MINUTES, DEFAULT_MARKET_ALERT_MAX_RESULTS, MAX_MARKET_ALERT_MAX_RESULTS, MIN_MARKET_ALERT_MAX_RESULTS, MARKET_ALERT_MANUAL_MATCH_MODES, MARKET_ALERT_SOURCES, MARKET_ALERT_SETTINGS_UPDATED_EVENT, MARKET_ALERTS_UPDATED_EVENT, loadMarketAlertSettings, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertFocus, manualMatchModeLabel, marketAlertDefaults, removeMarketAlert, removeMarketAlertEventsByGroup, upsertMarketAlert, checkMarketAlerts, saveMarketAlertSettings, dismissMarketAlertEvent, MARKET_ALERT_AVAILABILITIES, shouldCheckMarketAlertAutomatically } from '../data/uexMarketAlerts';
 
@@ -140,11 +140,13 @@ function marketReliability(listings) {
 
 function marketReading(row, operation) {
   const change30 = percentChange(row.price_avg, row.price_avg_month);
-  if (operation === 'sell') {
-    if (change30 !== null && change30 <= -10) return { label: 'Abaixo da média 30d', color: '#34d399' };
-    if (change30 !== null && change30 >= 10) return { label: 'Acima da média 30d', color: '#fb7185' };
-  }
   if (change30 !== null && Math.abs(change30) < 10) return { label: 'Estável', color: '#fbbf24' };
+  if (change30 !== null && change30 <= -10) {
+    return { label: operation === 'sell' ? 'Abaixo da média 30d' : 'Oferta abaixo da média 30d', color: operation === 'sell' ? '#34d399' : '#fbbf24' };
+  }
+  if (change30 !== null && change30 >= 10) {
+    return { label: operation === 'sell' ? 'Acima da média 30d' : 'Oferta acima da média 30d', color: operation === 'sell' ? '#fb7185' : '#34d399' };
+  }
   return { label: 'Poucos dados', color: '#94a3b8' };
 }
 
@@ -173,6 +175,8 @@ function MarketTab() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
+  const [itemFieldFocused, setItemFieldFocused] = useState(false);
+  const itemSuggestions = useMemo(() => searchUexItems(itemName, 8), [itemName]);
 
   async function searchAverages() {
     setLoading(true); setError('');
@@ -228,10 +232,10 @@ function MarketTab() {
 
   return (
     <div style={panelStyle}>
-      <SectionHeader icon={TrendingUp} color="#fbbf24" title="Mercado por qualidade" description="Compare faixas de qualidade, preço atual, histórico e confiabilidade da amostra para escolher a melhor relação entre qualidade e custo. Use Venda para encontrar anúncios de jogadores quando você quer comprar." action={<Freshness snapshot={snapshot} ttl={1} />} />
+      <SectionHeader icon={TrendingUp} color="#fbbf24" title="Mercado por qualidade" description="Compare faixas de qualidade, preço atual, histórico e confiabilidade da amostra. Escolha Anúncios à venda quando deseja comprar de outro jogador ou Anúncios de compra quando deseja vender para alguém." action={<Freshness snapshot={snapshot} ttl={1} />} />
       <div className="uex-insights-filter-grid uex-market-quality-filters">
-        <label>Item ou nome UEX<input value={itemName} onChange={e => setItemName(e.target.value)} placeholder="Ex.: Tailwind Flight Helmet" style={inputStyle} /></label>
-        <label>Operação<select value={operation} onChange={e => setOperation(e.target.value)} style={inputStyle}><option value="sell">Venda · quero comprar</option><option value="buy">Compra · quero vender</option></select></label>
+        <label style={{ position:'relative' }}>Item ou nome UEX<input value={itemName} onFocus={() => setItemFieldFocused(true)} onBlur={() => window.setTimeout(() => setItemFieldFocused(false), 120)} onChange={e => setItemName(e.target.value)} placeholder="Digite parte do nome, ex.: Killshot" style={inputStyle} autoComplete="off" />{itemFieldFocused && itemSuggestions.length > 0 && <div className="uex-insights-item-suggestions">{itemSuggestions.map(item => <button type="button" key={item.id || item.id_item || item.name} onMouseDown={event => event.preventDefault()} onClick={() => { setItemName(item.name || ''); setItemFieldFocused(false); }}><strong>{item.name}</strong><small>{item.category_name || item.category || 'Item UEX'}{item.id || item.id_item ? ` · ID ${item.id || item.id_item}` : ''}</small></button>)}</div>}<small className="uex-insights-field-help">Digite pelo menos 2 caracteres e selecione uma sugestão para evitar nomes incorretos.</small></label>
+        <label>Operação<select value={operation} onChange={e => setOperation(e.target.value)} style={inputStyle}><option value="sell">Anúncios à venda — quero comprar</option><option value="buy">Anúncios de compra — quero vender</option></select><small className="uex-insights-field-help">A operação descreve o lado do anúncio na UEX, não a ação do usuário.</small></label>
         <label>Qualidade<select value={qualityTier} onChange={e => setQualityTier(e.target.value)} style={inputStyle}>{QUALITY_TIERS.map(tier => <option key={tier.value} value={tier.value}>{tier.label}</option>)}</select></label>
         <label>Anúncios mínimos<input type="number" min="0" step="1" value={minListings} onChange={e => setMinListings(e.target.value)} style={inputStyle} placeholder="Ex.: 3" /></label>
         <label>Ordenar por<select value={marketSort} onChange={e => setMarketSort(e.target.value)} style={inputStyle}><option value="priceLow">Menor preço atual</option><option value="priceHigh">Maior preço atual</option><option value="qualityHigh">Maior qualidade</option><option value="qualityLow">Menor qualidade</option><option value="listings">Mais anúncios</option><option value="changeLow">Mais abaixo da média 30d</option><option value="changeHigh">Mais acima da média 30d</option></select></label>
@@ -240,7 +244,7 @@ function MarketTab() {
       <div className="uex-market-quality-explanation"><strong>Como interpretar:</strong> preço atual é o valor médio dos anúncios ativos. “Confiabilidade” depende da quantidade de anúncios; uma linha com 1 anúncio não deve ser tratada como preço consolidado. A leitura abaixo da média de 30 dias é um sinal para investigar, não uma garantia de oportunidade.</div>
       <ErrorBox error={error} />
       {grouped.length > 0 ? (
-        <div className="uex-insights-table-wrap"><table className="uex-insights-table uex-market-quality-table"><thead><tr><th>Item</th><th>Faixa de qualidade</th><th>Operação</th><th>Preço atual</th><th>Média 7d</th><th>Média 30d</th><th>Variação 30d</th><th>Anúncios</th><th>Confiabilidade</th><th>Leitura</th></tr></thead><tbody>{grouped.slice(0, 120).map((row, index) => <tr key={`${row.id || row.item_uuid || index}`}><td><strong>{row.item_name || '—'}</strong><small>{row.currency || 'UEC'} · unidade {row.unit || 'un'}</small></td><td><strong style={{ color: '#fbbf24' }}>{qualityTierLabel(row.quality_tier)}</strong><small>aprox. Q{row.qualityMin}–{row.qualityMax}</small></td><td>{row.operation === 'sell' ? 'Venda · compra' : 'Compra · venda'}</td><td><strong>{formatUec(row.price_avg)}</strong></td><td>{formatUec(row.price_avg_week)}<small>{row.change7 === null ? '—' : `${row.change7 > 0 ? '+' : ''}${row.change7.toFixed(1)}% vs atual`}</small></td><td>{formatUec(row.price_avg_month)}</td><td style={{ color: row.change30 !== null && row.change30 <= -10 ? '#34d399' : row.change30 !== null && row.change30 >= 10 ? '#fb7185' : 'var(--text-secondary)' }}>{row.change30 === null ? '—' : `${row.change30 > 0 ? '+' : ''}${row.change30.toFixed(1)}%`}</td><td>{row.listings_count ?? '—'}</td><td><strong style={{ color: row.reliability.color }}>{row.reliability.label}</strong></td><td><strong style={{ color: row.reading.color }}>{row.reading.label}</strong></td></tr>)}</tbody></table></div>
+        <div className="uex-insights-table-wrap"><table className="uex-insights-table uex-market-quality-table"><thead><tr><th>Item</th><th>Faixa de qualidade</th><th>Operação</th><th>Preço atual</th><th>Média 7d</th><th>Média 30d</th><th>Variação 30d</th><th>Anúncios</th><th>Confiabilidade</th><th>Leitura</th></tr></thead><tbody>{grouped.slice(0, 120).map((row, index) => <tr key={`${row.id || row.item_uuid || index}`}><td><strong>{row.item_name || '—'}</strong><small>{row.currency || 'UEC'} · unidade {row.unit || 'un'}</small></td><td><strong style={{ color: '#fbbf24' }}>{qualityTierLabel(row.quality_tier)}</strong><small>aprox. Q{row.qualityMin}–{row.qualityMax}</small></td><td>{row.operation === 'sell' ? 'Anúncios à venda' : 'Anúncios de compra'}</td><td><strong>{formatUec(row.price_avg)}</strong></td><td>{formatUec(row.price_avg_week)}<small>{row.change7 === null ? '—' : `${row.change7 > 0 ? '+' : ''}${row.change7.toFixed(1)}% vs média 7d`}</small></td><td>{formatUec(row.price_avg_month)}</td><td style={{ color: row.change30 !== null && row.change30 <= -10 ? '#34d399' : row.change30 !== null && row.change30 >= 10 ? '#fb7185' : 'var(--text-secondary)' }}>{row.change30 === null ? '—' : `${row.change30 > 0 ? '+' : ''}${row.change30.toFixed(1)}%`}</td><td>{row.listings_count ?? '—'}</td><td><strong style={{ color: row.reliability.color }}>{row.reliability.label}</strong></td><td><strong style={{ color: row.reading.color }}>{row.reading.label}</strong></td></tr>)}</tbody></table></div>
       ) : <EmptyState text="Informe um item ou nome e consulte as médias por qualidade." />}
       <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}><strong style={{ fontSize: 13, color: 'var(--text-primary)' }}><History size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Histórico de preço</strong><span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Até 1.000 snapshots; use o nome do item para manter a consulta leve.</span></div>
@@ -484,13 +488,20 @@ export function MarketAlertPanel() {
 
   const activeAutomaticAlerts = alerts.filter(alert => alert.enabled && shouldCheckMarketAlertAutomatically(alert)).length;
   const activeManualOnlyAlerts = alerts.filter(alert => alert.enabled && !shouldCheckMarketAlertAutomatically(alert)).length;
+  const bestCurrentPrice = events.length ? Math.min(...events.map(event => Number(event.price || 0)).filter(Boolean)) : 0;
 
   return <div className="uex-market-alert-panel">
+    <div className="uex-market-alert-kpis">
+      <div><span>Alertas ativos</span><strong>{alerts.filter(alert => alert.enabled).length}</strong><small>{activeAutomaticAlerts} na pesquisa automática</small></div>
+      <div><span>Ofertas monitoradas</span><strong>{events.length}</strong><small>{eventGroups.length} grupo{eventGroups.length === 1 ? '' : 's'} com resultado</small></div>
+      <div><span>Melhor oportunidade atual</span><strong>{bestCurrentPrice ? `${bestCurrentPrice.toLocaleString('pt-BR')} UEC` : '—'}</strong><small>o ranking substitui o pior resultado quando necessário</small></div>
+      <div><span>Próxima atualização</span><strong>{settings.automaticEnabled ? marketCountdownLabel(settings.nextCheckAt, countdownNow) : 'Pausada'}</strong><small>intervalo configurado: {settings.intervalMinutes} min</small></div>
+    </div>
     <div className="uex-market-alert-header"><div><strong>Alertas de compra</strong><span>Monitora anúncios ativos de venda em UEC e avisa quando um item corresponde à qualidade e ao preço desejados.</span></div><button type="button" onClick={checkNow} disabled={checking} style={buttonStyle('gold', checking)}><RefreshCw size={14} className={checking ? 'spin' : ''} />{checking ? 'Verificando...' : 'Verificar agora'}</button></div>
     <div className="uex-market-alert-schedule"><label>Intervalo da análise (minutos)<input type="number" min="1" max="1440" step="1" value={intervalInput} onChange={event => setIntervalInput(event.target.value)} /></label><button type="button" onClick={saveInterval}>Salvar intervalo</button><button type="button" className={`uex-market-alert-auto-toggle ${settings.automaticEnabled ? 'enabled' : 'disabled'}`} onClick={toggleAutomatic}><span className="uex-market-alert-auto-dot" />{settings.automaticEnabled ? 'Análise automática ligada' : 'Análise automática desligada'}</button><div className="uex-market-alert-countdown"><Clock3 size={14} /><span>{settings.automaticEnabled ? `Próxima análise automática · ${activeAutomaticAlerts} alerta${activeAutomaticAlerts === 1 ? '' : 's'}` : 'Análise automática pausada'}</span><strong>{settings.automaticEnabled ? marketCountdownLabel(settings.nextCheckAt, countdownNow) : 'desligada'}</strong></div></div>
     <div className="uex-market-alert-automation-summary"><Power size={13} /> <span><strong>{activeAutomaticAlerts}</strong> alerta{activeAutomaticAlerts === 1 ? '' : 's'} incluído{activeAutomaticAlerts === 1 ? '' : 's'} na pesquisa automática</span>{activeManualOnlyAlerts > 0 && <span className="manual-only"><strong>{activeManualOnlyAlerts}</strong> mantido{activeManualOnlyAlerts === 1 ? '' : 's'} fora da automação</span>}</div>
     <div className="uex-market-alert-note"><AlertTriangle size={14} /> A moeda é fixa em <strong>UEC</strong>. O botão geral controla o monitor; em cada card você pode deixar um alerta fora da pesquisa periódica. Alertas fora da automação permanecem salvos e continuam disponíveis no botão <strong>Verificar agora</strong>.</div>
-    <form onSubmit={addAlert} className="uex-market-alert-form">
+    <form onSubmit={addAlert} className="uex-market-alert-form uex-market-alert-form-refined">
       <div className="uex-market-alert-mode"><span>Modo de seleção do item</span><label><input type="radio" name="market-alert-item-mode" checked={entryMode === 'catalog'} onChange={() => changeEntryMode('catalog')} /> Catálogo UEX</label><label><input type="radio" name="market-alert-item-mode" checked={entryMode === 'manual'} onChange={() => changeEntryMode('manual')} /> Item manual</label></div>
       <label className="uex-market-alert-item-field">{entryMode === 'catalog' ? 'Item para comprar' : 'Nome manual do item'}<input value={itemQuery} onFocus={() => { if (entryMode === 'catalog' && !form.itemId && itemQuery.trim().length >= 2) setSuggestionsOpen(true); }} onChange={event => { setItemQuery(event.target.value); setSuggestionsOpen(entryMode === 'catalog'); setForm(previous => ({ ...previous, itemMode: entryMode, itemId: '', itemName: event.target.value })); }} placeholder={entryMode === 'catalog' ? 'Pesquise e selecione um item do catálogo' : 'Ex.: Iron ou Sadaryx'} style={inputStyle} autoComplete="off" />{entryMode === 'catalog' && suggestionsOpen && suggestions.length > 0 && <div className="uex-market-alert-suggestions">{suggestions.map(item => <button type="button" key={item.id || item.name} onClick={() => chooseItem(item)}><strong>{item.name}</strong><small>ID {item.id || item.id_item}</small></button>)}</div>}{entryMode === 'catalog' && form.itemId && <small className="uex-market-alert-selected">Selecionado: {form.itemName} · ID {form.itemId}</small>}{entryMode === 'manual' && itemQuery.trim().length >= 2 && <small className="uex-market-alert-selected">Busca manual ativa: {itemQuery.trim()}</small>}</label>
       {entryMode === 'manual' && <label>Precisão da busca<select value={form.manualMatchMode || 'title'} onChange={event => updateForm('manualMatchMode', event.target.value)} style={inputStyle}>{MARKET_ALERT_MANUAL_MATCH_MODES.map(mode => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select><small className="uex-market-alert-field-help">{MARKET_ALERT_MANUAL_MATCH_MODES.find(mode => mode.value === (form.manualMatchMode || 'title'))?.description}</small></label>}
@@ -726,6 +737,14 @@ function OpportunityBars({ rows }) {
   })}</div>;
 }
 
+export function trendQualityRequests(qualityTier) {
+  const value = String(qualityTier ?? '');
+  // A UEX usa a ausência de quality_tier (ou Q0) para o agregado de tendências.
+  // Não devemos trocar “Todas” por sete consultas específicas, pois isso pode
+  // eliminar itens que só existem no resultado agregado do endpoint.
+  return value === '' ? [''] : [value];
+}
+
 function riskColor(risk) {
   return risk === 'alto' ? '#fb7185' : risk === 'médio' ? '#fbbf24' : '#34d399';
 }
@@ -810,8 +829,8 @@ function ProfitAnalysisTab() {
   const [riskFilter, setRiskFilter] = useState('all');
   const [trendFilter, setTrendFilter] = useState('all');
   const [strategy, setStrategy] = useState('balanced');
-  const [onlySpread, setOnlySpread] = useState(true);
-  const [onlyPositive, setOnlyPositive] = useState(true);
+  const [onlySpread, setOnlySpread] = useState(false);
+  const [onlyPositive, setOnlyPositive] = useState(false);
   const [onlyLocalSales, setOnlyLocalSales] = useState(false);
   const [groupQualities, setGroupQualities] = useState(true);
   const [sort, setSort] = useState('score');
@@ -820,6 +839,8 @@ function ProfitAnalysisTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [salesVersion, setSalesVersion] = useState(0);
+  const [itemFieldFocused, setItemFieldFocused] = useState(false);
+  const itemSuggestions = useMemo(() => searchUexItems(query, 8), [query]);
 
   useEffect(() => {
     const refreshSales = () => setSalesVersion(value => value + 1);
@@ -925,10 +946,10 @@ function ProfitAnalysisTab() {
   async function sync() {
     setLoading(true); setError('');
     try {
-      const requestedTiers = qualityTier === '' ? QUALITY_TIERS.filter(tier => tier.value !== '').map(tier => tier.value) : [qualityTier];
+      const requestedTiers = trendQualityRequests(qualityTier);
       const responses = await Promise.all(requestedTiers.map(tier => fetchMarketplaceTrends({ itemName: query.trim(), currency, qualityTier: tier })));
       const seen = new Set();
-      const data = responses.flatMap((response, tierIndex) => response.map(row => ({ ...row, quality_tier: row.quality_tier ?? requestedTiers[tierIndex] }))).filter(row => {
+      const data = responses.flatMap((response, tierIndex) => (Array.isArray(response) ? response : []).map(row => ({ ...row, quality_tier: row.quality_tier ?? (requestedTiers[tierIndex] || '0') }))).filter(row => {
         const key = `${row.id_item || row.item_name || ''}|${row.quality_tier || 0}|${row.currency || ''}`;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -944,7 +965,7 @@ function ProfitAnalysisTab() {
     <SectionHeader icon={BarChart3} color="#34d399" title="Análise de lucro e oportunidades" description="Identifica oportunidades com margem ajustada por liquidez, confiança da amostra, tendência e risco. As vendas locais aparecem apenas como referência de desempenho próprio." action={<Freshness snapshot={snapshot} ttl={1} />} />
     <div className="uex-insights-analysis-note"><Gauge size={14} /><span><strong>Por que o ranking mudou:</strong> margens extremas e amostras pequenas agora recebem penalidade. Itens repetidos em várias qualidades podem ser agrupados. Negociações, anúncios e sucesso reportado são sinais de mercado, não vendas garantidas nem lucro líquido.</span></div>
     <div className="uex-insights-filter-grid uex-analysis-filter-grid uex-analysis-filter-grid-advanced">
-      <label>Item ou nome<input value={query} onChange={event => setQuery(event.target.value)} placeholder="Ex.: helmet, weapon, component" style={inputStyle} /></label>
+      <label style={{ position: 'relative' }}>Item ou nome<input value={query} onFocus={() => setItemFieldFocused(true)} onBlur={() => window.setTimeout(() => setItemFieldFocused(false), 120)} onChange={event => setQuery(event.target.value)} placeholder="Digite parte do nome, ex.: helmet" style={inputStyle} autoComplete="off" />{itemFieldFocused && itemSuggestions.length > 0 && <div className="uex-insights-item-suggestions">{itemSuggestions.map(item => <button type="button" key={item.id || item.id_item || item.name} onMouseDown={event => event.preventDefault()} onClick={() => { setQuery(item.name || ''); setItemFieldFocused(false); }}><strong>{item.name}</strong><small>{item.category_name || item.category || 'Item UEX'}{item.id || item.id_item ? ` · ID ${item.id || item.id_item}` : ''}</small></button>)}</div>}<small className="uex-insights-field-help">Digite pelo menos 2 caracteres e selecione uma sugestão do catálogo sincronizado.</small></label>
       <label>Estratégia<select value={strategy} onChange={event => setStrategy(event.target.value)} style={inputStyle}>{Object.entries(STRATEGY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Origem do preço<select value={priceSource} onChange={event => setPriceSource(event.target.value)} style={inputStyle}><option value="uex">Somente mercado UEX</option><option value="in_game">Somente referência in-game</option><option value="compare">Comparar in-game + UEX</option></select></label>
       <label>Moeda<select value={currency} onChange={event => setCurrency(event.target.value)} style={inputStyle}><option value="">Todas</option>{currencies.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -958,7 +979,7 @@ function ProfitAnalysisTab() {
       <label>Negociações mínimas<input type="number" min="0" step="1" value={minNegotiations} onChange={event => setMinNegotiations(event.target.value)} style={inputStyle} /></label>
       <label>Anúncios mínimos<input type="number" min="0" step="1" value={minListings} onChange={event => setMinListings(event.target.value)} style={inputStyle} /></label>
       <label>Ordenar por<select value={sort} onChange={event => setSort(event.target.value)} style={inputStyle}><option value="score">Score ajustado</option><option value="buyHigh">Maior compra média</option><option value="buyLow">Menor compra média</option><option value="sellHigh">Maior venda média</option><option value="sellLow">Menor venda média</option><option value="spreadHigh">Maior spread</option><option value="spreadLow">Menor spread</option><option value="margin">Maior margem</option><option value="activity">Mais negociações</option><option value="listings">Mais anúncios</option><option value="trend">Melhor tendência</option><option value="confidence">Maior confiança</option><option value="confidenceLow">Menor confiança</option><option value="qualitiesHigh">Mais qualidades</option><option value="qualitiesLow">Menos qualidades</option><option value="currencyHigh">Moeda Z-A</option><option value="currencyLow">Moeda A-Z</option><option value="inGameBuyHigh">Maior compra in-game</option><option value="inGameBuyLow">Menor compra in-game</option><option value="inGameSellHigh">Maior venda in-game</option><option value="inGameSellLow">Menor venda in-game</option><option value="marketBuyHigh">Maior compra UEX</option><option value="marketBuyLow">Menor compra UEX</option><option value="marketSellHigh">Maior venda UEX</option><option value="marketSellLow">Menor venda UEX</option><option value="successHigh">Maior sucesso</option><option value="successLow">Menor sucesso</option><option value="ownHigh">Maior receita local</option><option value="ownLow">Menor receita local</option><option value="own">Minha receita local</option></select></label>
-      <div className="uex-analysis-filter-actions"><label className="uex-analysis-check"><input type="checkbox" checked={onlySpread} onChange={event => setOnlySpread(event.target.checked)} /> com compra e venda</label><label className="uex-analysis-check"><input type="checkbox" checked={onlyPositive} onChange={event => setOnlyPositive(event.target.checked)} /> spread positivo</label><label className="uex-analysis-check"><input type="checkbox" checked={groupQualities} onChange={event => setGroupQualities(event.target.checked)} /> agrupar qualidades</label><label className="uex-analysis-check"><input type="checkbox" checked={onlyLocalSales} onChange={event => setOnlyLocalSales(event.target.checked)} /> somente minhas vendas</label><LoadingButton loading={loading} onClick={sync} tone="green">Atualizar tendências</LoadingButton></div>
+      <div className="uex-analysis-filter-actions"><label className="uex-analysis-check"><input type="checkbox" checked={onlySpread} onChange={event => setOnlySpread(event.target.checked)} /> somente com compra e venda</label><label className="uex-analysis-check"><input type="checkbox" checked={onlyPositive} onChange={event => setOnlyPositive(event.target.checked)} /> somente spread positivo</label><label className="uex-analysis-check"><input type="checkbox" checked={groupQualities} onChange={event => setGroupQualities(event.target.checked)} /> agrupar qualidades</label><label className="uex-analysis-check"><input type="checkbox" checked={onlyLocalSales} onChange={event => setOnlyLocalSales(event.target.checked)} /> somente minhas vendas</label><LoadingButton loading={loading} onClick={sync} tone="green">Atualizar tendências</LoadingButton></div>
     </div>
     <ErrorBox error={error} />
     <div className="uex-insights-mini-grid uex-analysis-kpis"><div className="uex-insights-stat"><span>Itens após agrupamento</span><strong>{kpis.total.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Com spread calculável</span><strong>{kpis.withSpread.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Spread positivo</span><strong style={{ color: '#34d399' }}>{kpis.positive.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Baixo risco</span><strong style={{ color: '#34d399' }}>{kpis.lowRisk.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Referência in-game</span><strong>{kpis.gameCount.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Mercado UEX</span><strong>{kpis.marketCount.toLocaleString('pt-BR')}</strong></div><div className="uex-insights-stat"><span>Margem média</span><strong>{percentLabel(kpis.averageMargin)}</strong></div><div className="uex-insights-stat"><span>Melhor oportunidade</span><strong title={kpis.best?.item_name}>{kpis.best?.item_name || '—'}</strong></div></div>

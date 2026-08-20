@@ -12,8 +12,29 @@ import {
 import { readJson, writeJson, dispatchStorageEvent } from '../utils/storage';
 
 const KEY = 'sc_ore_vault_v1';
+const PREFERENCES_KEY = 'sc_ore_vault_preferences_v1';
+export const ORE_VAULT_PREFERENCES_UPDATED_EVENT = 'sc_ore_vault_preferences_updated';
 
 const EMPTY_VAULT = { entries: [] };
+
+// Preferência exclusiva do Baú de Minério. Não reutiliza a configuração do Inventário.
+export function loadOreVaultPreferences() {
+  const value = readJson(PREFERENCES_KEY, { defaultDestination: null });
+  return value && typeof value === 'object'
+    ? { defaultDestination: value.defaultDestination || null }
+    : { defaultDestination: null };
+}
+
+export function saveOreVaultDefaultDestination(destination) {
+  const next = { defaultDestination: destination || null };
+  const saved = writeJson(PREFERENCES_KEY, next);
+  if (saved) dispatchStorageEvent(ORE_VAULT_PREFERENCES_UPDATED_EVENT, next);
+  return saved;
+}
+
+export function clearOreVaultDefaultDestination() {
+  return saveOreVaultDefaultDestination(null);
+}
 
 export function loadVault() {
   const value = readJson(KEY, EMPTY_VAULT);

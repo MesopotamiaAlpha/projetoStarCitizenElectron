@@ -1,6 +1,9 @@
-import { markMissionScripFailed, isMissionScripFailureStatus } from './unknownVault';
+import { markMissionScripFailed, isMissionScripFailureStatus, normalizeScripType } from './unknownVault';
+import { ENABLE_MISSION_MONITOR_DEBUG } from '../config/debugFlags';
 
 const STORAGE_KEY = 'sc_mission_auto_monitor_v1';
+const IGNORED_MISSIONS_KEY = 'sc_mission_auto_ignored_v1';
+const MISSION_REWARD_PREFERENCES_KEY = 'sc_mission_reward_preferences_v1';
 export const MISSION_AUTO_MONITOR_UPDATED_EVENT = 'sc_mission_auto_monitor_updated';
 export const MISSION_AUTO_MONITOR_MAX_EVENTS = 300;
 
@@ -10,6 +13,7 @@ function nowIso() {
 
 function traceFrontend(step, details = {}, level = 'info') {
   const payload = { at: nowIso(), step, ...details };
+  if (!ENABLE_MISSION_MONITOR_DEBUG && level !== 'error') return payload;
   try {
     const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
     console[method]('[MissionAutoMonitor][frontend]', payload);
@@ -25,6 +29,64 @@ function readState() {
   } catch {
     return null;
   }
+}
+
+function readIgnoredMissions() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(IGNORED_MISSIONS_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeIdentityPart(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function automaticMissionIdentity(value) {
+  const guid = String(value?.guid || value?.missionGuid || value?.watcher_guid || '').trim().toLowerCase();
+  if (guid) return `guid:${guid}`;
+  const definition = normalizeIdentityPart(value?.contractDefinitionId || value?.contract_definition_id);
+  const generator = normalizeIdentityPart(value?.generator || value?.external_generator);
+  const title = normalizeIdentityPart(value?.debugName || value?.missionDebugName || value?.title || value?.name);
+  const signature = [definition, generator, title].filter(Boolean).join('|');
+  return signature ? `signature:${signature}` : '';
+}
+
+export function isIgnoredAutomaticMission(value) {
+  const identity = automaticMissionIdentity(value);
+  return Boolean(identity && readIgnoredMissions()[identity]);
+}
+
+export function rememberDeletedAutomaticMission(mission) {
+  if (!mission?.auto) return null;
+  const identity = automaticMissionIdentity(mission);
+  if (!identity) return null;
+  const ignored = readIgnoredMissions();
+  ignored[identity] = {
+    identity,
+    guid: mission.watcher_guid || null,
+    title: mission.canonical_title || mission.title || 'Missão automática',
+    deletedAt: nowIso(),
+  };
+  localStorage.setItem(IGNORED_MISSIONS_KEY, JSON.stringify(ignored));
+  const current = loadMissionAutoMonitor();
+  const activeMissions = current.activeMissions.filter(item => automaticMissionIdentity(item) !== identity);
+  if (activeMissions.length !== current.activeMissions.length) {
+    saveMissionAutoMonitor({ activeMissions });
+  }
+  traceFrontend('mission.ignored.persisted', { identity, guid: mission.watcher_guid || null, title: ignored[identity].title, activeRemoved: current.activeMissions.length - activeMissions.length });
+  return ignored[identity];
+}
+
+export function loadIgnoredAutomaticMissions() {
+  return readIgnoredMissions();
 }
 
 function normalizeEvent(event) {
@@ -114,8 +176,14 @@ export function setMissionAutoMonitorStatus(status = {}) {
 
 export function appendMissionAutoMonitorEvent(event) {
   traceFrontend('ipc.event.received', { type: event?.type, guid: event?.guid || event?.missionGuid || null, debugName: event?.debugName || null, raw: event });
-  const normalized = normalizeEvent(event);
+  const ignored = isIgnoredAutomaticMission(event);
+  const normalized = normalizeEvent({ ...event, ignored });
   const current = loadMissionAutoMonitor();
+  if (ignored && ['mission_start', 'mission_complete', 'mission_ended', 'blueprint_received'].includes(normalized.type)) {
+    traceFrontend('event.ignored.deleted_record', { type: normalized.type, guid: normalized.guid || null, identity: automaticMissionIdentity(event) });
+    const events = [normalized, ...current.events.filter(item => item.eventId !== normalized.eventId)].slice(0, MISSION_AUTO_MONITOR_MAX_EVENTS);
+    return saveMissionAutoMonitor({ events, activeMissions: current.activeMissions, channel: normalized.channel || current.channel, lastError: '' });
+  }
   const events = [normalized, ...current.events.filter(item => item.eventId !== normalized.eventId)].slice(0, MISSION_AUTO_MONITOR_MAX_EVENTS);
   let activeMissions = current.activeMissions.slice();
   if (normalized.type === 'mission_start' && normalized.guid) {
@@ -137,6 +205,68 @@ function normalizeMissionName(value) {
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+function readMissionRewardPreferences() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MISSION_REWARD_PREFERENCES_KEY) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function missionRewardPreferenceKey(value) {
+  const title = value?.canonical_title || value?.title || value?.displayName || value?.missionName || value?.debugName || value?.missionDebugName || value?.name;
+  const normalized = normalizeMissionName(title);
+  return normalized && !isTechnicalMissionName(title) ? normalized : '';
+}
+
+export function loadMissionRewardPreferences() {
+  return readMissionRewardPreferences();
+}
+
+export function rememberMissionRewardPreferences(mission) {
+  const key = missionRewardPreferenceKey(mission);
+  if (!key) return null;
+  const preferences = readMissionRewardPreferences();
+  const preference = {
+    key,
+    title: String(mission.canonical_title || mission.title || '').trim(),
+    scrip_type: normalizeScripType(mission.scrip_type) || null,
+    scrip_qty: Math.max(0, Math.floor(Number(mission.scrip_qty) || 0)),
+    secure_drive_enabled: Boolean(mission.secure_drive_enabled),
+    secure_drive_qty: Math.max(0, Math.floor(Number(mission.secure_drive_qty) || 0)),
+    updatedAt: nowIso(),
+  };
+  preferences[key] = preference;
+  try { localStorage.setItem(MISSION_REWARD_PREFERENCES_KEY, JSON.stringify(preferences)); } catch {}
+  traceFrontend('reward_preferences.saved', { key, title: preference.title, scrip_type: preference.scrip_type, secure_drive_enabled: preference.secure_drive_enabled });
+  return preference;
+}
+
+export function findMissionRewardPreferences(value) {
+  const key = missionRewardPreferenceKey(value);
+  return key ? readMissionRewardPreferences()[key] || null : null;
+}
+
+function isTechnicalMissionName(value) {
+  const text = String(value || '').trim();
+  if (!text) return true;
+  if (/^(?:HaulCargo|HeadHunters|Hockrow|Mission|Contract|Delivery|Bounty|Salvage|Investigation|Assault|Escort|Mining)[A-Za-z0-9_]*$/i.test(text)) return true;
+  if (text.includes('_') && !/\s/.test(text)) return true;
+  if (/^[A-Za-z0-9]+(?:_[A-Za-z0-9]+){2,}$/.test(text)) return true;
+  return false;
+}
+
+function resolveCanonicalMissionTitle(current, event) {
+  const savedCandidates = [current?.canonical_title, current?.title];
+  const incomingCandidates = [event?.displayName, event?.missionName, event?.officialName, event?.debugName, event?.missionDebugName];
+  const savedHuman = savedCandidates.find(value => value && !isTechnicalMissionName(value));
+  if (savedHuman) return String(savedHuman).trim();
+  const incomingHuman = incomingCandidates.find(value => value && !isTechnicalMissionName(value));
+  if (incomingHuman) return String(incomingHuman).trim();
+  return String(savedCandidates.find(Boolean) || incomingCandidates.find(Boolean) || 'Missão detectada no Game.log').trim();
 }
 
 function knownReward(value) {
@@ -187,6 +317,10 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   try { missions = JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { missions = []; }
   if (!Array.isArray(missions)) missions = [];
   const guid = event.guid || event.missionGuid;
+  if (isIgnoredAutomaticMission(event)) {
+    traceFrontend('mission.upsert.ignored_deleted', { guid: guid || null, identity: automaticMissionIdentity(event), type: event.type });
+    return null;
+  }
   const index = guid ? missions.findIndex(mission => mission?.auto === true && String(mission.watcher_guid || '') === String(guid)) : -1;
   if (event.type === 'blueprint_received') {
     if (index < 0) return null;
@@ -203,8 +337,10 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   const iso = Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : new Date().toISOString();
   const eventEnd = Number(event.endTs || event.ts || Date.now());
   const endIso = Number.isFinite(eventEnd) ? new Date(eventEnd).toISOString() : new Date().toISOString();
-  const missionTitle = String(event.debugName || event.missionDebugName || 'Missão detectada no Game.log').trim();
   const current = index >= 0 ? missions[index] : null;
+  const canonicalTitle = resolveCanonicalMissionTitle(current, event);
+  const missionTitle = canonicalTitle;
+  const rewardPreference = index < 0 ? findMissionRewardPreferences({ canonical_title: canonicalTitle, ...event }) : null;
   const computedDurationSec = Number(event.durationSec) > 0
     ? Number(event.durationSec)
     : durationBetweenSeconds(current?.auto_started_at || current?.created_at || event.startTs, event.endTs || event.ts);
@@ -227,6 +363,7 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   const base = current || {
     id: `auto-${guid || event.eventId || Date.now()}`,
     title: missionTitle,
+    canonical_title: canonicalTitle,
     type,
     faction: '', system: '', location: '', difficulty: 'Médio', status: 'Active',
     reward: resolvedReward, auto_reward_status: resolvedReward !== 0 ? 'filled' : 'pending',
@@ -237,8 +374,8 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
     notes: 'Registrada automaticamente a partir do Game.log do Star Citizen.',
     bug_description: '', created_at: iso, completed_at: null, wallet_out_at: null,
     objectives: [], auto: true, source: 'game_log', watcher_guid: guid || null,
-    scrip_type: null, scrip_qty: 0, scrip_dispatched: false, scrip_dispatch_error: '',
-    secure_drive_enabled: false, secure_drive_qty: 0, secure_drive_dispatched: false, secure_drive_status: null, secure_drive_dispatch_error: '',
+    scrip_type: rewardPreference?.scrip_type || null, scrip_qty: rewardPreference?.scrip_qty || 0, scrip_dispatched: false, scrip_dispatch_error: '',
+    secure_drive_enabled: Boolean(rewardPreference?.secure_drive_enabled), secure_drive_qty: rewardPreference?.secure_drive_qty || 0, secure_drive_dispatched: false, secure_drive_status: null, secure_drive_dispatch_error: '',
     contract_definition_id: event.contractDefinitionId || null, external_generator: event.generator || null,
     auto_started_at: iso, auto_ended_at: null, duration_sec: computedDurationSec, timer_elapsed: computedDurationSec * 1000, auto_blueprints: [], auto_last_reason: '',
   };
@@ -253,7 +390,10 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
     auto_reward_source_mission_id: historicalRewardMission?.id || base.auto_reward_source_mission_id || null,
     auto_reward_filled_at: resolvedReward !== 0 ? (base.auto_reward_filled_at || new Date().toISOString()) : null,
   };
-  if (event.debugName) next.title = event.debugName;
+  // O nome salvo no projeto é canônico: atualizações do Game.log não podem
+  // substituir um nome já conhecido por um identificador técnico interno.
+  next.canonical_title = resolveCanonicalMissionTitle(next, { ...event, displayName: event.displayName || canonicalTitle });
+  next.title = next.canonical_title;
   if (event.generator) next.external_generator = event.generator;
   if (event.contractDefinitionId) next.contract_definition_id = event.contractDefinitionId;
   if (event.reputationMin !== null && event.reputationMin !== undefined) next.reputation_min = Number(event.reputationMin) || 0;

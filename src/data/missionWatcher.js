@@ -2,6 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// Debug do leitor — descomente a próxima linha durante manutenção.
+const ENABLE_MISSION_MONITOR_DEBUG = false;
+// const ENABLE_MISSION_MONITOR_DEBUG = true; // ATIVAR: trace do Game.log
 
 const POLL_INTERVAL_MS = 250;
 const MAX_READ_CHUNK = 32 * 1024 * 1024;
@@ -85,11 +88,21 @@ function parseReputationFromText(line) {
   return { min, max, label: min === max ? `+${min} Rep` : `+${min}–${max} Rep` };
 }
 
-function parseAcceptedMissionName(line) {
+function parseMissionNotificationName(line) {
   const firstLine = String(line || '').split(/\r?\n/)[0];
-  const match = /(?:Contract\s+Accepted|CONTRATO\s+ACEITO|CONTRATO\s+ACCEPTED)\s*:\s*([^"\r\n]*)/i.exec(firstLine);
+  const match = /(?:Contract\s+(?:Accepted|Complete|Completed|Failed|Abandoned)|CONTRATO\s+(?:ACEITO|ACEPTED|CONCLU[IÍ]DO|COMPLETADO|FINALIZADO|FALHOU|ABANDONADO))\s*:\s*([^"\r\n]*)/i.exec(firstLine);
   if (!match) return null;
-  return cleanText(match[1]).replace(/<[^>]+>/g, '').replace(/\[[^\]]*Rep[^\]]*\]/gi, '').replace(/(?:Reward|Payout|aUEC|UEC)\s*[:=]?\s*.*$/i, '').replace(/[|;,\-:]+\s*$/, '').trim() || null;
+  return cleanText(match[1])
+    .replace(/<[^>]+>/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\[[^\]]*Rep[^\]]*\]/gi, '')
+    .replace(/(?:Reward|Payout|aUEC|UEC)\s*[:=]?\s*.*$/i, '')
+    .replace(/[|;,\-:]+\s*$/, '')
+    .trim() || null;
+}
+
+function parseAcceptedMissionName(line) {
+  return parseMissionNotificationName(line);
 }
 
 class MissionLogWatcher {
@@ -148,8 +161,8 @@ class MissionLogWatcher {
     const prefix = `[MissionWatcher][${entry.seq}][${step}]`;
     try {
       if (level === 'error') console.error(prefix, details);
-      else if (level === 'warn') console.warn(prefix, details);
-      else console.info(prefix, details);
+      else if (ENABLE_MISSION_MONITOR_DEBUG && level === 'warn') console.warn(prefix, details);
+      else if (ENABLE_MISSION_MONITOR_DEBUG) console.info(prefix, details);
     } catch (_) {}
     return entry;
   }
@@ -358,18 +371,20 @@ class MissionLogWatcher {
     return best;
   }
 
-  finishMission(guid, completion, line, ts, reason = '') {
+  finishMission(guid, completion, line, ts, reason = '', notificationName = '') {
     const active = this.active.get(guid);
     const marker = this.markers.get(guid);
     const reward = parseRewardFromText(line) ?? active?.reward ?? marker?.reward ?? null;
     const reputation = parseReputationFromText(line);
-    const debugName = active?.debugName || marker?.debugName || null;
+    const displayName = cleanText(notificationName) || active?.displayName || null;
+    const debugName = displayName || active?.debugName || marker?.debugName || null;
     const generator = active?.generator || marker?.generator || null;
     const contractDefinitionId = active?.contractDefinitionId || marker?.contractDefinitionId || null;
     const event = {
       type: completion === 'Complete' ? 'mission_complete' : 'mission_ended',
       guid,
       debugName,
+      displayName,
       generator,
       contractDefinitionId,
       reward,
@@ -462,6 +477,7 @@ class MissionLogWatcher {
       }
       const mission = {
         guid,
+        displayName: parseAcceptedMissionName(acceptedPayload) || null,
         debugName: parseAcceptedMissionName(acceptedPayload) || marker?.debugName || 'Missão detectada no Game.log',
         generator: marker?.generator || '',
         contractDefinitionId: marker?.contractDefinitionId || null,
@@ -485,19 +501,20 @@ class MissionLogWatcher {
     if (completionIsFresh && parseMissionId(line)) {
       const pending = this.pendingCompletion;
       this.pendingCompletion = null;
-      this.finishMission(parseMissionId(line), pending.completion, `${pending.line}\n${line}`, ts, pending.line);
+      this.finishMission(parseMissionId(line), pending.completion, `${pending.line}\n${line}`, ts, pending.line, pending.notificationName || parseMissionNotificationName(pending.line));
       return;
     }
     if (PATTERN_COMPLETION_NOTIFICATION.test(line)) {
       this.debug.patternMatches.endMission += 1;
       this.debug.lastMatch = 'completion_notification';
       const completion = /(?:FALHOU|FAILED)/i.test(line) ? 'Fail' : /(?:ABANDONADO|ABANDONED)/i.test(line) ? 'Abandon' : 'Complete';
+      const notificationName = parseMissionNotificationName(line);
       const guid = parseMissionId(line);
       if (guid) {
-        this.finishMission(guid, completion, line, ts, line);
+        this.finishMission(guid, completion, line, ts, line, notificationName);
         return;
       }
-      this.pendingCompletion = { line, completion, ts };
+      this.pendingCompletion = { line, completion, ts, notificationName };
       return;
     }
     if (!completionIsFresh) this.pendingCompletion = null;
