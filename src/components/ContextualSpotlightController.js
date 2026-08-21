@@ -42,7 +42,10 @@ export default function ContextualSpotlightController({ mode = 'economic' }) {
     const updatePosition = () => {
       state.frame = 0;
       const target = state.current;
-      if (!target) return;
+      if (!target || !target.isConnected || typeof target.getBoundingClientRect !== 'function') {
+        state.current = null;
+        return;
+      }
       const rect = target.getBoundingClientRect();
       const spotlight = target.querySelector(':scope > .contextual-spotlight');
       if (!spotlight || !rect.width || !rect.height) return;
@@ -56,7 +59,7 @@ export default function ContextualSpotlightController({ mode = 'economic' }) {
     const handlePointerMove = event => {
       if (!enabled) return;
       const target = event.target?.closest?.(TARGET_SELECTOR);
-      if (!target || isIgnored(target)) {
+      if (!target || !target.isConnected || isIgnored(target)) {
         removeTarget(state.current);
         state.current = null;
         return;
@@ -70,7 +73,7 @@ export default function ContextualSpotlightController({ mode = 'economic' }) {
     const handlePointerOut = event => {
       const target = event.target?.closest?.(TARGET_SELECTOR);
       const next = event.relatedTarget;
-      if (target && (!next || !target.contains(next))) {
+      if (target && target.isConnected && (!next || !target.contains(next))) {
         removeTarget(target);
         if (state.current === target) state.current = null;
       }

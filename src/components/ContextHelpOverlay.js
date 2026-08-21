@@ -88,13 +88,19 @@ function getElementHelp(element) {
 }
 
 function getPosition(element, pointer) {
-  if (pointer) return { x: pointer.x, y: pointer.y };
+  const safePointer = pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+    ? pointer
+    : null;
+  if (safePointer) return { x: safePointer.x, y: safePointer.y };
+  if (!element || !element.isConnected || typeof element.getBoundingClientRect !== 'function') return null;
   const rect = element.getBoundingClientRect();
+  if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.bottom)) return null;
   return { x: rect.left + rect.width / 2, y: rect.bottom };
 }
 
 function clampPosition(position) {
-  const width = Math.min(320, window.innerWidth - 28);
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return null;
+  const width = Math.min(320, Math.max(180, window.innerWidth - 28));
   const x = Math.max(14, Math.min(position.x, window.innerWidth - width - 14));
   const y = Math.max(14, Math.min(position.y + 12, window.innerHeight - 118));
   return { x, y, width };
@@ -147,10 +153,9 @@ export default function ContextHelpOverlay() {
       setHelp(null);
       timer.current = window.setTimeout(() => {
         if (activeElement.current !== element) return;
-        setHelp({
-          text: description,
-          position: clampPosition(getPosition(element, pointer.current)),
-        });
+        const position = clampPosition(getPosition(element, pointer.current));
+        if (!position || !element.isConnected || activeElement.current !== element) return;
+        setHelp({ text: description, position });
       }, HELP_DELAY_MS);
     };
 
@@ -169,7 +174,9 @@ export default function ContextHelpOverlay() {
       const element = activeElement.current;
       if (!element || !element.contains(event.target)) return;
       pointer.current = { x: event.clientX, y: event.clientY };
-      setHelp(current => current ? { ...current, position: clampPosition(pointer.current) } : current);
+      const position = clampPosition(pointer.current);
+      if (!position) return;
+      setHelp(current => current ? { ...current, position } : current);
     };
 
     const onPointerOut = event => {
@@ -212,7 +219,7 @@ export default function ContextHelpOverlay() {
     };
   }, []);
 
-  if (!help) return null;
+  if (!help || !help.position) return null;
 
   return (
     <div
