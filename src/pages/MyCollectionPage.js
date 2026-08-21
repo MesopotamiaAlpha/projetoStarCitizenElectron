@@ -1,4 +1,4 @@
-import React, { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronUp, HardHat, Shirt, Dumbbell, Footprints, Backpack,
   LayoutGrid, List, Package, Plus, Search, Shield, Star, Trophy, Minus, Trash2, AlertTriangle, CheckCircle2, Wrench, X,
@@ -116,6 +116,15 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
   const [duplicateBusy, setDuplicateBusy] = useState(null);
   const [duplicateNotice, setDuplicateNotice] = useState('');
   const [page, setPage] = useState(1);
+  const searchInputRef = useRef(null);
+
+  const focusSearchSoon = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const input = searchInputRef.current;
+      if (!input || input.disabled || input.readOnly) return;
+      input.focus({ preventScroll: true });
+    });
+  }, []);
   const deferredSearch = useDeferredValue(search);
   const query = deferredSearch.trim().toLocaleLowerCase('pt-BR');
 
@@ -144,6 +153,10 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
       setDuplicateNotice(`Erro ao remover duplicata: ${error.message}`);
     } finally {
       setDuplicateBusy(null);
+      // A confirmação nativa e a atualização do banco devolvem o foco ao
+      // botão de duplicidade em alguns builds do Electron. Reancora a busca
+      // sem rolar a página nem alterar o texto digitado.
+      focusSearchSoon();
     }
   }
 
@@ -203,7 +216,7 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
         {(duplicateGroups.length > 0 || showDuplicateManager) && <section className={`armor-duplicate-manager ${showDuplicateManager ? 'is-open' : ''}`}>
           <div className="armor-duplicate-manager-heading">
             <div><strong><Wrench size={14}/> HIGIENIZAÇÃO DA COLEÇÃO</strong><small>{duplicateGroups.length ? `${duplicateGroups.length} grupo(s) com registros duplicados detectado(s).` : 'Nenhuma duplicidade pendente.'}</small></div>
-            <button type="button" onClick={() => setShowDuplicateManager(value => !value)}>{showDuplicateManager ? 'Ocultar' : 'Revisar duplicidades'}{showDuplicateManager ? <X size={13}/> : <AlertTriangle size={13}/>}</button>
+            <button type="button" onClick={() => { setShowDuplicateManager(value => !value); focusSearchSoon(); }}>{showDuplicateManager ? 'Ocultar' : 'Revisar duplicidades'}{showDuplicateManager ? <X size={13}/> : <AlertTriangle size={13}/>}</button>
           </div>
           {showDuplicateManager && <>
             {duplicateNotice && <div className={`armor-duplicate-notice ${duplicateNotice.startsWith('Erro') ? 'error' : 'success'}`}>{duplicateNotice}</div>}
@@ -223,7 +236,7 @@ export default function MyCollectionPage({ sets, stats, onTogglePiece, onToggleP
           </>}
         </section>}
         <div className="armor-collection-toolbar">
-          <div className="armor-search-wrap"><Search size={14} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar base, variante, fabricante ou peça..." /></div>
+          <div className="armor-search-wrap"><Search size={14} /><input ref={searchInputRef} value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar base, variante, fabricante ou peça..." /></div>
           <select className="filter-select" value={typeFilter} onChange={event => setTypeFilter(event.target.value)}><option value="all">Todos os tipos</option><option value="Light">Leve</option><option value="Médio">Médio</option><option value="Heavy">Pesado</option><option value="Special">Especial</option></select>
           {activeTab === 'variants' && <select className="filter-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos os status</option><option value="complete">Completos</option><option value="partial">Parciais</option><option value="none">Sem peças</option></select>}
           <select className="filter-select" value={sortBy} onChange={event => setSortBy(event.target.value)}><option value="recent">Mais recentes</option><option value="name">Nome A-Z</option><option value="quantity">Maior quantidade</option></select>

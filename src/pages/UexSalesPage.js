@@ -302,9 +302,40 @@ function armorPieceQuantity(piece) {
   return piece?.owned ? Math.max(0, Number(piece.quantity ?? 1) || 0) : 0;
 }
 
-function getArmorCollectionMatches(listing, armorSets = []) {
+export function buildInventoryStockIndex(inventoryItems = []) {
+  const index = new Map();
+  (Array.isArray(inventoryItems) ? inventoryItems : []).forEach(entry => {
+    const key = normalizeInventoryName(entry?.name);
+    if (!key) return;
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(entry);
+  });
+  return index;
+}
+
+export function buildArmorStockIndex(armorSets = []) {
+  const piecesByName = new Map();
+  const setsByName = new Map();
+  (Array.isArray(armorSets) ? armorSets : []).forEach(set => {
+    const pieces = (set.pieces || []).map(piece => ({ ...piece, armor_set_id: set.id, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' }));
+    pieces.forEach(piece => {
+      const key = normalizeInventoryName(piece.piece_name);
+      if (!key) return;
+      if (!piecesByName.has(key)) piecesByName.set(key, []);
+      piecesByName.get(key).push(piece);
+    });
+    getArmorSetNameCandidates(set).forEach(key => {
+      if (!setsByName.has(key)) setsByName.set(key, []);
+      setsByName.get(key).push({ ...set, completeQuantity: getCompleteArmorSetQuantity(set), armorMatchName: key });
+    });
+  });
+  return { piecesByName, setsByName };
+}
+
+function getArmorCollectionMatches(listing, armorSets = [], armorIndex = null) {
   const target = normalizeInventoryName(listing?.title);
   if (!target) return [];
+  if (armorIndex?.piecesByName instanceof Map) return armorIndex.piecesByName.get(target) || [];
   return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_id: set.id, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
     .filter(piece => normalizeInventoryName(piece.piece_name) === target);
 }
@@ -341,21 +372,23 @@ export function getArmorSetNameCandidates(set) {
   return [...new Set(candidates.map(normalizeArmorSetListingName).filter(Boolean))];
 }
 
-export function getArmorSetOptions(listing, armorSets = []) {
+export function getArmorSetOptions(listing, armorSets = [], armorIndex = null) {
   const target = normalizeArmorSetListingName(listing?.title);
   if (!target) return [];
+  if (armorIndex?.setsByName instanceof Map) return armorIndex.setsByName.get(target) || [];
   return (Array.isArray(armorSets) ? armorSets : [])
     .map(set => ({ ...set, completeQuantity: getCompleteArmorSetQuantity(set), armorMatchName: getArmorSetNameCandidates(set).find(candidate => candidate === target) }))
     .filter(set => Boolean(set.armorMatchName));
 }
 
-function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = []) {
+function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = [], armorIndex = null, inventoryIndex = null) {
   const name = normalizeInventoryName(listing?.title);
-  const matches = (Array.isArray(inventoryItems) ? inventoryItems : [])
-    .filter(entry => normalizeInventoryName(entry?.name) === name);
+  const matches = inventoryIndex instanceof Map
+    ? (inventoryIndex.get(name) || [])
+    : (Array.isArray(inventoryItems) ? inventoryItems : []).filter(entry => normalizeInventoryName(entry?.name) === name);
   const binding = getInventoryBinding(listing);
-  const armorMatches = getArmorCollectionMatches(listing, armorSets);
-  const armorSetOptions = getArmorSetOptions(listing, armorSets);
+  const armorMatches = getArmorCollectionMatches(listing, armorSets, armorIndex);
+  const armorSetOptions = getArmorSetOptions(listing, armorSets, armorIndex);
   const linkedArmor = armorMatches.filter(piece => binding.armorPieceIds.includes(String(piece.id)));
   const linkedSets = armorSetOptions.filter(set => binding.armorSetIds.includes(String(set.id)));
   const armorPieceQuantityTotal = linkedArmor.reduce((total, piece) => total + armorPieceQuantity(piece), 0);
@@ -1163,7 +1196,9 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
   const [sortBy, setSortBy] = useState('date');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
-  const stockById = useMemo(() => new Map(catalog.map(item => [String(item.id), getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets)])), [catalog, inventoryItems, managedLocations, armorSets]);
+  const armorStockIndex = useMemo(() => buildArmorStockIndex(armorSets), [armorSets]);
+  const inventoryStockIndex = useMemo(() => buildInventoryStockIndex(inventoryItems), [inventoryItems]);
+  const stockById = useMemo(() => new Map(catalog.map(item => [String(item.id), getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets, armorStockIndex, inventoryStockIndex)])), [catalog, inventoryItems, managedLocations, armorSets, armorStockIndex, inventoryStockIndex]);
   const vaultById = useMemo(() => new Map(catalog.map(item => [String(item.id), getVaultStockSummary(item, vaultEntries)])), [catalog, vaultEntries]);
   const expiryById = useMemo(() => new Map(catalog.map(item => [String(item.id), listingExpiryState(item)])), [catalog]);
   const salesByTitle = useMemo(() => {

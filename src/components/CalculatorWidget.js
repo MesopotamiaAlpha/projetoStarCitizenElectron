@@ -288,7 +288,18 @@ export default function CalculatorWidget() {
 
   useEffect(() => {
     function handleKeyDown(event) {
-      if (!open) return;
+      if (!open || event.defaultPrevented) return;
+
+      // A calculadora é flutuante e usa um listener global para permitir
+      // digitação rápida. Nunca capture teclas enquanto o usuário estiver
+      // escrevendo em outro campo, especialmente nas mensagens da UEX.
+      const target = event.target;
+      const isEditableTarget = target instanceof HTMLElement && (
+        target.matches('input, textarea, select, [contenteditable="true"]') ||
+        target.isContentEditable
+      );
+      if (isEditableTarget) return;
+
       const key = event.key;
       if (/^[0-9.]$/.test(key)) { appendValue(key); event.preventDefault(); }
       else if (['+','-'].includes(key)) { appendValue(key); event.preventDefault(); }

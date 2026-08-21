@@ -4,6 +4,8 @@ import {
   getInventoryItemQuantity,
   getWikeloMissionProgress,
   getWikeloMissionShortages,
+  getWikeloScripInventorySummary,
+  getWikeloScripRequirement,
   scanWikeloItem,
   scanWikeloMissions,
 } from './wikeloInventory';
@@ -53,6 +55,23 @@ describe('escaneamento e entrega de itens do Wikelo', () => {
 
     expect(getWikeloMissionProgress(pending)).toEqual({ total: 2, completed: 1, totalNeeded: 7, totalCollected: 6, percent: 86, complete: false });
     expect(getWikeloMissionProgress(complete)).toEqual({ total: 2, completed: 2, totalNeeded: 7, totalCollected: 7, percent: 100, complete: true });
+  });
+
+  test('calcula scrip faltante de Wikelo Favor somando MG e Council/ConCuI Scrip', () => {
+    const inventoryWithScrip = [
+      { id: 'mg', name: 'MG Scrip', quantity: 400 },
+      { id: 'council', name: 'Council Scrip', quantity: 125 },
+      { id: 'other', name: 'Iron', quantity: 999 },
+    ];
+    expect(getWikeloScripInventorySummary(inventoryWithScrip)).toEqual({ mgScrip: 400, councilScrip: 125, conCuiScrip: 125, total: 525 });
+    expect(getWikeloScripRequirement({ name: 'Wikelo Favor', needed: 20, collected: 8 }, inventoryWithScrip)).toEqual(expect.objectContaining({
+      isWikeloFavor: true, missingFavors: 12, requiredScrip: 600, inventoryScrip: 525, remainingScrip: 75, favorsCoveredByScrip: 10,
+    }));
+  });
+
+  test('não calcula scrip para itens que não são Wikelo Favor e zera excesso', () => {
+    expect(getWikeloScripRequirement({ name: 'Medal', needed: 5, collected: 0 }, [{ name: 'MG Scrip', quantity: 999 }]).isWikeloFavor).toBe(false);
+    expect(getWikeloScripRequirement({ name: 'Wikelo Favor', needed: 2, collected: 0 }, [{ name: 'MG Scrip', quantity: 200 }])).toEqual(expect.objectContaining({ requiredScrip: 100, remainingScrip: 0, surplusScrip: 100 }));
   });
 
   test('gera pendências por missão para o Dashboard e ignora itens completos ou entregues', () => {

@@ -12,6 +12,7 @@ import {
   buildWikeloDeliveryPlan,
   getInventoryItemQuantity,
   getWikeloMissionProgress,
+  getWikeloScripRequirement,
   publishWikeloUpdate,
   scanWikeloMissions,
 } from '../data/wikeloInventory';
@@ -108,6 +109,7 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck, inventoryItems 
   const [suggs,    setSuggs]    = useState([]);
   const [showSugg, setShowSugg] = useState(false);
   const [error,    setError]    = useState('');
+  const scripRequirement = getWikeloScripRequirement({ name, needed: parseInt(needed) || 0, collected: initial?.collected || 0 }, inventoryItems);
 
   const IS = { width:'100%', padding:'7px 10px', background:'var(--bg-base)', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, outline:'none' };
   const SS = { ...IS, appearance:'none', WebkitAppearance:'none', backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a90b0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat:'no-repeat', backgroundPosition:'right 7px center', paddingRight:26 };
@@ -184,6 +186,15 @@ function ItemForm({ initial, onSave, onCancel, onInventoryCheck, inventoryItems 
           <input style={IS} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Onde dropar, dica..."/>
         </div>
       </div>
+      {scripRequirement.isWikeloFavor && (
+        <div style={{ marginBottom:7, padding:'7px 9px', background:'rgba(162,155,254,0.08)', border:'1px solid rgba(162,155,254,0.25)', borderRadius:6, color:'var(--text-secondary)', fontSize:10, lineHeight:1.5 }}>
+          <strong style={{ color:'#a29bfe' }}>Conversão Wikelo:</strong> faltam {scripRequirement.missingFavors} Wikelo Favor = {scripRequirement.requiredScrip} scrip.
+          <br/>Inventário: {scripRequirement.inventoryScrip} scrip ({scripRequirement.inventoryMgScrip} MG + {scripRequirement.inventoryConCuiScrip} Council/ConCuI).
+          <strong style={{ color:scripRequirement.remainingScrip > 0 ? 'var(--accent-gold)' : 'var(--accent-green)' }}>
+            {scripRequirement.remainingScrip > 0 ? ` Ainda faltam ${scripRequirement.remainingScrip} scrip.` : ' Scrip suficiente para cobrir o restante.'}
+          </strong>
+        </div>
+      )}
       {error && <div style={{ fontSize:10, color:'var(--accent-red)', marginBottom:6 }}>{error}</div>}
       <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
         <button onClick={onCancel} style={{ padding:'5px 12px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:5, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:10, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>Cancelar</button>
@@ -208,6 +219,7 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventory
   const pct      = Math.min(100, Math.round((qty / needed) * 100));
   const fromInv  = item.from_inventory || 0;
   const scannedAvailable = Math.max(0, Number(item.inventory_available) || 0);
+  const scripRequirement = getWikeloScripRequirement(item, inventoryItems);
 
   function applyAdj() {
     const n = parseFloat(adjVal) || 0;
@@ -319,6 +331,14 @@ function MissionItemRow({ item, missionId, onUpdate, onDelete, onScan, inventory
           <button onClick={applyAdj} style={{ padding:'3px 8px', background:adjMode==='add'?'rgba(52,211,153,0.1)':'rgba(251,113,133,0.1)', border:`1px solid ${adjMode==='add'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.3)'}`, borderRadius:4, color:adjMode==='add'?'var(--accent-green)':'var(--accent-red)', cursor:'pointer', fontSize:10, fontWeight:700, fontFamily:'"Exo 2",sans-serif', textTransform:'uppercase' }}>OK</button>
         </div>
       {isDone && <div style={{ paddingLeft:24, fontSize:10, color:'var(--accent-green)', fontWeight:700 }}>✓ Item completo! Use − Remover ou o botão de reset se precisar corrigir.</div>}
+      {scripRequirement.isWikeloFavor && (
+        <div style={{ paddingLeft:24, marginTop:5, fontSize:9, lineHeight:1.5, color:'var(--text-secondary)' }}>
+          <span style={{ color:'#a29bfe', fontWeight:800 }}>SCRIP PARA WIKELO:</span> {scripRequirement.requiredScrip} necessários · {scripRequirement.inventoryScrip} no inventário ({scripRequirement.inventoryMgScrip} MG + {scripRequirement.inventoryConCuiScrip} Council/ConCuI) ·
+          <strong style={{ color:scripRequirement.remainingScrip > 0 ? 'var(--accent-gold)' : 'var(--accent-green)' }}>
+            {scripRequirement.remainingScrip > 0 ? ` faltam ${scripRequirement.remainingScrip}` : ' saldo suficiente'}
+          </strong>
+        </div>
+      )}
       {item.inventory_scanned_at && <div style={{ paddingLeft:24, marginTop:3, fontSize:9, color: scannedAvailable >= needed ? 'var(--accent-green)' : 'var(--text-muted)' }}>
         <div>Escaneado: {scannedAvailable} disponível no Inventário · {new Date(item.inventory_scanned_at).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}</div>
         <div style={{ marginTop:3, color:'var(--accent-primary)', fontWeight:700 }}>📍 Estoque analisado: {item.inventory_source_location || 'Local não informado'}</div>

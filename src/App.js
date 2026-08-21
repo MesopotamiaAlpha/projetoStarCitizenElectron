@@ -44,6 +44,7 @@ import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutom
 import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
+import { updateArmorPieceQuantityInSets } from './data/armorPerformance';
 import { planInventoryStockConsumption } from './data/inventoryStockConsumption';
 import { publishInventoryUpdate } from './data/inventoryEvents';
 
@@ -356,10 +357,20 @@ export default function App() {
   }, []);
 
   const updateLocalArmorPiece = useCallback((pieceId, updater) => {
-    setSets(current => current.map(set => ({
-      ...set,
-      pieces: (set.pieces || []).map(piece => String(piece.id) === String(pieceId) ? { ...piece, ...updater(piece) } : piece),
-    })));
+    setSets(current => {
+      let changed = false;
+      const next = current.map(set => {
+        const pieces = Array.isArray(set?.pieces) ? set.pieces : [];
+        const index = pieces.findIndex(piece => String(piece?.id) === String(pieceId));
+        if (index < 0) return set;
+        const nextPiece = { ...pieces[index], ...updater(pieces[index]) };
+        const nextPieces = pieces.slice();
+        nextPieces[index] = nextPiece;
+        changed = true;
+        return { ...set, pieces: nextPieces };
+      });
+      return changed ? next : current;
+    });
   }, []);
 
   const handleTogglePiece = async id => {
@@ -385,9 +396,16 @@ export default function App() {
     try { await api.updatePieceNotes(id, notes); } catch (error) { await loadData(); console.error('[Armor] notes update failed', error); }
   };
   const handleUpdatePieceQuantity = async (id, qty) => {
-    const nextQuantity = Math.max(1, Number(qty) || 1);
-    updateLocalArmorPiece(id, () => ({ quantity: nextQuantity, owned: true }));
-    try { await api.updatePieceQuantity(id, nextQuantity); await refreshArmorStats(); } catch (error) { await loadData(); console.error('[Armor] quantity update failed', error); }
+    const nextQuantity = Math.max(1, Math.floor(Number(qty) || 1));
+    // Atualização otimista local: quantidade física não altera os KPIs
+    // estruturais, portanto não é necessário recarregar stats ou a coleção.
+    setSets(current => updateArmorPieceQuantityInSets(current, id, nextQuantity));
+    try {
+      await api.updatePieceQuantity(id, nextQuantity);
+    } catch (error) {
+      await loadData();
+      console.error('[Armor] quantity update failed', error);
+    }
   };
 
   const handleConsumeArmorStock = useCallback(async ({ pieceIds = [], setIds = [], quantity = 1 } = {}) => {

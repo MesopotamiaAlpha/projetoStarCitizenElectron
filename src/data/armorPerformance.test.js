@@ -1,4 +1,4 @@
-import { buildArmorPerformanceFixture, filterSortAndPaginateArmorSets, sumOwnedArmorQuantity } from './armorPerformance';
+import { buildArmorPerformanceFixture, filterSortAndPaginateArmorSets, sumOwnedArmorQuantity, updateArmorPieceQuantityInSets } from './armorPerformance';
 
 describe('armor performance scenarios', () => {
   test('processa 2.000 sets sem renderizar todos de uma vez', () => {
@@ -28,6 +28,19 @@ describe('armor performance scenarios', () => {
 
     expect(total).toBeGreaterThan(0);
     expect(Number.isFinite(total)).toBe(true);
+  });
+
+  test('atualiza uma peça em 2.164 armaduras sem recriar os demais sets', () => {
+    const fixture = buildArmorPerformanceFixture(2164);
+    const targetId = fixture[1500].pieces[2].id;
+    const untouchedSet = fixture[0];
+    const next = updateArmorPieceQuantityInSets(fixture, targetId, 7);
+
+    expect(next).not.toBe(fixture);
+    expect(next[0]).toBe(untouchedSet);
+    expect(next[1500]).not.toBe(fixture[1500]);
+    expect(next[1500].pieces[2].quantity).toBe(7);
+    expect(next[1500].pieces[2].owned).toBe(true);
   });
 });
 

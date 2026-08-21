@@ -47,3 +47,25 @@ export function filterSortAndPaginateArmorSets(sets, { query = '', type = 'all',
 export function sumOwnedArmorQuantity(sets) {
   return sets.reduce((total, set) => total + (set.pieces || []).reduce((sum, piece) => sum + (piece.owned ? Math.max(1, Number(piece.quantity) || 1) : 0), 0), 0);
 }
+
+/**
+ * Atualiza somente o registro que contém a peça solicitada.
+ * Sets e arrays não relacionados preservam a mesma referência, evitando que
+ * uma alteração de quantidade invalide todos os cards memorizados da coleção.
+ */
+export function updateArmorPieceQuantityInSets(sets, pieceId, quantity) {
+  const nextQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  let changed = false;
+  const nextSets = (Array.isArray(sets) ? sets : []).map(set => {
+    const pieces = Array.isArray(set?.pieces) ? set.pieces : [];
+    const pieceIndex = pieces.findIndex(piece => String(piece?.id) === String(pieceId));
+    if (pieceIndex < 0) return set;
+    const currentPiece = pieces[pieceIndex];
+    if (Number(currentPiece.quantity) === nextQuantity && currentPiece.owned) return set;
+    const nextPieces = pieces.slice();
+    nextPieces[pieceIndex] = { ...currentPiece, quantity: nextQuantity, owned: true };
+    changed = true;
+    return { ...set, pieces: nextPieces };
+  });
+  return changed ? nextSets : sets;
+}

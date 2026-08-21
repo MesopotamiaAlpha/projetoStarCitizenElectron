@@ -24,7 +24,7 @@ import {
 } from '../data/uexInsights';
 import { loadUexItemsDB, searchUexItems } from '../data/uexItemsDB';
 import { loadUexSales } from '../data/uexSales';
-import { DEFAULT_MARKET_ALERT_INTERVAL_MINUTES, DEFAULT_MARKET_ALERT_MAX_RESULTS, MAX_MARKET_ALERT_MAX_RESULTS, MIN_MARKET_ALERT_MAX_RESULTS, MARKET_ALERT_MANUAL_MATCH_MODES, MARKET_ALERT_SOURCES, MARKET_ALERT_SETTINGS_UPDATED_EVENT, MARKET_ALERTS_UPDATED_EVENT, loadMarketAlertSettings, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertFocus, manualMatchModeLabel, marketAlertDefaults, removeMarketAlert, removeMarketAlertEventsByGroup, upsertMarketAlert, checkMarketAlerts, saveMarketAlertSettings, dismissMarketAlertEvent, MARKET_ALERT_AVAILABILITIES, shouldCheckMarketAlertAutomatically } from '../data/uexMarketAlerts';
+import { DEFAULT_MARKET_ALERT_INTERVAL_MINUTES, DEFAULT_MARKET_ALERT_MAX_RESULTS, MAX_MARKET_ALERT_MAX_RESULTS, MIN_MARKET_ALERT_MAX_RESULTS, MARKET_ALERT_MANUAL_MATCH_MODES, MARKET_ALERT_SOURCES, MARKET_ALERT_SETTINGS_UPDATED_EVENT, MARKET_ALERTS_UPDATED_EVENT, loadMarketAlertSettings, loadMarketAlerts, loadMarketAlertEvents, loadMarketAlertFocus, consumeMarketAlertFocus, manualMatchModeLabel, marketAlertDefaults, removeMarketAlert, removeMarketAlertEventsByGroup, upsertMarketAlert, checkMarketAlerts, saveMarketAlertSettings, dismissMarketAlertEvent, MARKET_ALERT_AVAILABILITIES, shouldCheckMarketAlertAutomatically } from '../data/uexMarketAlerts';
 
 const TABS = [
   { id: 'market', label: 'Mercado por qualidade', icon: TrendingUp, color: '#fbbf24' },
@@ -331,6 +331,7 @@ export function MarketAlertPanel() {
   const [alerts, setAlerts] = useState(() => loadMarketAlerts());
   const [events, setEvents] = useState(() => loadMarketAlertEvents());
   const [focusedEventKey, setFocusedEventKey] = useState(() => loadMarketAlertFocus()?.eventKey || '');
+  const [focusedAt, setFocusedAt] = useState(() => Number(loadMarketAlertFocus()?.focusedAt || 0));
   const [selectedGroupKey, setSelectedGroupKey] = useState('');
   const [settings, setSettings] = useState(() => loadMarketAlertSettings());
   const [intervalInput, setIntervalInput] = useState(() => String(loadMarketAlertSettings().intervalMinutes));
@@ -345,7 +346,13 @@ export function MarketAlertPanel() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const refresh = () => { setAlerts(loadMarketAlerts()); setEvents(loadMarketAlertEvents()); setFocusedEventKey(loadMarketAlertFocus()?.eventKey || ''); };
+    const refresh = () => {
+      setAlerts(loadMarketAlerts());
+      setEvents(loadMarketAlertEvents());
+      const focus = loadMarketAlertFocus();
+      setFocusedEventKey(focus?.eventKey || '');
+      setFocusedAt(Number(focus?.focusedAt || 0));
+    };
     const refreshSettings = () => { const next = loadMarketAlertSettings(); setSettings(next); setIntervalInput(String(next.intervalMinutes)); };
     window.addEventListener(MARKET_ALERTS_UPDATED_EVENT, refresh);
     window.addEventListener('sc_uex_market_alerts_checked', refresh);
@@ -363,10 +370,17 @@ export function MarketAlertPanel() {
   }, []);
 
   useEffect(() => {
-    if (!focusedEventKey) return;
+    if (!focusedEventKey || !focusedAt) return;
     const focused = events.find(event => event.key === focusedEventKey);
-    if (focused) setSelectedGroupKey(marketAlertGroupId(focused));
-  }, [events, focusedEventKey]);
+    if (!focused) return;
+
+    // O foco vindo do sininho é transitório. Consumi-lo impede que o polling,
+    // uma remoção ou qualquer outra atualização reabra o mesmo grupo.
+    setSelectedGroupKey(marketAlertGroupId(focused));
+    consumeMarketAlertFocus();
+    setFocusedEventKey('');
+    setFocusedAt(0);
+  }, [events, focusedEventKey, focusedAt]);
 
   const eventGroups = useMemo(() => {
     const groups = new Map();

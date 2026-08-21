@@ -1,4 +1,4 @@
-import { getArmorSetOptions, normalizeArmorSetListingName } from './UexSalesPage';
+import { getArmorSetOptions, normalizeArmorSetListingName, buildArmorStockIndex, buildInventoryStockIndex } from './UexSalesPage';
 
 describe('vínculo de sets de armadura com anúncios UEX', () => {
   const completeSet = {
@@ -29,5 +29,20 @@ describe('vínculo de sets de armadura com anúncios UEX', () => {
     const incomplete = { ...completeSet, pieces: completeSet.pieces.map((piece, index) => index === 3 ? { ...piece, owned: 0, quantity: 0 } : piece) };
     expect(getArmorSetOptions({ title: 'Novikov "Ascension" Exploration Suit Set' }, [incomplete])).toHaveLength(1);
     expect(getArmorSetOptions({ title: 'Novikov "Ascension" Exploration Suit Set' }, [incomplete])[0].completeQuantity).toBe(0);
+  });
+
+  test('indexa 2.164 armaduras e anúncios sem perder correspondências', () => {
+    const armorSets = Array.from({ length: 2164 }, (_, index) => ({
+      id: index + 1,
+      base_name: `Armor ${index}`,
+      variant_name: 'Base',
+      pieces: [{ id: `piece-${index}`, piece_type: 'Helmet', piece_name: `Helmet ${index}`, owned: 1, quantity: 1 }],
+    }));
+    const listings = Array.from({ length: 132 }, (_, index) => ({ name: `Inventory ${index}` }));
+    const armorIndex = buildArmorStockIndex(armorSets);
+    const inventoryIndex = buildInventoryStockIndex(listings);
+    expect(armorIndex.setsByName.size).toBe(2164);
+    expect(armorIndex.piecesByName.get('helmet 2163')).toHaveLength(1);
+    expect(inventoryIndex.get('inventory 131')).toHaveLength(1);
   });
 });

@@ -496,6 +496,21 @@ export function loadMarketAlertFocus() {
   return readJson(MARKET_ALERT_FOCUS_KEY, null);
 }
 
+/**
+ * Consome o foco criado pelo sininho. O foco é transitório: serve apenas para
+ * levar o usuário até o grupo uma vez e não deve sobreviver às atualizações
+ * periódicas dos alertas.
+ */
+export function consumeMarketAlertFocus() {
+  const focus = loadMarketAlertFocus();
+  try {
+    window.localStorage.removeItem(MARKET_ALERT_FOCUS_KEY);
+  } catch {
+    // O armazenamento pode estar indisponível em um contexto Electron isolado.
+  }
+  return focus;
+}
+
 function saveMarketAlertEvents(events) {
   const safe = (Array.isArray(events) ? events : []).slice(0, MARKET_ALERT_MAX_EVENTS);
   writeJson(MARKET_ALERT_EVENTS_KEY, safe);
