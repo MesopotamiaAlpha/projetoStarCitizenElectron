@@ -17,8 +17,9 @@
   --accent-purple: #a78bfa;
 
   --text-primary: #eef2f8;
-  --text-secondary: #8b9bb4;
-  --text-muted: #4a5670;
+  /* Contraste elevado para textos secundários sobre fundos azul-marinho. */
+  --text-secondary: #c1ccdc;
+  --text-muted: #9eafc4;
   --text-accent: #38bdf8;
 
   --border-subtle: rgba(56, 189, 248, 0.08);
@@ -52,7 +53,8 @@ body {
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
+  letter-spacing: 0.008em;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -357,11 +359,11 @@ body {
   border: none;
   cursor: pointer;
   font-family: 'Exo 2', sans-serif;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   transition: color 0.15s ease;
 }
 .nav-group-header:hover { color: var(--text-secondary); }
@@ -725,9 +727,10 @@ button:not(:disabled):focus-visible, a:focus-visible, input:focus-visible, selec
 }
 
 .page-subtitle {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 /* === SCROLLABLE AREA === */
@@ -10727,3 +10730,73 @@ button.operational-status-action:focus-visible {
 .dashboard-wikelo-shortages-more { display: block; margin-top: 8px; color: var(--text-muted); font-size: 10px; }
 @media (max-width: 760px) { .dashboard-wikelo-shortage { grid-template-columns: 1fr auto; } .dashboard-wikelo-shortage-detail { grid-column: 1 / -1; grid-row: 2; } .dashboard-wikelo-shortage > svg { grid-column: 2; grid-row: 1; } }
 @media (prefers-reduced-motion: reduce) { .dashboard-wikelo-shortage { transition: none; } }
+
+
+/* === ACESSIBILIDADE VISUAL · V2.0 ===
+   A camada abaixo melhora a leitura dos textos auxiliares sem alterar os
+   títulos, números de destaque ou a estrutura responsiva das telas. */
+:where(p, li, label, small, th, td, dt, dd, caption, figcaption) {
+  line-height: 1.45;
+}
+
+:where(small, label, th, td, caption, figcaption) {
+  color: var(--text-secondary);
+}
+
+/* Textos auxiliares muito pequenos deixam de perder legibilidade no fundo escuro. */
+:where(.page-subtitle, .page-body small, .page-body label, .page-body th, .page-body td,
+  .modal-body small, .modal-body label, .sidebar-footer small,
+  [class*="hint"], [class*="meta"], [class*="subtitle"], [class*="description"]) {
+  font-size: max(11px, 1em);
+}
+
+:where(input, select, textarea, button) {
+  font-family: 'Exo 2', sans-serif;
+}
+
+:where(input, select, textarea)::placeholder {
+  color: #aebdd0;
+  opacity: 1;
+}
+
+:where(input, select, textarea):focus-visible,
+:where(button, a):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
+/* Tabelas densas continuam compactas, mas não usam texto microscópico. */
+:where(table) :where(th, td) {
+  font-size: max(11px, 1em);
+  line-height: 1.4;
+}
+
+/* O menu deve continuar legível também quando o painel está expandido. */
+.nav-group-header { min-height: 28px; }
+.nav-item { min-height: 34px; }
+.visual-mode-toggle,
+.visual-diagnostics-trigger { font-size: 11px; }
+
+@media (max-width: 800px) {
+  :where(.page-body small, .page-body label, .page-body th, .page-body td,
+    [class*="hint"], [class*="meta"], [class*="subtitle"], [class*="description"]) {
+    font-size: 12px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-primary: #ffffff;
+    --text-secondary: #e5edf7;
+    --text-muted: #c2d0e0;
+    --border-subtle: rgba(125, 211, 252, 0.28);
+    --border-normal: rgba(125, 211, 252, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+  }
+}
