@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2, Copy, Database, Download, ExternalLink, FolderCog,
   HardDrive, Info, RefreshCw, ShieldCheck, Upload, AlertTriangle, Trash2, LockKeyhole,
+  Smartphone, Power, RotateCw, Wifi, Shield,
 } from 'lucide-react';
 import { SELECTIVE_CLEANUP_CATEGORIES, clearCategoryLocalStorage } from '../data/selectiveCleanup';
+import QRCode from 'qrcode';
 
 const isElectron = () => Boolean(window.electronAPI?.dataGetInfo);
 
@@ -161,6 +163,128 @@ function ActionButton({ children, onClick, disabled = false, tone = 'blue', icon
       {Icon && <Icon size={14} />}
       {children}
     </button>
+  );
+}
+
+function MobileServerPanel({ setMessage }) {
+  const [status, setStatus] = useState({ running: false, port: 47821, urls: [], addresses: [] });
+  const [port, setPort] = useState('47821');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  async function refresh() {
+    if (!window.electronAPI?.mobileServerStatus) return;
+    try {
+      const result = await window.electronAPI.mobileServerStatus();
+      if (result?.success) {
+        setStatus(result);
+        if (result.port) setPort(String(result.port));
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Não foi possível consultar o servidor mobile.' });
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  const primaryUrl = status.urls?.[0] || '';
+  useEffect(() => {
+    let active = true;
+    if (!status.running || !primaryUrl) {
+      setQrDataUrl('');
+      return () => { active = false; };
+    }
+    QRCode.toDataURL(primaryUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 230,
+      color: { dark: '#07101d', light: '#f4fbff' },
+    }).then(dataUrl => {
+      if (active) setQrDataUrl(dataUrl);
+    }).catch(() => {
+      if (active) setQrDataUrl('');
+    });
+    return () => { active = false; };
+  }, [status.running, primaryUrl]);
+
+  async function toggle() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = status.running
+        ? await window.electronAPI.mobileServerStop()
+        : await window.electronAPI.mobileServerStart(Math.max(1024, Math.min(65535, Number(port) || 47821)));
+      if (!result?.success) throw new Error(result?.error || 'Não foi possível alterar o servidor mobile.');
+      setStatus(result);
+      setMessage({ type: 'success', text: result.running ? 'Servidor mobile ligado somente na rede local.' : 'Servidor mobile desligado. Os celulares não podem mais acessar o projeto.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Não foi possível alterar o servidor mobile.' });
+    } finally { setBusy(false); }
+  }
+
+  async function rotateToken() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await window.electronAPI.mobileServerRotateToken();
+      if (!result?.success) throw new Error(result?.error || 'Não foi possível renovar o token.');
+      setStatus(result);
+      setMessage({ type: 'success', text: 'Token renovado. Links antigos foram invalidados e um novo QR Code foi gerado.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Não foi possível renovar o token.' });
+    } finally { setBusy(false); }
+  }
+
+  async function copy(value, label) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(''), 1800);
+    } catch {
+      setMessage({ type: 'error', text: 'Não foi possível copiar o endereço.' });
+    }
+  }
+
+  const runningColor = status.running ? 'var(--accent-green)' : 'var(--text-muted)';
+  return (
+    <section style={{ marginTop: 18, background: 'linear-gradient(135deg, rgba(56,189,248,.12), rgba(12,24,40,.96) 58%, rgba(162,155,254,.08))', border: '1px solid rgba(56,189,248,.4)', borderRadius: 16, padding: 22, boxShadow: '0 14px 40px rgba(0,0,0,.18)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, marginBottom: 17 }}>
+        <div style={{ display: 'grid', placeItems: 'center', width: 42, height: 42, borderRadius: 12, background: 'rgba(56,189,248,.14)', border: '1px solid rgba(56,189,248,.35)', flexShrink: 0 }}><Smartphone size={21} style={{ color: 'var(--accent-primary)' }} /></div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 14, fontWeight: 700, letterSpacing: '.05em' }}>SERVIDOR MOBILE <span style={{ color: 'var(--accent-primary)', fontSize: 11 }}>V3.0.0</span></div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, marginTop: 6 }}>Transforme o computador em um servidor pessoal e acesse o Companheiro Emoto pelo navegador do celular na mesma rede Wi-Fi.</div>
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 10px', borderRadius: 999, background: status.running ? 'rgba(52,211,153,.12)' : 'rgba(148,163,184,.08)', border: `1px solid ${status.running ? 'rgba(52,211,153,.36)' : 'var(--border-subtle)'}`, color: runningColor, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: runningColor, boxShadow: status.running ? `0 0 12px ${runningColor}` : 'none' }} />{status.running ? 'ONLINE' : 'OFFLINE'}</div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(250px, .82fr)', gap: 18, alignItems: 'stretch' }}>
+        <div style={{ display: 'grid', gap: 13 }}>
+          <div style={{ padding: '12px 14px', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.25)', borderRadius: 10, color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.6 }}><Shield size={14} style={{ color: 'var(--accent-gold)', verticalAlign: 'middle', marginRight: 7 }} /><strong>Rede confiável:</strong> qualquer pessoa que possua a URL completa e o token poderá consultar os módulos liberados.</div>
+          <div style={{ padding: 15, background: 'rgba(5,12,22,.38)', border: '1px solid var(--border-subtle)', borderRadius: 12 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 800, marginBottom: 10 }}>1. Ative o servidor</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700 }}>Porta <input value={port} disabled={status.running || busy} onChange={event => setPort(event.target.value.replace(/[^0-9]/g, '').slice(0, 5))} inputMode="numeric" style={{ width: 88, marginLeft: 6, minHeight: 38, padding: '7px 9px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 7, color: 'var(--text-primary)' }} /></label>
+              <ActionButton icon={Power} tone={status.running ? 'gold' : 'green'} onClick={toggle} disabled={busy || !isElectron()}>{busy ? 'Aguarde...' : status.running ? 'Desligar servidor' : 'Ligar servidor'}</ActionButton>
+              {status.running && <ActionButton icon={RotateCw} tone="purple" onClick={rotateToken} disabled={busy}>Renovar acesso</ActionButton>}
+            </div>
+          </div>
+          {status.running && <div style={{ padding: 15, background: 'rgba(5,12,22,.38)', border: '1px solid var(--border-subtle)', borderRadius: 12 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 800, marginBottom: 10 }}>2. Abra no celular</div>
+            <div style={{ display: 'grid', gap: 9 }}>
+              {(status.urls || []).map((url, index) => <div key={url} style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}><Wifi size={14} style={{ color: 'var(--accent-green)', flexShrink: 0 }} /><code style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', color: 'var(--text-primary)', fontSize: 11 }}>{url}</code><button onClick={() => copy(url, `url-${index}`)} title="Copiar endereço completo" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 9px', border: '1px solid var(--border-subtle)', borderRadius: 7, background: 'var(--bg-panel)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 11 }}><Copy size={12} />{copied === `url-${index}` ? 'Copiado' : 'Copiar'}</button></div>)}
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.55 }}>Escaneie o QR Code ao lado ou copie a URL completa. O token já está incluído no endereço.</div>
+            </div>
+          </div>}
+        </div>
+
+        <div style={{ display: 'grid', placeItems: 'center', minHeight: 250, padding: 16, background: status.running ? 'linear-gradient(145deg, rgba(244,251,255,.97), rgba(217,239,249,.94))' : 'rgba(5,12,22,.38)', border: `1px solid ${status.running ? 'rgba(56,189,248,.6)' : 'var(--border-subtle)'}`, borderRadius: 14, color: status.running ? '#07101d' : 'var(--text-muted)' }}>
+          {status.running && qrDataUrl ? <div style={{ display: 'grid', justifyItems: 'center', gap: 10 }}><img src={qrDataUrl} alt="QR Code com endereço completo e token do Servidor Mobile" style={{ width: 210, height: 210, display: 'block', borderRadius: 8 }} /><strong style={{ fontSize: 12, letterSpacing: '.05em' }}>ESCANEIE PARA CONECTAR</strong><span style={{ fontSize: 10, opacity: .72, textAlign: 'center' }}>O código contém o endereço e o token temporário.</span></div> : <div style={{ textAlign: 'center' }}><Smartphone size={32} style={{ opacity: .5, marginBottom: 8 }} /><div style={{ fontSize: 12, fontWeight: 800 }}>{status.running ? 'Gerando QR Code...' : 'QR Code ficará disponível quando o servidor estiver online'}</div></div>}
+        </div>
+      </div>
+
+      {status.running && <div style={{ marginTop: 14, padding: '11px 13px', background: 'rgba(162,155,254,.08)', border: '1px solid rgba(162,155,254,.25)', borderRadius: 10 }}><div style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--text-secondary)', fontSize: 11 }}><ShieldCheck size={14} style={{ color: '#a29bfe', flexShrink: 0 }} /><span><strong>Token temporário ativo.</strong> Renovar o acesso invalida imediatamente todas as URLs e QR Codes anteriores.</span></div></div>}
+      {!isElectron() && <div style={{ color: 'var(--accent-gold)', fontSize: 11, marginTop: 12 }}>O servidor mobile só pode ser ligado na versão Electron instalada.</div>}
+    </section>
   );
 }
 
@@ -344,6 +468,7 @@ export default function DataDirectoryPage() {
           </section>
         </div>
 
+        <MobileServerPanel setMessage={setMessage} />
         <SelectiveCleanupPanel setMessage={setMessage} setPendingRestart={setPendingRestart} />
         {message && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 18, padding: '11px 13px', background: message.type === 'error' ? 'rgba(251,113,133,.08)' : 'rgba(52,211,153,.08)', border: `1px solid ${message.type === 'error' ? 'rgba(251,113,133,.25)' : 'rgba(52,211,153,.25)'}`, borderRadius: 7, color: message.type === 'error' ? 'var(--accent-red)' : 'var(--accent-green)', fontSize: 12, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{message.type === 'error' ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}{message.text}</div>}
 

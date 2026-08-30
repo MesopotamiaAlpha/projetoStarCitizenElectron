@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** permitir que outro programador consiga instalar, executar, entender, corrigir, estender e empacotar o Companheiro Emoto sem depender do histórico de desenvolvimento.
 
-O **Companheiro Emoto 2.0.0** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. A versão 2.0.0 adiciona uma camada visual opcional com PixiJS 8 para efeitos espaciais e HUD futurista, mantendo os componentes funcionais em React/HTML. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
+O **Companheiro Emoto 3.0.0** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. A versão 3.0.0 adiciona uma camada visual opcional com PixiJS 8 para efeitos espaciais e HUD futurista, mantendo os componentes funcionais em React/HTML. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
 
 > **Estado atual da manutenção — agosto de 2026:** o projeto inclui otimizações para bases grandes de armaduras e anúncios UEX, importação UEX em lote com **Adicionar todos**, limpeza seletiva de dados com snapshots, cálculo de scrip para Wikelo Favor, correções de foco no chat/calculadora e nos alertas UEX, além de uma camada global de legibilidade com contraste elevado. As funcionalidades novas devem preservar os eventos locais `sc_wikelo_updated`, `sc_inventory_updated` e os contratos IPC existentes.
 
@@ -1399,3 +1399,105 @@ export const ENABLE_FX_DIAGNOSTICS = true; // ATIVAR: Diagnóstico FX visual
 ```
 
 Não transforme essas flags em uma preferência de `localStorage`: elas existem para uso do programador e devem permanecer sob controle do código-fonte. Antes de publicar uma build, confirme que todas as linhas `ATIVAR` estão comentadas.
+
+
+## 31. Servidor Mobile local da versão 3.0.0
+
+A versão 3.0.0 introduz um servidor HTTP opcional executado dentro do processo principal do Electron. O usuário controla o serviço em `Sistema → Diretório de Dados → Servidor Mobile`. O serviço permanece desligado por padrão e só aceita conexões depois de uma ativação explícita.
+
+O módulo principal está em `electron/mobileServer.js`. Ele escuta em `0.0.0.0` na porta configurável, padrão `47821`, gera um token aleatório temporário e expõe uma interface mobile responsiva diretamente pelo navegador. O processo Electron continua sendo o único responsável pelo SQLite, diretório de dados, arquivos, proxy UEX e monitor do Game.log.
+
+### Contrato IPC
+
+O `electron/preload.js` expõe somente os seguintes métodos:
+
+| Método | Finalidade |
+|---|---|
+| `mobileServerStart(port)` | Inicia o serviço em uma porta entre 1024 e 65535. |
+| `mobileServerStop()` | Para o servidor e invalida o token atual. |
+| `mobileServerStatus()` | Retorna estado, porta, endereços locais e URLs autenticadas. |
+| `mobileServerRotateToken()` | Gera um novo token e invalida links anteriores. |
+
+Os handlers no `electron/main.js` aplicam `assertTrustedRenderer`, portanto somente o renderer local autorizado pode ligar ou controlar o serviço.
+
+### Rotas mobile atuais
+
+| Rota | Autenticação | Conteúdo |
+|---|---:|---|
+| `/` | Não | Portal HTML responsivo; os dados continuam protegidos. |
+| `/api/mobile/status` | Sim | Estado do serviço e versão. |
+| `/api/mobile/summary` | Sim | Contagens de armaduras, peças, posse e inventário. |
+| `/api/mobile/inventory` | Sim | Até 2.000 registros resumidos do inventário. |
+| `/api/mobile/armors` | Sim | Até 2.000 sets agrupados com quantidade de peças e peças possuídas. |
+| `/api/mobile/data-root` | Sim | Caminho do diretório central; manter protegido em futuras versões. |
+
+O token pode ser enviado no cabeçalho `X-Emoto-Token` ou na query `token` para permitir a abertura inicial pelo link mostrado no desktop. A comparação usa `crypto.timingSafeEqual` depois de validar o tamanho dos buffers. Não remover essa validação.
+
+### Regras de segurança
+
+O servidor foi desenhado para uso em rede local confiável. Ele não deve ser publicado na internet, encaminhado automaticamente pelo roteador ou usado como API pública. Qualquer evolução deve manter token temporário, desligamento explícito, renovação de token, limite de payload, ausência de acesso arbitrário a caminhos de arquivo e separação entre dados de consulta e operações destrutivas.
+
+A interface mobile atual é um MVP de leitura. Novas alterações devem ser adicionadas por endpoints autenticados e por uma camada de domínio compartilhada, nunca com SQL duplicado dentro dos componentes React. Operações de consumo de estoque, venda, limpeza seletiva, backup, restauração e acesso a anexos exigem confirmação e uma fila de escrita antes de serem liberadas remotamente.
+
+### Testes
+
+O teste `electron/mobileServer.test.cjs` valida token obrigatório, resumo, inventário, rotação de token e desligamento. Execute:
+
+```powershell
+npm run test:electron
+npm run verify
+```
+
+O build React e a verificação sintática do Electron devem continuar passando antes de cada entrega. O instalador NSIS deve ser gerado em Windows ou em Linux com Wine configurado; o target ZIP pode ser gerado separadamente quando o ambiente não possuir Wine.
+
+### Próximas evoluções recomendadas
+
+A próxima etapa é extrair adaptadores de dados compartilhados para que o desktop Electron e o cliente mobile usem as mesmas regras. Depois podem ser adicionados WebSocket para eventos `sc_wikelo_updated` e `sc_inventory_updated`, consulta de Wikelo e UEX, autenticação por dispositivo, PWA instalável e operações de escrita com confirmação.
+
+
+## 15. Portal mobile expandido da versão 3.0.0
+
+O servidor local fica em `electron/mobileServer.js`. Ele serve um portal HTML responsivo e uma API autenticada por token temporário. A interface desktop controla o ciclo de vida por meio de `mobile-server-start`, `mobile-server-stop`, `mobile-server-status` e `mobile-server-rotate-token`, expostos pelo `electron/preload.js`.
+
+### 15.1 Estado sincronizado
+
+O renderer envia uma allowlist pelo handler `mobile-server-sync-state`. O snapshot contém apenas `wikeloMissions`, `missions`, `uexItems`, `alerts` e `syncedAt`. As chaves `sc_uex_token_v1` e `sc_uex_secretkey_v1` nunca entram no snapshot. A sincronização ocorre na inicialização, em eventos locais e em um intervalo de cinco segundos.
+
+O processo principal mantém o snapshot em memória e passa a atualização ao servidor por `setRendererState`. O portal atualiza seus dados por Server-Sent Events no endpoint `/api/mobile/events`; o cliente usa `state-updated`, `inventory-updated` e `armor-updated` para recarregar somente a visão necessária.
+
+### 15.2 API de leitura
+
+As rotas autenticadas de leitura são `/api/mobile/summary`, `/api/mobile/inventory`, `/api/mobile/armors`, `/api/mobile/wikelo`, `/api/mobile/missions`, `/api/mobile/uex` e `/api/mobile/alerts`. O portal não recebe acesso ao SQLite; as consultas SQL continuam sendo executadas no processo principal por `queryAll` e `queryOne`.
+
+### 15.3 API de escrita
+
+O servidor aceita `POST` somente nas rotas explicitamente permitidas:
+
+| Rota | Delegação |
+|---|---|
+| `/api/mobile/inventory/:id` | Atualiza quantidade no SQLite por `updateInventoryQuantity`. |
+| `/api/mobile/armors/:id` | Atualiza quantidade/posse da peça por `updateArmorQuantity`. |
+| `/api/mobile/missions/:id/status` | Envia `mission-set-status` ao renderer. |
+| `/api/mobile/wikelo/:missionId/items/:itemId` | Envia `wikelo-update-item` ao renderer. |
+| `/api/mobile/alerts/:id/dismiss` | Envia `alert-dismiss` ao renderer. |
+
+As ações que dependem de localStorage não são executadas diretamente no processo principal. O fluxo é: servidor autenticado → `requestMobileRendererAction` → mensagem IPC `mobile-server-action-request` → allowlist em `App.js` → resposta `mobile-server-action-response`. O renderer valida a ação, grava a chave conhecida e dispara o evento local correspondente.
+
+### 15.4 Limites e segurança
+
+O corpo das requisições é limitado a 256 KiB. IDs são validados antes de chegar ao SQLite; quantidades negativas são normalizadas para zero; a quantidade de armaduras é inteira; e os snapshots são limitados a 500 registros por coleção para evitar travamentos no celular. O servidor escuta na rede local, mas não deve ser exposto à internet sem VPN/TLS e autenticação adicional.
+
+Ao desligar o servidor, os clientes SSE são encerrados e o token é invalidado. Ao renovar o token, URLs antigas deixam de funcionar. Não adicionar rotas genéricas de execução de JavaScript, acesso a arquivo ou consulta SQL recebida do cliente.
+
+### 15.5 Testes
+
+`electron/mobileServer.test.cjs` valida portal HTML, token obrigatório, rotas de resumo, inventário, armaduras, Wikelo, missões, UEX, alertas, renovação do token, operações POST e delegação de ações. Qualquer nova rota mobile deve receber um teste de autenticação negativa e um teste de payload inválido antes de ser liberada.
+
+
+## 16. Auditoria final do escopo mobile
+
+A rodada completa da versão 3.0.0 disponibiliza consulta mobile para Dashboard, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, anúncios UEX, Negociações UEX e Alertas de Compra. O portal também possui ajustes de quantidade do Inventário, progresso Wikelo, status de missão, dispensa de alerta e consulta de mensagens de negociações por proxy autenticado do renderer.
+
+Continuam exclusivas do desktop as operações de backup e restauração, Limpeza Seletiva, escolha de diretório, acesso ao Game.log, controle do Monitor Automático, configuração de tokens UEX, sincronização UEX que inicia chamadas de importação, cadastro completo de registros e operações irreversíveis de consumo, venda e entrega. Essa separação evita expor caminhos locais, credenciais e ações destrutivas pela rede.
+
+Ainda não foi implementado um modo PWA offline instalável nem um aplicativo React Native separado. O portal atual funciona no navegador do celular enquanto o Electron estiver aberto na mesma rede local. Também não foi liberado o envio de mensagens UEX, finalização de vendas, alteração de anúncios, criação/edição/exclusão de registros dos módulos locais ou execução remota do Monitor Game.log. Essas funções exigem uma camada adicional de confirmação, transação e auditoria antes de serem expostas.

@@ -23,6 +23,7 @@ import SystemAdminPage from './pages/SystemAdminPage';
 import UsefulLinksPage from './pages/UsefulLinksPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
+import { fetchNegotiations, fetchNegotiationMessages } from './data/uexNegotiations';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
@@ -47,6 +48,8 @@ import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
 import { updateArmorPieceQuantityInSets } from './data/armorPerformance';
 import { planInventoryStockConsumption } from './data/inventoryStockConsumption';
 import { publishInventoryUpdate } from './data/inventoryEvents';
+import { loadQueue, calcShoppingList } from './data/materialQueue';
+import { loadVault } from './data/oreVault';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -231,6 +234,110 @@ const NAV_GROUPS = [
 ];
 
 const PAGES = NAV_GROUPS.flatMap(g => g.pages);
+
+function readMobileSnapshot(key, fallback = []) {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : fallback;
+    if (Array.isArray(parsed)) return parsed;
+    for (const collectionKey of ['itens', 'items', 'entries', 'data', 'builds', 'notes', 'missions']) {
+      if (Array.isArray(parsed?.[collectionKey])) return parsed[collectionKey];
+    }
+    return fallback;
+  } catch { return fallback; }
+}
+
+function buildMobileMaterialTracking() {
+  try {
+    const queue = loadQueue();
+    const stockEntries = loadVault();
+    const items = calcShoppingList(queue, stockEntries).map(item => ({
+      ...item,
+      progress: item.needed_total > 0 ? Math.min(100, (item.collected / item.needed_total) * 100) : 100,
+      complete: item.remaining <= 1e-9,
+    }));
+    const neededCount = items.reduce((total, item) => total + (Number(item.needed_total) || 0), 0);
+    const remainingCount = items.reduce((total, item) => total + (Number(item.remaining) || 0), 0);
+    return {
+      items,
+      queuedBlueprints: (queue.queuedBlueprints || []).map(bp => ({ bpId: bp.bpId, bpName: bp.bpName, quantity: bp.quantity })),
+      summary: { materials: items.length, complete: items.filter(item => item.complete).length, missing: items.filter(item => !item.complete).length, neededCount, remainingCount },
+      syncedAt: new Date().toISOString(),
+    };
+  } catch {
+    return { items: [], queuedBlueprints: [], summary: { materials: 0, complete: 0, missing: 0, neededCount: 0, remainingCount: 0 }, syncedAt: new Date().toISOString() };
+  }
+}
+
+function buildMobileRendererState() {
+  return {
+    // Allowlist deliberada: nunca incluir sc_uex_token_v1, sc_uex_secretkey_v1 ou credenciais.
+    wikeloMissions: readMobileSnapshot('sc_wikelo_missions_v1'),
+    missions: readMobileSnapshot('sc_missions_v2'),
+    uexItems: readMobileSnapshot('sc_uex_sales_v1'),
+    alerts: readMobileSnapshot('sc_uex_market_alerts_v1'),
+    blueprints: readMobileSnapshot('sc_blueprints_v1'),
+    materials: readMobileSnapshot('sc_material_queue_v1'),
+    materialTracking: buildMobileMaterialTracking(),
+    mining: readMobileSnapshot('sc_mining_builds_v1'),
+    miningGroup: readMobileSnapshot('sc_mining_group_v1'),
+    oreVault: readMobileSnapshot('sc_ore_vault_v1'),
+    hangar: readMobileSnapshot('sc_hangar_v1'),
+    clanVault: readMobileSnapshot('sc_clan_vault_v1'),
+    notes: readMobileSnapshot('sc_notes_v1'),
+  };
+}
+
+function setMobileJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+}
+
+function updateNestedWikeloItem(node, itemId, collected) {
+  if (Array.isArray(node)) return node.map(entry => updateNestedWikeloItem(entry, itemId, collected));
+  if (!node || typeof node !== 'object') return node;
+  const identity = String(node.id ?? node.item_id ?? node.itemId ?? '');
+  const next = { ...node };
+  if (identity === String(itemId)) next.collected = Math.max(0, Number(collected) || 0);
+  Object.keys(next).forEach(key => { if (Array.isArray(next[key]) || (next[key] && typeof next[key] === 'object')) next[key] = updateNestedWikeloItem(next[key], itemId, collected); });
+  return next;
+}
+
+async function applyMobileRendererAction(action, payload = {}) {
+  if (action === 'uex-fetch-negotiations') {
+    try { return { success: true, negotiations: (await fetchNegotiations()).slice(0, 500) }; } catch (error) { return { success: false, error: error.message || 'Não foi possível consultar as negociações UEX.' }; }
+  }
+  if (action === 'uex-fetch-messages') {
+    try { return { success: true, messages: (await fetchNegotiationMessages(String(payload.hash || ''))).slice(0, 200) }; } catch (error) { return { success: false, error: error.message || 'Não foi possível consultar as mensagens UEX.' }; }
+  }
+  if (action === 'mission-set-status') {
+    const missions = readMobileSnapshot('sc_missions_v2');
+    const index = missions.findIndex(row => String(row.id ?? row.guid ?? '') === String(payload.id));
+    if (index < 0) return { success: false, error: 'Missão não encontrada.' };
+    const next = missions.map((row, rowIndex) => rowIndex === index ? { ...row, status: String(payload.status || row.status || ''), updatedAt: new Date().toISOString() } : row);
+    if (!setMobileJson('sc_missions_v2', next)) return { success: false, error: 'Não foi possível salvar a missão.' };
+    window.dispatchEvent(new CustomEvent('sc_data_updated', { detail: { key: 'sc_missions_v2' } }));
+    return { success: true, id: payload.id, status: next[index].status };
+  }
+  if (action === 'wikelo-update-item') {
+    const missions = readMobileSnapshot('sc_wikelo_missions_v1');
+    const missionIndex = missions.findIndex(row => String(row.id ?? '') === String(payload.missionId));
+    if (missionIndex < 0) return { success: false, error: 'Missão Wikelo não encontrada.' };
+    const next = missions.map((row, index) => index === missionIndex ? updateNestedWikeloItem(row, payload.itemId, payload.collected) : row);
+    if (!setMobileJson('sc_wikelo_missions_v1', next)) return { success: false, error: 'Não foi possível salvar o progresso Wikelo.' };
+    window.dispatchEvent(new CustomEvent('sc_wikelo_updated', { detail: { missionId: payload.missionId, itemId: payload.itemId } }));
+    return { success: true, missionId: payload.missionId, itemId: payload.itemId, collected: Math.max(0, Number(payload.collected) || 0) };
+  }
+  if (action === 'alert-dismiss') {
+    const alerts = readMobileSnapshot('sc_uex_market_alerts_v1');
+    const next = alerts.filter(row => String(row.id ?? row.key ?? row.groupKey ?? '') !== String(payload.id));
+    if (next.length === alerts.length) return { success: false, error: 'Alerta não encontrado.' };
+    if (!setMobileJson('sc_uex_market_alerts_v1', next)) return { success: false, error: 'Não foi possível dispensar o alerta.' };
+    window.dispatchEvent(new CustomEvent('sc_uex_market_alerts_updated', { detail: { id: payload.id } }));
+    return { success: true, id: payload.id };
+  }
+  return { success: false, error: 'Ação mobile não permitida.' };
+}
+
 const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
 const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
 const PAGE_HEADER_COLLAPSED_KEY = 'sc_page_header_collapsed_v1';
@@ -261,6 +368,28 @@ export default function App() {
     } catch {}
     return 'economic';
   });
+
+  useEffect(() => {
+    const mobileApi = window.electronAPI;
+    if (!mobileApi?.onMobileServerAction || !mobileApi?.mobileServerActionResponse) return undefined;
+    const clean = mobileApi.onMobileServerAction(async request => {
+      const result = await applyMobileRendererAction(request?.action, request?.payload);
+      mobileApi.mobileServerActionResponse({ requestId: request?.requestId, result });
+    });
+    return () => { if (typeof clean === 'function') clean(); };
+  }, []);
+
+  useEffect(() => {
+    const mobileApi = window.electronAPI;
+    if (!mobileApi?.mobileServerSyncState) return undefined;
+    let timer = null;
+    const sync = () => { try { mobileApi.mobileServerSyncState(buildMobileRendererState()); } catch {} };
+    const eventNames = ['sc_wikelo_updated', 'sc_uex_sales_updated', 'sc_uex_market_alerts_updated', 'sc_missions_reset', 'sc_data_updated'];
+    eventNames.forEach(name => window.addEventListener(name, sync));
+    sync();
+    timer = window.setInterval(sync, 5000);
+    return () => { eventNames.forEach(name => window.removeEventListener(name, sync)); if (timer) window.clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -530,12 +659,12 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 2.0.0" aria-label={`Efeitos visuais: ${visualMode}`}>
+          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 3.0.0" aria-label={`Efeitos visuais: ${visualMode}`}>
             <span className="visual-mode-dot" />
             <span>{visualMode === 'off' ? 'Efeitos desligados' : visualMode === 'economic' ? 'Efeitos econômicos' : 'Efeitos imersivos'}</span>
           </button>
           {ENABLE_FX_DIAGNOSTICS && <VisualEffectsDiagnostics mode={visualMode} activePage={activePage} />}
-          <span className="version-badge">v2.0.0</span>
+          <span className="version-badge">v3.0.0</span>
         </div>
       </aside>
 

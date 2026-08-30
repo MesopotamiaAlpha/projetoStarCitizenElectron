@@ -6,7 +6,7 @@
 
 ## Sobre o projeto
 
-O **Companheiro Emoto** é uma ferramenta pessoal para jogadores de *Star Citizen* que precisam acompanhar muitos itens, armaduras, missões, recursos e operações de comércio sem depender de várias planilhas ou anotações separadas.
+O **Companheiro Emoto 3.0.0** é uma ferramenta pessoal para jogadores de *Star Citizen* que precisam acompanhar muitos itens, armaduras, missões, recursos e operações de comércio sem depender de várias planilhas ou anotações separadas.
 
 A aplicação combina uma interface React com Electron, armazenamento local e integração com a UEX. O objetivo é transformar informações espalhadas em uma visão operacional simples: saber o que você possui, onde está guardado, o que falta para um craft, quais missões estão ativas e quais anúncios precisam de atenção.
 
@@ -26,7 +26,7 @@ A aplicação combina uma interface React com Electron, armazenamento local e in
 | **Wikelo** | Missões, escaneamento do inventário, itens repetidos entre missões e entrega transacional. |
 | **UEX** | Sincronização de anúncios, importação em lote, estoque interno, negociações, chat e vendas. |
 | **Inteligência UEX** | Busca de itens, preços, histórico, análise de lucro, oportunidades e Alertas de Compra. |
-| **Sistema** | Backup, restauração, pasta de dados, limpeza seletiva, notas, locais, categorias e links úteis. |
+| **Sistema** | Backup, restauração, pasta de dados, limpeza seletiva, notas, locais, categorias, links úteis e servidor mobile local. |
 
 ## Principais destaques
 
@@ -77,6 +77,12 @@ O projeto possui atualizações seletivas na Minha Coleção e índices reutiliz
 | Wikelo | Acompanhamento UEX |
 |---|---|
 | ![Wikelo](docs/assets/wikelo.webp) | ![UEX](docs/assets/acompanhamento-uex.webp) |
+
+## Acesso mobile local
+
+A versão 3.0.0 permite ligar um servidor HTTP local em **Sistema → Diretório de Dados → Servidor Mobile**. O computador mostra o endereço de acesso e um token temporário para abrir uma interface responsiva no navegador do celular. O celular e o computador precisam estar na mesma rede Wi-Fi.
+
+O acesso mobile inclui Dashboard, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, UEX, Negociações e Alertas. O banco, os arquivos, o monitor Game.log e os tokens da UEX continuam protegidos no computador. Desligar o servidor ou renovar o token revoga o acesso anterior.
 
 ## Tecnologia
 
@@ -143,7 +149,7 @@ O comando executa os testes React, os testes Electron, o build de produção e a
 
 ## Estado do projeto
 
-A versão atual é **2.0.0**. O projeto está em evolução contínua e prioriza organização de dados, desempenho em bases grandes, clareza visual e segurança da persistência local.
+A versão atual é **3.0.0**. O projeto está em evolução contínua e prioriza organização de dados, desempenho em bases grandes, clareza visual e segurança da persistência local.
 
 Sugestões, correções e melhorias podem ser registradas no [repositório do GitHub](https://github.com/MesopotamiaAlpha/projetoStarCitizenElectron).
 
@@ -152,3 +158,42 @@ Sugestões, correções e melhorias podem ser registradas no [repositório do Gi
 [1]: https://www.electronjs.org/docs/latest/tutorial/security "Electron Security"
 [2]: https://github.com/sql-js/sql.js "sql.js"
 [3]: https://www.electron.build/ "electron-builder"
+
+
+### Escopo mobile expandido
+
+O portal mobile da versão 3.0.0 agora inclui Resumo, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, UEX, Negociações e Alertas. O Inventário permite aumentar ou reduzir quantidades; missões podem ter o status alterado; alertas podem ser dispensados; o progresso de itens Wikelo pode ser atualizado; e Negociações pode consultar conversas e mensagens por proxy do renderer. As alterações são delegadas ao Electron, que permanece responsável pelo SQLite, localStorage e validações.
+
+A interface usa Server-Sent Events em `/api/mobile/events` para atualizar o celular quando o desktop sincroniza dados ou quando uma operação mobile é concluída. O cliente não recebe tokens UEX, secret-keys, caminhos arbitrários do sistema ou acesso direto ao banco.
+
+| Endpoint | Uso |
+|---|---|
+| `GET /api/mobile/wikelo` | Missões e progresso Wikelo sincronizados. |
+| `GET /api/mobile/missions` | Missões manuais e automáticas sincronizadas. |
+| `GET /api/mobile/uex` | Anúncios locais do Acompanhamento UEX. |
+| `GET /api/mobile/negotiations` | Negociações UEX consultadas pelo renderer autenticado. |
+| `GET /api/mobile/negotiations/:hash/messages` | Mensagens de uma negociação UEX. |
+| `GET /api/mobile/blueprints` | Blueprints locais. |
+| `GET /api/mobile/materials` | Fila de Tracking de Materiais. |
+| `GET /api/mobile/mining` | Builds de mineração. |
+| `GET /api/mobile/mining-group` | Sessões de mineração em grupo. |
+| `GET /api/mobile/orevault` | Baú de Minério. |
+| `GET /api/mobile/hangar` | Hangar de naves. |
+| `GET /api/mobile/clan` | Cofre do Clã. |
+| `GET /api/mobile/notes` | Bloco de Notas. |
+| `GET /api/mobile/alerts` | Alertas de compra locais. |
+| `GET /api/mobile/events` | Atualizações em tempo real via SSE. |
+| `POST /api/mobile/inventory/:id` | Ajuste autenticado de quantidade com `delta` ou `quantity`. |
+| `POST /api/mobile/missions/:id/status` | Alteração autenticada de status. |
+| `POST /api/mobile/wikelo/:missionId/items/:itemId` | Atualização autenticada da quantidade coletada. |
+| `POST /api/mobile/alerts/:id/dismiss` | Dispensa autenticada de alerta. |
+
+
+### QR Code do Servidor Mobile
+
+Quando o Servidor Mobile está ligado, o painel desktop gera localmente um QR Code contendo a URL completa de acesso, incluindo o token temporário. O código não depende de serviço externo. Ao renovar o token, o endereço e o QR Code são atualizados e os códigos anteriores deixam de funcionar.
+
+
+### Tracking de Materiais no celular
+
+O portal mobile possui uma tela dedicada ao Tracking de Materiais. Ela utiliza o mesmo cálculo do desktop e mostra, material por material, a quantidade necessária, a quantidade disponível no Baú de Minério, o faltante, a unidade, a qualidade mínima exigida e o percentual separado. A lista também informa as blueprints atualmente na fila e pode ser filtrada por nome, unidade, qualidade ou blueprint.

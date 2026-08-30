@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notesDeleteAttachment: (storedName) => ipcRenderer.invoke('notes-delete-attachment', storedName),
   notesOpenAttachment:   (storedName) => ipcRenderer.invoke('notes-open-attachment', storedName),
   notesDownloadAttachment: (payload) => ipcRenderer.invoke('notes-download-attachment', payload),
+  // Servidor Mobile local — acesso opcional pela rede local
+  mobileServerSyncState: (payload) => ipcRenderer.invoke('mobile-server-sync-state', payload),
+  onMobileServerAction: (listener) => { const wrapped = (_event, payload) => listener(payload); ipcRenderer.on('mobile-server-action-request', wrapped); return () => ipcRenderer.removeListener('mobile-server-action-request', wrapped); },
+  mobileServerActionResponse: (payload) => ipcRenderer.send('mobile-server-action-response', payload),
+  mobileServerStart: (port) => ipcRenderer.invoke('mobile-server-start', port),
+  mobileServerStop: () => ipcRenderer.invoke('mobile-server-stop'),
+  mobileServerStatus: () => ipcRenderer.invoke('mobile-server-status'),
+  mobileServerRotateToken: () => ipcRenderer.invoke('mobile-server-rotate-token'),
   // Monitor automático independente do Game.log
   missionMonitorChooseLog: () => ipcRenderer.invoke('mission-monitor-choose-log'),
   missionMonitorStart:     (logPath) => ipcRenderer.invoke('mission-monitor-start', logPath),

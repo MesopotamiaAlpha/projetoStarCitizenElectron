@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { MissionLogWatcher } = require('./missionWatcher');
 const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigrations');
+const { createMobileServer, DEFAULT_PORT: MOBILE_DEFAULT_PORT } = require('./mobileServer');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
@@ -31,6 +32,20 @@ let legacyUserDataPath = null;
 let dataMigration = { copied: [], skipped: [], warnings: [] };
 let mainWindow;
 let missionLogWatcher;
+let mobileServer;
+let mobileRendererState = {};
+const pendingMobileRendererActions = new Map();
+
+function requestMobileRendererAction(action, payload = {}) {
+  return new Promise((resolve, reject) => {
+    if (!mainWindow || mainWindow.isDestroyed()) { reject(new Error('A janela principal não está disponível.')); return; }
+    const requestId = `mobile-action-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const timeout = setTimeout(() => { pendingMobileRendererActions.delete(requestId); reject(new Error('O renderer não respondeu a tempo.')); }, 8000);
+    pendingMobileRendererActions.set(requestId, { resolve, reject, timeout });
+    mainWindow.webContents.send('mobile-server-action-request', { requestId, action, payload });
+  });
+}
+
 
 function assertTrustedRenderer(event) {
   const url = String(event?.senderFrame?.url || event?.sender?.getURL?.() || '');
@@ -2718,6 +2733,57 @@ ipcMain.handle('mission-monitor-status', () => {
   return status;
 });
 
+// ── Servidor Mobile local ───────────────────────────────────────────────────────
+ipcMain.on('mobile-server-action-response', (event, message = {}) => {
+  try { assertTrustedRenderer(event); } catch { return; }
+  const pending = pendingMobileRendererActions.get(message.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingMobileRendererActions.delete(message.requestId);
+  pending.resolve(message.result || { success: false, error: 'Resposta mobile inválida.' });
+});
+
+ipcMain.handle('mobile-server-sync-state', (event, payload = {}) => {
+  assertTrustedRenderer(event);
+  const source = payload && typeof payload === 'object' ? payload : {};
+  mobileRendererState = {
+    wikeloMissions: Array.isArray(source.wikeloMissions) ? source.wikeloMissions.slice(0, 500) : [],
+    missions: Array.isArray(source.missions) ? source.missions.slice(0, 500) : [],
+    uexItems: Array.isArray(source.uexItems) ? source.uexItems.slice(0, 500) : [],
+    alerts: Array.isArray(source.alerts) ? source.alerts.slice(0, 500) : [],
+    blueprints: Array.isArray(source.blueprints) ? source.blueprints.slice(0, 500) : [],
+    materials: Array.isArray(source.materials) ? source.materials.slice(0, 500) : [],
+    mining: Array.isArray(source.mining) ? source.mining.slice(0, 500) : [],
+    miningGroup: Array.isArray(source.miningGroup) ? source.miningGroup.slice(0, 500) : [],
+    oreVault: Array.isArray(source.oreVault) ? source.oreVault.slice(0, 500) : [],
+    hangar: Array.isArray(source.hangar) ? source.hangar.slice(0, 500) : [],
+    clanVault: Array.isArray(source.clanVault) ? source.clanVault.slice(0, 500) : [],
+    notes: Array.isArray(source.notes) ? source.notes.slice(0, 500) : [],
+    syncedAt: new Date().toISOString(),
+  };
+  mobileServer?.setRendererState?.(mobileRendererState);
+  return { success: true, syncedAt: mobileRendererState.syncedAt };
+});
+
+ipcMain.handle('mobile-server-start', async (event, requestedPort) => {
+  assertTrustedRenderer(event);
+  if (!mobileServer) return { success: false, error: 'Servidor mobile ainda não foi inicializado.' };
+  try { return { success: true, ...await mobileServer.start(requestedPort || MOBILE_DEFAULT_PORT) }; }
+  catch (error) { return { success: false, error: error.code === 'EADDRINUSE' ? `A porta ${requestedPort || MOBILE_DEFAULT_PORT} já está em uso.` : (error.message || 'Não foi possível iniciar o servidor mobile.') }; }
+});
+ipcMain.handle('mobile-server-stop', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...mobileServer?.stop?.() };
+});
+ipcMain.handle('mobile-server-status', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...(mobileServer?.status?.() || { running: false, port: null, urls: [] }) };
+});
+ipcMain.handle('mobile-server-rotate-token', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...(mobileServer?.rotateToken?.() || { running: false, port: null, urls: [] }) };
+});
+
 // ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -2761,8 +2827,34 @@ function createWindow() {
 app.whenReady().then(async()=>{
   await configureDataDirectory();
   await initDatabase();
+  mobileServer = createMobileServer({
+    queryAll,
+    queryOne,
+    getDataRoot: () => dataRoot,
+    getRendererState: () => mobileRendererState,
+    requestRendererAction: requestMobileRendererAction,
+    updateInventoryQuantity: async (id, payload = {}) => {
+      const current = queryOne('SELECT quantity FROM inventory_items WHERE id=?', [id]);
+      if (!current) return { success: false, error: 'Item de inventário não encontrado.' };
+      const requested = payload.quantity !== undefined ? Number(payload.quantity) : Number(current.quantity) + Number(payload.delta || 0);
+      const next = Math.max(0, Number.isFinite(requested) ? requested : Number(current.quantity) || 0);
+      db.run('UPDATE inventory_items SET quantity=?, updated_at=datetime(\'now\') WHERE id=?', [next, id]);
+      saveDb();
+      return { success: true, id, quantity: next };
+    },
+    updateArmorQuantity: async (id, payload = {}) => {
+      const current = queryOne('SELECT quantity FROM user_pieces WHERE piece_id=?', [id]);
+      if (!current) return { success: false, error: 'Peça de armadura não encontrada.' };
+      const requested = payload.quantity !== undefined ? Number(payload.quantity) : Number(current.quantity) + Number(payload.delta || 0);
+      const next = Math.max(0, Number.isFinite(requested) ? Math.floor(requested) : Number(current.quantity) || 0);
+      db.run('UPDATE user_pieces SET quantity=?, owned=?, obtained_date=? WHERE piece_id=?', [next, next > 0 ? 1 : 0, next > 0 ? new Date().toISOString() : null, id]);
+      saveDb();
+      return { success: true, pieceId: id, quantity: next, owned: next > 0 ? 1 : 0 };
+    },
+    getVersion: () => app.getVersion(),
+  });
   createWindow();
   app.on('activate',()=>{ if(!BrowserWindow.getAllWindows().length) createWindow(); });
 });
-app.on('before-quit',()=>{ try { saveDb(); } catch (_) {} try { if (missionLogWatcher) missionLogWatcher.stop(); } catch (_) {} });
+app.on('before-quit',()=>{ try { saveDb(); } catch (_) {} try { if (missionLogWatcher) missionLogWatcher.stop(); } catch (_) {} try { if (mobileServer) mobileServer.stop(); } catch (_) {} });
 app.on('window-all-closed',()=>{ app.quit(); });
