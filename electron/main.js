@@ -3,9 +3,28 @@ const path = require('path');
 const { MissionLogWatcher } = require('./missionWatcher');
 const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigrations');
 const { createMobileServer, DEFAULT_PORT: MOBILE_DEFAULT_PORT } = require('./mobileServer');
+const { fileSignature, saveDatabaseSnapshot } = require('./dbPersistence.cjs');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
+
+// O banco é mantido em memória pelo sql.js e exportado por inteiro a cada
+// alteração. Duas instâncias simultâneas teriam snapshots diferentes e a
+// última a fechar poderia sobrescrever os dados da primeira. A trava precisa
+// ser adquirida antes de configurar diretórios, abrir o SQLite ou criar a UI.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 // Debug do Monitor Automático — descomente a próxima linha durante manutenção.
 const ENABLE_MISSION_MONITOR_DEBUG = false;
 // const ENABLE_MISSION_MONITOR_DEBUG = true; // ATIVAR: logs do processo Electron
@@ -26,6 +45,8 @@ const TRANSIENT_DATA_NAMES = new Set([
 ]);
 
 let db, SQL, dbPath;
+let dbLoadedSignature = null;
+let databaseRestartRequired = false;
 let dataRoot = null;
 let dataConfigPath = null;
 let legacyUserDataPath = null;
@@ -281,9 +302,22 @@ function migrateDatabaseInsideDataRoot(root) {
 }
 
 function saveDb() {
-  if (!db || !dbPath) return;
-  ensureDirectory(path.dirname(dbPath));
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  const result = saveDatabaseSnapshot({
+    database: db,
+    databasePath: dbPath,
+    loadedSignature: dbLoadedSignature,
+    restartRequired: databaseRestartRequired,
+  });
+  if (!result.saved && result.reason === 'database-changed-externally') {
+    console.error('[Database] Escrita abortada: o arquivo SQLite foi alterado por outro processo.', {
+      dbPath,
+      loadedSignature: result.loadedSignature,
+      currentSignature: result.currentSignature,
+    });
+    return result;
+  }
+  if (result.fileSignature) dbLoadedSignature = result.fileSignature;
+  return result;
 }
 
 async function configureDataDirectory() {
@@ -387,9 +421,11 @@ async function configureDataDirectory() {
 async function initDatabase() {
   const sqlJsPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist');
   SQL = await require('sql.js')({ locateFile: f => path.join(sqlJsPath, f) });
-  db = fs.existsSync(dbPath)
+  const databaseExists = fs.existsSync(dbPath);
+  db = databaseExists
     ? new SQL.Database(fs.readFileSync(dbPath))
     : new SQL.Database();
+  dbLoadedSignature = databaseExists ? fileSignature(dbPath) : null;
 
   db.run(`
     CREATE TABLE IF NOT EXISTS armor_sets (
@@ -2699,6 +2735,9 @@ ipcMain.handle('data-import-full', async () => {
       ensureDirectory(path.dirname(targetDatabase));
       fs.copyFileSync(sourceDatabase, targetDatabase);
       databaseRestored = true;
+      // O objeto `db` atual ainda contém o snapshot anterior. Até o reinício,
+      // nenhuma rotina pode exportá-lo novamente sobre o banco restaurado.
+      databaseRestartRequired = true;
     }
   }
   return { success: true, filePath, backup: parsed, databaseRestored, pendingRestart: databaseRestored };

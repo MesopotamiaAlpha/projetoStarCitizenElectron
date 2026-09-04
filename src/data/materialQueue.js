@@ -67,6 +67,15 @@ function getCollectedAmount(queue, materialName, qualityMin = 0) {
   return 0;
 }
 
+function snapshotBlueprintIngredients(ingredients) {
+  return (Array.isArray(ingredients) ? ingredients : []).map(i => ({
+    material_name: i.material_name,
+    quantity:      i.quantity,
+    quality_min:   getIngredientQualityMin(i),
+    unit:          i.unit || 'un',
+  }));
+}
+
 // Add a blueprint to the crafting queue
 export function queueBlueprint(bp, quantity = 1) {
   const q = loadQueue();
@@ -81,14 +90,29 @@ export function queueBlueprint(bp, quantity = 1) {
       faction:     bp.faction,
       quantity,
       addedAt:     new Date().toISOString(),
-      ingredients: (bp.ingredients || []).map(i => ({
-        material_name: i.material_name,
-        quantity:      i.quantity,
-        quality_min:   getIngredientQualityMin(i),
-        unit:          i.unit || 'un',
-      })),
+      ingredients: snapshotBlueprintIngredients(bp.ingredients),
     });
   }
+  saveQueue(q);
+  return q;
+}
+
+// Atualiza o snapshot de uma blueprint que já está na fila. Sem esta
+// sincronização, uma qualidade mínima alterada na página Blueprints só seria
+// aplicada depois de remover e adicionar a blueprint novamente.
+export function syncQueuedBlueprint(bp) {
+  const q = loadQueue();
+  const index = q.queuedBlueprints.findIndex(item => String(item.bpId) === String(bp?.id));
+  if (index < 0) return q;
+
+  const current = q.queuedBlueprints[index];
+  q.queuedBlueprints[index] = {
+    ...current,
+    bpName: bp.name,
+    category: bp.category,
+    faction: bp.faction,
+    ingredients: snapshotBlueprintIngredients(bp.ingredients),
+  };
   saveQueue(q);
   return q;
 }

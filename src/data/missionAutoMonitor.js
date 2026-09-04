@@ -311,6 +311,51 @@ function findLatestKnownMissionReward(missionTitle, missions, excludeId = '') {
     .sort((a, b) => missionKnownAt(b) - missionKnownAt(a))[0] || null;
 }
 
+// O GUID recebido no Game.log muda a cada nova aceitação da mesma missão.
+// Para reaproveitar o cadastro feito pelo usuário, a correspondência histórica
+// prioriza a definição do contrato; quando ela não existe em um dos registros,
+// usa o título canônico e, como desempate, o gerador técnico.
+function findHistoricalMissionTemplate(event, missionTitle, missions, excludeId = '') {
+  const definition = normalizeIdentityPart(event?.contractDefinitionId || event?.contract_definition_id);
+  const generator = normalizeIdentityPart(event?.generator || event?.external_generator);
+  const title = normalizeMissionName(missionTitle);
+  if (!definition && !title) return null;
+
+  return missions
+    .filter(mission => mission && String(mission.id || '') !== String(excludeId || ''))
+    .map(mission => {
+      const missionDefinition = normalizeIdentityPart(mission.contract_definition_id || mission.contractDefinitionId);
+      const missionGenerator = normalizeIdentityPart(mission.external_generator || mission.generator);
+      const storedTitle = normalizeMissionName(mission.canonical_title || mission.title || mission.name);
+      let score = 0;
+
+      // Uma definição igual é a evidência mais forte. Se as definições
+      // existentes forem diferentes, não reutilizamos os dados desse registro.
+      if (definition && missionDefinition) {
+        if (definition !== missionDefinition) return null;
+        score += 100;
+      }
+
+      // Registros manuais antigos normalmente não possuem a definição do
+      // contrato. Nesses casos, o título canônico continua sendo a chave de
+      // reconciliação e permite que a nova ocorrência herde os dados editados.
+      if (title && storedTitle === title) score += 50;
+      else if (!definition || !missionDefinition) return null;
+
+      if (generator && missionGenerator === generator) score += 20;
+      if (!score) return null;
+      return { mission, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || missionKnownAt(b.mission) - missionKnownAt(a.mission))[0]?.mission || null;
+}
+
+function cloneHistoricalObjectives(objectives) {
+  return Array.isArray(objectives)
+    ? objectives.map(objective => ({ ...objective, done: false }))
+    : [];
+}
+
 export function upsertAutomaticMissionRecord(event, typeNames = []) {
   if (!event || event.type === 'session_reset') return null;
   let missions;
@@ -338,7 +383,8 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   const eventEnd = Number(event.endTs || event.ts || Date.now());
   const endIso = Number.isFinite(eventEnd) ? new Date(eventEnd).toISOString() : new Date().toISOString();
   const current = index >= 0 ? missions[index] : null;
-  const canonicalTitle = resolveCanonicalMissionTitle(current, event);
+  const historical = current ? null : findHistoricalMissionTemplate(event, resolveCanonicalMissionTitle(null, event), missions);
+  const canonicalTitle = resolveCanonicalMissionTitle(current || historical, event);
   const missionTitle = canonicalTitle;
   const rewardPreference = index < 0 ? findMissionRewardPreferences({ canonical_title: canonicalTitle, ...event }) : null;
   const computedDurationSec = Number(event.durationSec) > 0
@@ -361,23 +407,52 @@ export function upsertAutomaticMissionRecord(event, typeNames = []) {
   const type = alias && typeNames.includes(alias[1]) ? alias[1] : fallbackType;
   const status = event.type === 'mission_complete' ? 'Completed' : event.type === 'mission_ended' ? (event.completion === 'Abandon' ? 'Abandoned' : 'Failed') : 'Active';
   const base = current || {
+    ...(historical || {}),
     id: `auto-${guid || event.eventId || Date.now()}`,
     title: missionTitle,
     canonical_title: canonicalTitle,
-    type,
-    faction: '', system: '', location: '', difficulty: 'Médio', status: 'Active',
-    reward: resolvedReward, auto_reward_status: resolvedReward !== 0 ? 'filled' : 'pending',
+    type: historical?.type || type,
+    faction: historical?.faction || '',
+    system: historical?.system || '',
+    location: historical?.location || '',
+    difficulty: historical?.difficulty || 'Médio',
+    status: 'Active',
+    reward: resolvedReward,
+    auto_reward_status: resolvedReward !== 0 ? 'filled' : 'pending',
     auto_reward_source: resolvedRewardSource,
     auto_reward_source_mission_id: historicalRewardMission?.id || null,
     auto_reward_filled_at: resolvedReward !== 0 ? new Date().toISOString() : null,
-    reputation_gain: Number(event.reputationMax || event.reputationMin) || 0, reputation_min: Number(event.reputationMin) || 0, reputation_max: Number(event.reputationMax) || 0, reputation_label: event.reputationLabel || '', crew_needed: 1,
-    notes: 'Registrada automaticamente a partir do Game.log do Star Citizen.',
-    bug_description: '', created_at: iso, completed_at: null, wallet_out_at: null,
-    objectives: [], auto: true, source: 'game_log', watcher_guid: guid || null,
-    scrip_type: rewardPreference?.scrip_type || null, scrip_qty: rewardPreference?.scrip_qty || 0, scrip_dispatched: false, scrip_dispatch_error: '',
-    secure_drive_enabled: Boolean(rewardPreference?.secure_drive_enabled), secure_drive_qty: rewardPreference?.secure_drive_qty || 0, secure_drive_dispatched: false, secure_drive_status: null, secure_drive_dispatch_error: '',
-    contract_definition_id: event.contractDefinitionId || null, external_generator: event.generator || null,
-    auto_started_at: iso, auto_ended_at: null, duration_sec: computedDurationSec, timer_elapsed: computedDurationSec * 1000, auto_blueprints: [], auto_last_reason: '',
+    reputation_gain: Number(event.reputationMax || event.reputationMin) || Number(historical?.reputation_gain) || 0,
+    reputation_min: Number(event.reputationMin) || Number(historical?.reputation_min) || 0,
+    reputation_max: Number(event.reputationMax) || Number(historical?.reputation_max) || 0,
+    reputation_label: event.reputationLabel || historical?.reputation_label || '',
+    crew_needed: Number(historical?.crew_needed) || 1,
+    notes: historical?.notes || 'Registrada automaticamente a partir do Game.log do Star Citizen.',
+    bug_description: historical?.bug_description || '',
+    created_at: iso,
+    completed_at: null,
+    wallet_out_at: null,
+    objectives: cloneHistoricalObjectives(historical?.objectives),
+    auto: true,
+    source: 'game_log',
+    watcher_guid: guid || null,
+    scrip_type: historical?.scrip_type || rewardPreference?.scrip_type || null,
+    scrip_qty: Number(historical?.scrip_qty) || rewardPreference?.scrip_qty || 0,
+    scrip_dispatched: false,
+    scrip_dispatch_error: '',
+    secure_drive_enabled: historical?.secure_drive_enabled === true || Boolean(rewardPreference?.secure_drive_enabled),
+    secure_drive_qty: Number(historical?.secure_drive_qty) || rewardPreference?.secure_drive_qty || 0,
+    secure_drive_dispatched: false,
+    secure_drive_status: null,
+    secure_drive_dispatch_error: '',
+    contract_definition_id: event.contractDefinitionId || historical?.contract_definition_id || null,
+    external_generator: event.generator || historical?.external_generator || null,
+    auto_started_at: iso,
+    auto_ended_at: null,
+    duration_sec: computedDurationSec,
+    timer_elapsed: computedDurationSec * 1000,
+    auto_blueprints: [],
+    auto_last_reason: '',
   };
   let next = {
     ...base,

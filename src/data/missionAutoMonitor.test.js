@@ -70,6 +70,61 @@ describe('recompensa histórica do Monitor Automático', () => {
     expect(mission.auto_reward_source_mission_id).toBe('old-1');
   });
 
+  test('reaproveita os dados editados quando a mesma missão retorna com novo GUID', () => {
+    window.localStorage.setItem('sc_missions_v2', JSON.stringify([
+      {
+        id: 'historical-mission-1',
+        title: 'Transporte de Carga Especial',
+        canonical_title: 'Transporte de Carga Especial',
+        type: 'Delivery',
+        faction: 'Covalex',
+        system: 'Stanton',
+        location: 'Lorville',
+        difficulty: 'Elite',
+        reward: 150000,
+        reputation_gain: 42,
+        crew_needed: 3,
+        notes: 'Usar rota segura pelo cinturão.',
+        objectives: [{ text: 'Entregar a carga', done: true }],
+        status: 'Completed',
+        auto: true,
+        watcher_guid: 'old-guid',
+        contract_definition_id: 'same-contract-definition',
+        external_generator: 'Delivery_Special',
+        completed_at: '2026-08-14T10:00:00.000Z',
+      },
+    ]));
+
+    const mission = upsertAutomaticMissionRecord({
+      type: 'mission_start',
+      guid: 'new-guid',
+      debugName: 'internal_delivery_special',
+      displayName: 'Transporte de Carga Especial',
+      generator: 'Delivery_Special',
+      contractDefinitionId: 'same-contract-definition',
+      reward: 0,
+      startTs: Date.parse('2026-08-15T10:00:00.000Z'),
+    }, ['Outro', 'Delivery']);
+
+    expect(mission).toMatchObject({
+      auto: true,
+      watcher_guid: 'new-guid',
+      title: 'Transporte de Carga Especial',
+      faction: 'Covalex',
+      type: 'Delivery',
+      system: 'Stanton',
+      location: 'Lorville',
+      difficulty: 'Elite',
+      reward: 150000,
+      reputation_gain: 42,
+      crew_needed: 3,
+      notes: 'Usar rota segura pelo cinturão.',
+      status: 'Active',
+    });
+    expect(mission.objectives).toEqual([{ text: 'Entregar a carga', done: false }]);
+    expect(mission.id).not.toBe('historical-mission-1');
+  });
+
   test('não mistura nomes parecidos quando não há correspondência exata', () => {
     window.localStorage.setItem('sc_missions_v2', JSON.stringify([
       {

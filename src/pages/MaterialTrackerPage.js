@@ -329,14 +329,22 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
             {/* Used by blueprints */}
             <div>
               <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8,display:'flex',alignItems:'center',gap:5 }}>
-                <FlaskConical size={11}/> Usado por
+                <FlaskConical size={11}/> Usado por · qualidade exigida
               </div>
-              {item.usedBy.map((u,i) => (
-                <div key={i} style={{ display:'flex',justifyContent:'space-between',padding:'3px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11 }}>
-                  <span style={{ color:'var(--text-secondary)' }}>{u.bpName}</span>
-                  <span style={{ color:color,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>×{u.qty}</span>
-                </div>
-              ))}
+              {item.usedBy.map((u,i) => {
+                const requiredQuality = normalizeQualityMin(u.quality_min);
+                const requirement = requiredQuality > 0 ? `Q≥${requiredQuality}` : 'Qualidade livre';
+                const requirementQuality = getQualityAccent(requiredQuality);
+                return (
+                  <div key={`${u.bpName}-${i}`} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11 }}>
+                    <span style={{ color:'var(--text-secondary)',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{u.bpName}</span>
+                    <span style={{ display:'inline-flex',alignItems:'center',gap:7,flexShrink:0 }}>
+                      <span className="material-quality-badge" style={{ fontSize:9,color:requirementQuality.color,background:requirementQuality.soft,border:`1px solid ${requirementQuality.border}`,padding:'2px 6px',borderRadius:4,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{requirement}</span>
+                      <span style={{ color:color,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>×{u.qty}</span>
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
           {/* Vault use panel */}

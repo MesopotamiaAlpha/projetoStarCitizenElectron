@@ -9,7 +9,7 @@ import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { setProvenance, SOURCES } from '../data/provenance';
 import {
   loadQueue, queueBlueprint, dequeueBlueprint,
-  updateQueuedQty,
+  updateQueuedQty, syncQueuedBlueprint,
 } from '../data/materialQueue';
 import { CARGO_UNITS, isCargoUnit, normalizeCargoUnit, toCargoBase, fromCargoBase, formatCargoNumber } from '../data/cargoUnits';
 
@@ -572,6 +572,14 @@ export default function BlueprintPage() {
       // Blueprints SCMDB padrão são registros editáveis pelo usuário.
       await api.updateCustom({ bpId: editingBp.id, ...data });
     }
+    // A fila mantém um snapshot dos ingredientes. Atualize-o após editar
+    // a blueprint para refletir imediatamente cada quality_min no Tracking.
+    syncQueuedBlueprint({
+      id: editingBp.id,
+      ...data.bp,
+      ingredients: data.ingredients,
+    });
+    refreshQueue();
     setProvenance('blueprint', data.bp.name, SOURCES.MANUAL);
     setEditingBp(null);
     await loadData();
