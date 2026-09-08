@@ -39,6 +39,30 @@ export function markUexChatRead(negotiation) {
   return next;
 }
 
+/** Marca em uma única gravação todos os chats recebidos como visualizados. */
+export function markAllUexChatsRead(negotiations = []) {
+  const current = loadUexChatReadState();
+  const now = Date.now() / 1000;
+  const next = { ...current };
+  let changed = false;
+  for (const negotiation of Array.isArray(negotiations) ? negotiations : []) {
+    const hash = String(negotiation?.hash || negotiation?.id || '').trim();
+    if (!hash) continue;
+    const readAt = negotiationActivityStamp(negotiation) || now;
+    const previousReadAt = Number(next[hash]?.readAt || 0);
+    if (readAt > previousReadAt) {
+      next[hash] = { readAt };
+      changed = true;
+    }
+  }
+  if (!changed) return current;
+  try {
+    localStorage.setItem(CHAT_READ_STATE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent(UEX_CHAT_READ_STATE_UPDATED_EVENT, { detail: { all: true, count: Object.keys(next).length } }));
+  } catch { /* armazenamento local indisponível */ }
+  return next;
+}
+
 export function clearUexChatReadState() {
   try { localStorage.removeItem(CHAT_READ_STATE_KEY); } catch { /* noop */ }
 }

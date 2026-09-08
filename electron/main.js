@@ -4,6 +4,7 @@ const { MissionLogWatcher } = require('./missionWatcher');
 const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigrations');
 const { createMobileServer, DEFAULT_PORT: MOBILE_DEFAULT_PORT } = require('./mobileServer');
 const { fileSignature, saveDatabaseSnapshot } = require('./dbPersistence.cjs');
+const { MAX_UEX_ENDPOINT_LENGTH, normalizeUexEndpoint } = require('./uexEndpoint.cjs');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
@@ -2122,18 +2123,7 @@ ipcMain.handle('mymemory-translate', async (event, payload = {}) => {
 
 const UEX_API_ORIGIN = 'https://api.uexcorp.uk';
 const UEX_API_PREFIX = '/2.0/';
-const MAX_UEX_ENDPOINT_LENGTH = 320;
 const MAX_UEX_BODY_BYTES = 1024 * 1024;
-
-function normalizeUexEndpoint(endpoint) {
-  const value = String(endpoint || '').trim().replace(/^\/+/, '');
-  if (!value) throw new Error('Endpoint UEX não informado.');
-  if (value.length > MAX_UEX_ENDPOINT_LENGTH) throw new Error('Endpoint UEX excede o limite permitido.');
-  if (/^https?:\/\//i.test(value) || value.includes('..') || !/^[A-Za-z0-9_./?=&%:+-]+$/.test(value)) {
-    throw new Error('Endpoint UEX inválido ou não permitido.');
-  }
-  return value;
-}
 
 function uexRequest(endpoint, token, secretKey, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {

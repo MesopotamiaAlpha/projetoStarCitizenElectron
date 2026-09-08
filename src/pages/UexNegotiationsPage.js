@@ -12,7 +12,7 @@ import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
 import { getNegotiationClosedAt, isNegotiationClosed } from '../data/uexNegotiationStatus';
 import { formatRelativeMessageTime } from '../data/uexMessageTime';
-import { loadUexChatReadState, isUexChatUnread, markUexChatRead, UEX_CHAT_READ_STATE_UPDATED_EVENT } from '../data/uexChatReadState';
+import { loadUexChatReadState, isUexChatUnread, markUexChatRead, markAllUexChatsRead, UEX_CHAT_READ_STATE_UPDATED_EVENT } from '../data/uexChatReadState';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -760,6 +760,10 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
     markUexChatRead(negotiation);
     setSelected(negotiation);
   }
+  function markAllChatsAsRead() {
+    if (!unreadNegotiations.length) return;
+    markAllUexChatsRead(unreadNegotiations);
+  }
 
   if (!hasToken) {
     return (
@@ -792,6 +796,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
         {!selected && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
               {unreadNegotiations.length > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 8px', borderRadius:6, background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)', color:'var(--accent-gold)', fontSize:10, fontWeight:800 }}><BellRing size={12}/> {unreadNegotiations.length} chat{unreadNegotiations.length === 1 ? '' : 's'} com mensagem nova</span>}
+              <button type="button" onClick={markAllChatsAsRead} disabled={unreadNegotiations.length === 0} title={unreadNegotiations.length ? 'Marcar todos os chats com mensagem nova como vistos' : 'Não há chats novos'} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 9px', borderRadius:6, border:'1px solid rgba(52,211,153,0.35)', background:unreadNegotiations.length ? 'rgba(52,211,153,0.1)' : 'rgba(148,163,184,0.06)', color:unreadNegotiations.length ? 'var(--accent-green)' : 'var(--text-muted)', fontSize:10, fontWeight:800, cursor:unreadNegotiations.length ? 'pointer' : 'not-allowed', opacity:unreadNegotiations.length ? 1 : 0.65 }}><ClipboardCheck size={12}/> {unreadNegotiations.length ? 'Marcar todos como vistos' : 'Todos os chats vistos'}</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}><Filter size={13} /> Mostrar</div>
             <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} style={{ padding: '7px 28px 7px 9px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 11, fontWeight: 700, outline: 'none' }}>
               <option value="active">Ativas ({statusCounts.active || 0})</option>
