@@ -24,6 +24,7 @@ import {
   cargoInputToStorage,
   formatCargoBreakdown,
   cargoEquivalentTotal,
+  cargoComposition,
   analyzeCargoQuantityInput,
 } from '../data/cargoUnits';
 
@@ -149,6 +150,13 @@ function ptNum(v, unit = '') {
   return formatCargoNumber(v, isCargoUnit(unit) ? 9 : 3);
 }
 
+function quantityLabel(quantity, unit = '') {
+  const normalized = normalizeCargoUnit(unit || 'un');
+  if (!isCargoUnit(normalized)) return `${ptNum(quantity, normalized)} ${normalized}`;
+  const composition = cargoComposition(quantity, normalized);
+  return `${formatCargoNumber(composition.scu, 9)} SCU (${composition.text}; ${formatCargoNumber(composition.base, 9)} cSCU)`;
+}
+
 function getStoredDisplay(entry) {
   const storedUnit = normalizeCargoUnit(entry?.unit || 'un');
   if (!isCargoUnit(storedUnit)) return { quantity:Number(entry?.quantity || 0) || 0, unit:storedUnit };
@@ -184,7 +192,7 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
         <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:16,lineHeight:1.6}}>
           Você já tem <strong style={{color:'var(--text-primary)'}}>{existing.ore_name}</strong>
           {existing.quality ? <span> com qualidade <strong style={{color:'var(--accent-gold)'}}>{existing.quality}</strong></span> : ''} registrado
-          (              {ptNum(existing.quantity, existing.unit)} {existing.unit} em {existing.location||'—'}).
+          (              {quantityLabel(existing.quantity, existing.unit)} em {existing.location||'—'}).
 
           <br/>O que deseja fazer?
         </div>
@@ -193,13 +201,13 @@ function DuplicateModal({ existing, newEntry, onMerge, onNew, onCancel }) {
           <div style={{padding:'10px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:7}}>
             <div style={{fontSize:10,fontWeight:700,color:'var(--accent-green)',textTransform:'uppercase',marginBottom:5}}>Somar ao existente</div>
             <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-              {ptNum(existing.quantity, existing.unit)} {existing.unit} + {ptNum(newEntry.quantity, newEntry.unit)} {newEntry.unit} = <strong style={{color:'var(--accent-green)'}}>{(() => { const merged = mergeOreQuantities(existing, newEntry); return `${ptNum(merged.quantity, merged.unit)} ${merged.unit}`; })()}</strong>
+              {quantityLabel(existing.quantity, existing.unit)} + {quantityLabel(newEntry.quantity, newEntry.unit)} = <strong style={{color:'var(--accent-green)'}}>{(() => { const merged = mergeOreQuantities(existing, newEntry); return quantityLabel(merged.quantity, merged.unit); })()}</strong>
             </div>
           </div>
           <div style={{padding:'10px',background:'rgba(56,189,248,0.06)',border:'1px solid rgba(56,189,248,0.2)',borderRadius:7}}>
             <div style={{fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',marginBottom:5}}>Novo registro separado</div>
             <div style={{fontSize:12,color:'var(--text-secondary)'}}>
-              Cria entrada independente com {ptNum(newEntry.quantity, newEntry.unit)} {newEntry.unit}
+              Cria entrada independente com {quantityLabel(newEntry.quantity, newEntry.unit)}
             </div>
           </div>
         </div>
@@ -286,7 +294,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
         <div>
           <label style={LS}>{cargoMode ? 'Quantidade mostrada no jogo *' : 'Quantidade *'}</label>
           <input style={{...IS,fontSize:15,fontWeight:700,borderColor:cargoMode?'rgba(56,189,248,0.45)':'var(--border-subtle)'}} type="text" inputMode="decimal" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder={cargoMode ? (d.unit === 'SCU' ? 'ex: 0,677' : 'ex: 67,7') : 'ex: 16'}/>
-          {cargoMode && <div style={{marginTop:4,fontSize:9,color:'var(--accent-primary)'}}>Copie o número da caixa de carga. Exemplo: <strong>0,677</strong>.</div>}
+          {cargoMode && <div style={{marginTop:4,fontSize:9,color:'var(--accent-primary)',lineHeight:1.45}}>Digite exatamente o número e selecione a unidade exibida no jogo. <strong>1 SCU = 100 cSCU</strong>; por exemplo, <strong>543 cSCU = 5,43 SCU</strong>.</div>}
         </div>
         <div>
           <label style={LS}>Unidade de medida</label>
@@ -298,7 +306,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
             <option value="μSCU">μSCU</option>
             <option value="kg">kg</option>
           </select>
-          <div style={{marginTop:4,fontSize:9,color:'var(--text-muted)'}}>{d.unit === 'un' ? 'Use para Feynmaline, gemas e itens contados por unidade.' : d.unit === 'SCU' ? 'Use o valor SCU exibido no jogo.' : 'A quantidade será convertida e comparada como carga.'}</div>
+          <div style={{marginTop:4,fontSize:9,color:'var(--text-muted)'}}>{d.unit === 'un' ? 'Use para Feynmaline, gemas e itens contados por unidade.' : d.unit === 'SCU' ? 'Use o valor SCU exibido no jogo; o cadastro também mostrará o restante em cSCU.' : d.unit === 'cSCU' ? 'Use quando o jogo mostrar cSCU; 100 cSCU formam 1 SCU.' : 'A quantidade será convertida e comparada como carga.'}</div>
         </div>
       </div>
 
@@ -314,14 +322,20 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
               <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--text-primary)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.input, 9)} {quantityAnalysis.unit}</strong>
             </div>
             <div style={{padding:'7px 8px',background:'rgba(0,0,0,0.12)',border:'1px solid var(--border-subtle)',borderRadius:5}}>
-              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Isso equivale a</div>
+              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Total em SCU</div>
               <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-primary)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.scu, 9)} SCU</strong>
             </div>
             <div style={{padding:'7px 8px',background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',borderRadius:5}}>
-              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Será salvo como</div>
+              <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:3}}>Valor interno, sem perda</div>
               <strong style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,color:'var(--accent-green)',wordBreak:'break-word'}}>{formatCargoNumber(quantityAnalysis.cscu, 9)} cSCU</strong>
             </div>
           </div>
+          {(() => {
+            const composition = cargoComposition(quantityAnalysis.input, quantityAnalysis.unit);
+            return <div style={{marginTop:8,padding:'7px 9px',borderRadius:5,background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',fontSize:10,color:'var(--text-secondary)'}}>
+              <strong style={{color:'var(--text-primary)'}}>Leitura clara:</strong> {composition.text} <span style={{color:'var(--text-muted)'}}>({composition.totalText})</span>
+            </div>;
+          })()}
           {quantityAnalysis.suggestedUnit && (
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,paddingTop:8,borderTop:'1px solid var(--border-subtle)',flexWrap:'wrap'}}>
               <span style={{fontSize:10,color:'var(--accent-gold)'}}>Confira a unidade: este valor pode ter sido digitado na unidade errada.</span>
@@ -431,10 +445,14 @@ function OreCard({ entry, onEdit, onDelete, onAdjustQty, transferDestinations, o
             const display = getStoredDisplay(entry);
             const storedUnit = normalizeCargoUnit(entry.unit || 'un');
             const isStoredCargo = isCargoUnit(storedUnit);
+            const composition = isStoredCargo ? cargoComposition(entry.quantity, storedUnit) : null;
             return <>
-              <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{ptNum(display.quantity, display.unit)}</div>
-              <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{display.unit}</div>
-              {isStoredCargo && display.unit !== storedUnit && <div style={{fontSize:9,color:'var(--text-secondary)',marginTop:3,whiteSpace:'nowrap'}}>= {ptNum(entry.quantity, storedUnit)} {storedUnit} salvo</div>}
+              <div style={{fontFamily:'Michroma,sans-serif',fontSize:18,fontWeight:800,color,lineHeight:1}}>{isStoredCargo ? `${formatCargoNumber(composition.scu, 9)} SCU` : `${ptNum(display.quantity, display.unit)} ${display.unit}`}</div>
+              {isStoredCargo ? <>
+                <div style={{fontSize:9,color:'var(--text-secondary)',marginTop:3,whiteSpace:'nowrap'}}>{composition.text}</div>
+                <div style={{fontSize:9,color:'var(--text-muted)',marginTop:2,whiteSpace:'nowrap'}}>{formatCargoNumber(composition.base, 9)} cSCU interno</div>
+              </> : <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{display.unit}</div>}
+              {isStoredCargo && display.unit !== storedUnit && <div style={{fontSize:9,color:'var(--text-secondary)',marginTop:3,whiteSpace:'nowrap'}}>= entrada: {ptNum(display.quantity, display.unit)} {display.unit}</div>}
             </>;
           })()}
         </div>
@@ -959,8 +977,14 @@ export default function OreVaultPage() {
                     <div style={{fontSize:9,color:'var(--text-muted)'}}>{s.entries} entrada{s.entries!==1?'s':''}{s.refined>0?` · ${s.refined} ref.`:''}</div>
                   </div>
                   <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color}}>{ptNum(s.total, s.unit)}</div>
-                    <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{s.unit}</div>
+                    {isCargoUnit(s.unit) ? (() => { const composition = cargoComposition(s.total, s.unit); return <>
+                      <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color}}>{formatCargoNumber(composition.scu, 9)} SCU</div>
+                      <div style={{fontSize:9,color:'var(--text-secondary)',whiteSpace:'nowrap'}}>{composition.text}</div>
+                      <div style={{fontSize:9,color:'var(--text-muted)',whiteSpace:'nowrap'}}>{formatCargoNumber(composition.base, 9)} cSCU total</div>
+                    </> })() : <>
+                      <div style={{fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:800,color}}>{ptNum(s.total, s.unit)}</div>
+                      <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{s.unit}</div>
+                    </>}
                   </div>
                 </button>
               );
@@ -1074,8 +1098,14 @@ export default function OreVaultPage() {
                       </div>
                       {hasEntries ? (
                         <div>
-                          <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,lineHeight:1}}>{ptNum(total, unit)}</div>
-                          <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{unit} · {count} entrada{count!==1?'s':''}</div>
+                          {isCargoUnit(unit) ? (() => { const composition = cargoComposition(total, unit); return <>
+                            <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,lineHeight:1}}>{formatCargoNumber(composition.scu, 9)} SCU</div>
+                            <div style={{fontSize:9,color:'var(--text-secondary)',marginTop:3}}>{composition.text}</div>
+                            <div style={{fontSize:9,color:'var(--text-muted)',marginTop:2}}>{formatCargoNumber(composition.base, 9)} cSCU · {count} entrada{count!==1?'s':''}</div>
+                          </> })() : <>
+                            <div style={{fontFamily:'Michroma,sans-serif',fontSize:14,fontWeight:800,color,lineHeight:1}}>{ptNum(total, unit)}</div>
+                            <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase'}}>{unit} · {count} entrada{count!==1?'s':''}</div>
+                          </>}
                         </div>
                       ) : (
                         <div style={{fontSize:10,color:'var(--text-muted)',fontStyle:'italic'}}>sem estoque</div>

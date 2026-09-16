@@ -5,6 +5,8 @@ import {
   analyzeCargoQuantityInput,
   cargoToCscu,
   cargoToScu,
+  splitCargoBase,
+  cargoComposition,
   fromCargoBase,
   parseCargoInput,
   normalizeCargoQuantity,
@@ -43,12 +45,21 @@ describe('cargoUnits', () => {
     expect(result.formula).toContain('0,31 SCU = 31 cSCU');
   });
 
-  test('alerta quando uma quantidade grande em cSCU parece ter sido pensada em SCU', () => {
-    const result = analyzeCargoQuantityInput('311', 'cSCU');
-    expect(result.severity).toBe('warning');
-    expect(result.scu).toBe(3.11);
-    expect(result.suggestedUnit).toBe('SCU');
-    expect(result.suggestedValue).toBe('3.11');
+  test('mantém uma quantidade válida em cSCU sem sugerir troca de unidade', () => {
+    const result = analyzeCargoQuantityInput('543', 'cSCU');
+    expect(result.severity).toBe('info');
+    expect(result.scu).toBe(5.43);
+    expect(result.cscu).toBe(543);
+    expect(result.suggestedUnit).toBe('');
+  });
+
+  test('soma 7 SCU com 543 cSCU sem remover quantidade', () => {
+    const totalCscu = toCargoBase(7, 'SCU') + toCargoBase(543, 'cSCU');
+    expect(totalCscu).toBe(1243);
+    expect(fromCargoBase(totalCscu, 'SCU')).toBe(12.43);
+    expect(splitCargoBase(totalCscu)).toMatchObject({ wholeScu: 12, remainderCscu: 43, scu: 12.43, base: 1243 });
+    expect(cargoComposition(totalCscu, 'cSCU').text).toBe('12 SCU + 43 cSCU');
+    expect(cargoComposition(totalCscu, 'cSCU').totalText).toBe('12,43 SCU total · 1.243 cSCU');
   });
 
   test('preserva 596 e 938 como cSCU ao normalizar o cadastro do Baú', () => {

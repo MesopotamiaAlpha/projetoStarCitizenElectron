@@ -74,6 +74,39 @@ export function cargoToCscu(amount, unit) {
 }
 
 /**
+ * Divide uma carga em SCU inteiros e o restante em cSCU.
+ * Exemplo: 1.243 cSCU = 12 SCU + 43 cSCU = 12,43 SCU.
+ * A aritmética continua sendo feita na unidade-base cSCU.
+ */
+export function splitCargoBase(amount) {
+  let base = roundCargo(amount);
+  let wholeScu = Math.floor((base + 1e-9) / 100);
+  let remainderCscu = roundCargo(base - (wholeScu * 100));
+  if (remainderCscu >= 100) {
+    wholeScu += 1;
+    remainderCscu = roundCargo(remainderCscu - 100);
+  }
+  if (remainderCscu < 0) remainderCscu = 0;
+  return {
+    base,
+    wholeScu,
+    remainderCscu,
+    scu: fromCargoBase(base, 'SCU'),
+  };
+}
+
+export function cargoComposition(amount, unit) {
+  const base = toCargoBase(amount, unit);
+  const split = splitCargoBase(base);
+  return {
+    ...split,
+    unit: normalizeCargoUnit(unit),
+    text: `${formatCargoNumber(split.wholeScu, 0)} SCU + ${formatCargoNumber(split.remainderCscu, 9)} cSCU`,
+    totalText: `${formatCargoNumber(split.scu, 9)} SCU total · ${formatCargoNumber(split.base, 9)} cSCU`,
+  };
+}
+
+/**
  * Normaliza uma quantidade digitada para o formato canônico do Baú.
  * Exemplo: 0.5456 SCU => 54.56 cSCU.
  * O valor original continua podendo ser exibido na interface, mas o
@@ -91,8 +124,8 @@ export function cargoInputToStorage(value, inputUnit = 'cSCU') {
 export function formatCargoBreakdown(amount, unit) {
   const normalized = normalizeCargoUnit(unit);
   if (!isCargoUnit(normalized)) return `${formatCargoNumber(amount, 6)} ${normalized || 'un'}`;
-  const base = toCargoBase(amount, normalized);
-  return `${formatCargoNumber(fromCargoBase(base, 'SCU'), 9)} SCU · ${formatCargoNumber(base, 9)} cSCU`;
+  const composition = cargoComposition(amount, normalized);
+  return `${formatCargoNumber(composition.scu, 9)} SCU (${composition.text}) · ${formatCargoNumber(composition.base, 9)} cSCU`;
 }
 
 export function parseCargoInput(value, unit = '') {
@@ -204,11 +237,6 @@ export function analyzeCargoQuantityInput(value, unit) {
     result.warning = `${formatCargoNumber(parsed, 9)} cSCU é uma quantidade muito pequena. Se este número veio da tela do jogo, provavelmente era ${formatCargoNumber(parsed, 9)} SCU, que equivale a ${formatCargoNumber(parsed * 100, 9)} cSCU.`;
     result.suggestedUnit = 'SCU';
     result.suggestedValue = String(roundCargo(parsed));
-  } else if (normalizedUnit === 'cSCU' && parsed >= 100) {
-    result.severity = 'warning';
-    result.warning = `${formatCargoNumber(parsed, 9)} cSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira se você não pretendia informar a quantidade diretamente em SCU.`;
-    result.suggestedUnit = 'SCU';
-    result.suggestedValue = String(roundCargo(scu));
   } else if (normalizedUnit === 'mSCU' && parsed >= 1000) {
     result.severity = 'warning';
     result.warning = `${formatCargoNumber(parsed, 9)} mSCU equivalem a ${formatCargoNumber(scu, 9)} SCU. Confira a unidade escolhida.`;

@@ -4,7 +4,7 @@ import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
   BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check, Image as ImageIcon,
-  LockKeyhole, UserRound
+  Download, Maximize2, LockKeyhole, UserRound
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
@@ -155,6 +155,27 @@ export function normalizeItemImage(value) {
   }
   if (typeof value === 'object' && value.dataUrl) return { name: String(value.name || 'Imagem do item'), type: String(value.type || 'image/*'), dataUrl: String(value.dataUrl), addedAt: value.addedAt || null };
   return null;
+}
+
+export function getInventoryImageDownloadName(image, itemName = 'item') {
+  const originalName = String(image?.name || '').trim();
+  if (originalName) return originalName.replace(/[\\/:*?"<>|]+/g, '_');
+  const safeItemName = String(itemName || 'item').trim().replace(/[^a-z0-9áàâãéêíóôõúçü _-]/gi, '').replace(/\s+/g, '-').toLowerCase() || 'item';
+  const extension = String(image?.type || '').split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'png';
+  return `${safeItemName}.${extension}`;
+}
+
+export function downloadInventoryImage(image, itemName = 'item') {
+  const normalized = normalizeItemImage(image);
+  if (!normalized?.dataUrl || typeof document === 'undefined') return false;
+  const anchor = document.createElement('a');
+  anchor.href = normalized.dataUrl;
+  anchor.download = getInventoryImageDownloadName(normalized, itemName);
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  return true;
 }
 
 export function normalizeCraftAttachments(value) {
@@ -1321,6 +1342,7 @@ function ReservedPanel({ item, onSave }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer, onReservationUpdate }) {
   const [showDetail, setShowDetail] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
   const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
   const craftStatus = normalizeCraftStatus(item.craft_status);
   const craftMaterials = normalizeCraftMaterials(item.craft_materials);
@@ -1337,8 +1359,16 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
   const reservedQuantity = getReservedQuantity(item);
   const availableQuantity = getAvailableQuantity(item);
   const totalVal = (item.value_auec||0) * (item.quantity||1);
-
+  useEffect(() => {
+    if (!showImagePreview) return undefined;
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') setShowImagePreview(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showImagePreview]);
   return (
+
     <>
       {/* Card */}
       <div className="inventory-item-card" onClick={()=>setShowDetail(true)} style={{
@@ -1419,7 +1449,18 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
           <div className="inventory-detail-modal" style={{background:'var(--bg-card)',border:`1px solid ${isScript?'rgba(162,155,254,0.4)':catColor+'44'}`,borderRadius:12,padding:22,width:'100%',maxWidth:580,maxHeight:'calc(100vh - clamp(24px, 8vh, 80px))',overflowY:'auto',boxSizing:'border-box',margin:'0 auto',flex:'0 0 auto',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}} onClick={e=>e.stopPropagation()}>
 
             {/* Header modal */}
-            {itemImage && <div style={{ marginBottom:14, borderRadius:7, overflow:'hidden', border:`1px solid ${catColor}55`, background:'var(--bg-base)' }}><img src={itemImage.dataUrl} alt={itemImage.name || displayName} style={{ display:'block', width:'100%', maxHeight:220, objectFit:'cover' }}/></div>}
+            {itemImage && <div style={{ marginBottom:14, borderRadius:7, overflow:'hidden', border:`1px solid ${catColor}55`, background:'var(--bg-base)' }}>
+              <button type="button" onClick={()=>setShowImagePreview(true)} title="Visualizar imagem em tela cheia" style={{ display:'block', width:'100%', padding:0, border:0, background:'transparent', cursor:'zoom-in' }}>
+                <img src={itemImage.dataUrl} alt={itemImage.name || displayName} style={{ display:'block', width:'100%', maxHeight:220, objectFit:'cover' }}/>
+              </button>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'7px 9px', borderTop:`1px solid ${catColor}33`, flexWrap:'wrap' }}>
+                <span style={{ minWidth:0, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'var(--text-secondary)', fontSize:10 }} title={itemImage.name}>{itemImage.name || 'Imagem original do item'}</span>
+                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                  <button type="button" onClick={()=>setShowImagePreview(true)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(56,189,248,0.3)', background:'rgba(56,189,248,0.08)', color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Maximize2 size={11}/> Tela cheia</button>
+                  <button type="button" onClick={()=>downloadInventoryImage(itemImage, displayName)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(52,211,153,0.3)', background:'rgba(52,211,153,0.08)', color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Download size={11}/> Baixar original</button>
+                </div>
+              </div>
+            </div>}
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}>
@@ -1524,6 +1565,17 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
                 </button>
               )}
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {showImagePreview && itemImage && createPortal(
+        <div role="dialog" aria-modal="true" aria-label={`Imagem de ${displayName}`} onClick={()=>setShowImagePreview(false)} style={{ position:'fixed', inset:0, zIndex:1200, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:24, boxSizing:'border-box', background:'rgba(0,0,0,0.92)' }}>
+          <button type="button" onClick={()=>setShowImagePreview(false)} aria-label="Fechar visualização da imagem" title="Fechar" style={{ position:'fixed', top:18, right:18, width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.25)', borderRadius:7, background:'rgba(0,0,0,0.55)', color:'#fff', cursor:'pointer' }}><X size={18}/></button>
+          <img src={itemImage.dataUrl} alt={itemImage.name || displayName} onClick={event=>event.stopPropagation()} style={{ display:'block', maxWidth:'min(94vw, 1500px)', maxHeight:'82vh', width:'auto', height:'auto', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 70px rgba(0,0,0,0.65)' }}/>
+          <div onClick={event=>event.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:10, maxWidth:'94vw', padding:'8px 11px', borderRadius:6, background:'rgba(15,23,42,0.9)', border:'1px solid rgba(255,255,255,0.16)', color:'#fff', fontSize:11 }}>
+            <span style={{ maxWidth:'min(55vw, 560px)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{itemImage.name || displayName}</span>
+            <button type="button" onClick={()=>downloadInventoryImage(itemImage, displayName)} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'6px 9px', border:0, borderRadius:4, background:'rgba(52,211,153,0.18)', color:'#86efac', cursor:'pointer', fontSize:10, fontWeight:800 }}><Download size={12}/> Baixar original</button>
           </div>
         </div>,
         document.body
