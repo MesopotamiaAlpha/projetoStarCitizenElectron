@@ -294,7 +294,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
         <div>
           <label style={LS}>{cargoMode ? 'Quantidade mostrada no jogo *' : 'Quantidade *'}</label>
           <input style={{...IS,fontSize:15,fontWeight:700,borderColor:cargoMode?'rgba(56,189,248,0.45)':'var(--border-subtle)'}} type="text" inputMode="decimal" value={d.quantity} onChange={e=>set('quantity',e.target.value)} placeholder={cargoMode ? (d.unit === 'SCU' ? 'ex: 0,677' : 'ex: 67,7') : 'ex: 16'}/>
-          {cargoMode && <div style={{marginTop:4,fontSize:9,color:'var(--accent-primary)',lineHeight:1.45}}>Digite exatamente o número e selecione a unidade exibida no jogo. <strong>1 SCU = 100 cSCU</strong>; por exemplo, <strong>543 cSCU = 5,43 SCU</strong>.</div>}
+          {cargoMode && <div style={{marginTop:4,fontSize:9,color:'var(--accent-primary)',lineHeight:1.45}}>Digite exatamente o número e selecione a unidade exibida no jogo. <strong>1 SCU = 100 cSCU</strong>. Atenção: <strong>543 cSCU = 5,43 SCU</strong>; já <strong>0,543 SCU = 54,3 cSCU</strong>.</div>}
         </div>
         <div>
           <label style={LS}>Unidade de medida</label>
@@ -333,7 +333,7 @@ function OreForm({ initial, onSave, onCancel, preselectedOre, locationsVersion =
           {(() => {
             const composition = cargoComposition(quantityAnalysis.input, quantityAnalysis.unit);
             return <div style={{marginTop:8,padding:'7px 9px',borderRadius:5,background:'rgba(255,255,255,0.03)',border:'1px solid var(--border-subtle)',fontSize:10,color:'var(--text-secondary)'}}>
-              <strong style={{color:'var(--text-primary)'}}>Leitura clara:</strong> {composition.text} <span style={{color:'var(--text-muted)'}}>({composition.totalText})</span>
+              <strong style={{color:'var(--text-primary)'}}>Cálculo em SCU:</strong> {composition.formulaText} <span style={{color:'var(--text-muted)'}}>({composition.cscuText})</span>
             </div>;
           })()}
           {quantityAnalysis.suggestedUnit && (

@@ -8,11 +8,14 @@
     "react-start": "cross-env BROWSER=none CI=true react-scripts start",
     "dev": "concurrently \"cross-env BROWSER=none CI=true react-scripts start\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .\"",
     "react-build": "react-scripts build",
-    "build": "npm run build:win",
+    "build": "node scripts/build-target.cjs",
     "clean:dist": "node scripts/clean-dist.cjs",
-    "build:win": "npm run clean:dist && npm run react-build && electron-builder --win",
+    "build:linux": "node scripts/build-target.cjs linux",
+    "build:win": "node scripts/build-target.cjs win",
+    "build:windows": "npm run build:win",
+    "build:dir": "node scripts/build-target.cjs dir",
     "electron": "electron .",
-    "check:electron": "node --check electron/main.js && node --check electron/preload.js && node --check electron/missionWatcher.js",
+    "check:electron": "node --check electron/main.js && node --check electron/preload.js",
     "test:electron": "node --test electron/*.test.cjs",
     "test": "react-scripts test --watchAll=false --passWithNoTests",
     "verify": "npm run test && npm run test:electron && npm run react-build && npm run check:electron"
@@ -65,12 +68,22 @@
     "directories": {
       "output": "dist"
     },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Utility",
+      "executableName": "companheiro-emoto",
+      "synopsis": "Companheiro Emoto para Star Citizen",
+      "description": "Companheiro Emoto para Star Citizen"
+    },
     "win": {
       "target": [
         "nsis",
         "zip"
       ],
-      "icon": "electron-icons/icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {

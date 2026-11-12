@@ -74,8 +74,8 @@ export function cargoToCscu(amount, unit) {
 }
 
 /**
- * Divide uma carga em SCU inteiros e o restante em cSCU.
- * Exemplo: 1.243 cSCU = 12 SCU + 43 cSCU = 12,43 SCU.
+ * Divide uma carga em SCU inteiros e o restante fracionário em SCU.
+ * Exemplo: 754,3 cSCU = 7 SCU + 0,543 SCU = 7,543 SCU.
  * A aritmética continua sendo feita na unidade-base cSCU.
  */
 export function splitCargoBase(amount) {
@@ -96,13 +96,23 @@ export function splitCargoBase(amount) {
 }
 
 export function cargoComposition(amount, unit) {
-  const base = toCargoBase(amount, unit);
+  const parsedAmount = typeof amount === 'string' ? parseCargoInput(amount, unit) : amount;
+  const base = toCargoBase(parsedAmount, unit);
   const split = splitCargoBase(base);
+  const fractionScu = fromCargoBase(split.remainderCscu, 'SCU');
+  const formattedTotal = formatCargoNumber(split.scu, 9);
+  const formattedWhole = formatCargoNumber(split.wholeScu, 0);
+  const formattedFraction = formatCargoNumber(fractionScu, 9);
   return {
     ...split,
     unit: normalizeCargoUnit(unit),
-    text: `${formatCargoNumber(split.wholeScu, 0)} SCU + ${formatCargoNumber(split.remainderCscu, 9)} cSCU`,
-    totalText: `${formatCargoNumber(split.scu, 9)} SCU total · ${formatCargoNumber(split.base, 9)} cSCU`,
+    fractionScu,
+    // Fórmula principal: a parte fracionária continua sendo expressa em SCU.
+    // Ex.: 754,3 cSCU = 7 SCU + 0,543 SCU = 7,543 SCU.
+    text: `${formattedWhole} SCU + ${formattedFraction} SCU`,
+    formulaText: `${formattedWhole} SCU + ${formattedFraction} SCU = ${formattedTotal} SCU`,
+    cscuText: `${formatCargoNumber(split.base, 9)} cSCU interno`,
+    totalText: `${formattedTotal} SCU total · ${formatCargoNumber(split.base, 9)} cSCU`,
   };
 }
 
