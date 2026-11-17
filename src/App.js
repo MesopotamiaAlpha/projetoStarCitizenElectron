@@ -23,17 +23,33 @@ import SystemAdminPage from './pages/SystemAdminPage';
 import UsefulLinksPage from './pages/UsefulLinksPage';
 import UexSalesPage       from './pages/UexSalesPage';
 import UexNegotiationsPage from './pages/UexNegotiationsPage';
+import { fetchNegotiations, fetchNegotiationMessages } from './data/uexNegotiations';
 import WikeloTrackerPage  from './pages/WikeloTrackerPage';
 import ShipHangarPage     from './pages/ShipHangarPage';
 import UexNotificationBell from './components/UexNotificationBell';
 import CalculatorWidget from './components/CalculatorWidget';
 import ContextHelpOverlay from './components/ContextHelpOverlay';
+import VisualEffectsLayer from './components/VisualEffectsLayer';
+import AnimatedContent from './components/AnimatedContent';
+import InteractionFX from './components/InteractionFX';
+import VisualEffectsDiagnostics from './components/VisualEffectsDiagnostics';
+import BorderGlowController from './components/BorderGlowController';
+import CardNavEnhancer from './components/CardNavEnhancer';
+import GlareProfileController from './components/GlareProfileController';
+import ContextualSpotlightController from './components/ContextualSpotlightController';
 import { Shield, Package, BarChart3, ChevronRight, ChevronDown, PlusCircle, Archive, Cpu, Pickaxe, ListChecks, Hammer, Globe, Users, ShoppingBag, Star, MessageSquare, Lock, Save, Edit3, Menu, PanelLeftClose, FolderCog, Rocket, TrendingUp, Bell, Link2 } from 'lucide-react';
 import { setBatchProvenance, SOURCES } from './data/provenance';
+import { ENABLE_FX_DIAGNOSTICS } from './config/debugFlags';
+
 import { appendMissionAutoMonitorEvent, setMissionAutoMonitorStatus, upsertAutomaticMissionRecord, updateStoredMissionRecord } from './data/missionAutoMonitor';
 import { dispatchMissionRewardsToDefaultInventory } from './data/missionRewardDispatch';
 import { getMissionAdminOptions, loadMissionAdmin } from './data/missionAdmin';
 import { getArmorIdentity, getDuplicateArmorGroups } from './data/armorDedup';
+import { updateArmorPieceQuantityInSets } from './data/armorPerformance';
+import { planInventoryStockConsumption } from './data/inventoryStockConsumption';
+import { publishInventoryUpdate } from './data/inventoryEvents';
+import { loadQueue, calcShoppingList } from './data/materialQueue';
+import { loadVault } from './data/oreVault';
 
 /* ── Mock API (browser fallback) ─────────────────────────────────────────── */
 function buildMockAPI() {
@@ -218,8 +234,113 @@ const NAV_GROUPS = [
 ];
 
 const PAGES = NAV_GROUPS.flatMap(g => g.pages);
+
+function readMobileSnapshot(key, fallback = []) {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : fallback;
+    if (Array.isArray(parsed)) return parsed;
+    for (const collectionKey of ['itens', 'items', 'entries', 'data', 'builds', 'notes', 'missions']) {
+      if (Array.isArray(parsed?.[collectionKey])) return parsed[collectionKey];
+    }
+    return fallback;
+  } catch { return fallback; }
+}
+
+function buildMobileMaterialTracking() {
+  try {
+    const queue = loadQueue();
+    const stockEntries = loadVault();
+    const items = calcShoppingList(queue, stockEntries).map(item => ({
+      ...item,
+      progress: item.needed_total > 0 ? Math.min(100, (item.collected / item.needed_total) * 100) : 100,
+      complete: item.remaining <= 1e-9,
+    }));
+    const neededCount = items.reduce((total, item) => total + (Number(item.needed_total) || 0), 0);
+    const remainingCount = items.reduce((total, item) => total + (Number(item.remaining) || 0), 0);
+    return {
+      items,
+      queuedBlueprints: (queue.queuedBlueprints || []).map(bp => ({ bpId: bp.bpId, bpName: bp.bpName, quantity: bp.quantity })),
+      summary: { materials: items.length, complete: items.filter(item => item.complete).length, missing: items.filter(item => !item.complete).length, neededCount, remainingCount },
+      syncedAt: new Date().toISOString(),
+    };
+  } catch {
+    return { items: [], queuedBlueprints: [], summary: { materials: 0, complete: 0, missing: 0, neededCount: 0, remainingCount: 0 }, syncedAt: new Date().toISOString() };
+  }
+}
+
+function buildMobileRendererState() {
+  return {
+    // Allowlist deliberada: nunca incluir sc_uex_token_v1, sc_uex_secretkey_v1 ou credenciais.
+    wikeloMissions: readMobileSnapshot('sc_wikelo_missions_v1'),
+    missions: readMobileSnapshot('sc_missions_v2'),
+    uexItems: readMobileSnapshot('sc_uex_sales_v1'),
+    alerts: readMobileSnapshot('sc_uex_market_alerts_v1'),
+    blueprints: readMobileSnapshot('sc_blueprints_v1'),
+    materials: readMobileSnapshot('sc_material_queue_v1'),
+    materialTracking: buildMobileMaterialTracking(),
+    mining: readMobileSnapshot('sc_mining_builds_v1'),
+    miningGroup: readMobileSnapshot('sc_mining_group_v1'),
+    oreVault: readMobileSnapshot('sc_ore_vault_v1'),
+    hangar: readMobileSnapshot('sc_hangar_v1'),
+    clanVault: readMobileSnapshot('sc_clan_vault_v1'),
+    notes: readMobileSnapshot('sc_notes_v1'),
+  };
+}
+
+function setMobileJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+}
+
+function updateNestedWikeloItem(node, itemId, collected) {
+  if (Array.isArray(node)) return node.map(entry => updateNestedWikeloItem(entry, itemId, collected));
+  if (!node || typeof node !== 'object') return node;
+  const identity = String(node.id ?? node.item_id ?? node.itemId ?? '');
+  const next = { ...node };
+  if (identity === String(itemId)) next.collected = Math.max(0, Number(collected) || 0);
+  Object.keys(next).forEach(key => { if (Array.isArray(next[key]) || (next[key] && typeof next[key] === 'object')) next[key] = updateNestedWikeloItem(next[key], itemId, collected); });
+  return next;
+}
+
+async function applyMobileRendererAction(action, payload = {}) {
+  if (action === 'uex-fetch-negotiations') {
+    try { return { success: true, negotiations: (await fetchNegotiations()).slice(0, 500) }; } catch (error) { return { success: false, error: error.message || 'Não foi possível consultar as negociações UEX.' }; }
+  }
+  if (action === 'uex-fetch-messages') {
+    try { return { success: true, messages: (await fetchNegotiationMessages(String(payload.hash || ''))).slice(0, 200) }; } catch (error) { return { success: false, error: error.message || 'Não foi possível consultar as mensagens UEX.' }; }
+  }
+  if (action === 'mission-set-status') {
+    const missions = readMobileSnapshot('sc_missions_v2');
+    const index = missions.findIndex(row => String(row.id ?? row.guid ?? '') === String(payload.id));
+    if (index < 0) return { success: false, error: 'Missão não encontrada.' };
+    const next = missions.map((row, rowIndex) => rowIndex === index ? { ...row, status: String(payload.status || row.status || ''), updatedAt: new Date().toISOString() } : row);
+    if (!setMobileJson('sc_missions_v2', next)) return { success: false, error: 'Não foi possível salvar a missão.' };
+    window.dispatchEvent(new CustomEvent('sc_data_updated', { detail: { key: 'sc_missions_v2' } }));
+    return { success: true, id: payload.id, status: next[index].status };
+  }
+  if (action === 'wikelo-update-item') {
+    const missions = readMobileSnapshot('sc_wikelo_missions_v1');
+    const missionIndex = missions.findIndex(row => String(row.id ?? '') === String(payload.missionId));
+    if (missionIndex < 0) return { success: false, error: 'Missão Wikelo não encontrada.' };
+    const next = missions.map((row, index) => index === missionIndex ? updateNestedWikeloItem(row, payload.itemId, payload.collected) : row);
+    if (!setMobileJson('sc_wikelo_missions_v1', next)) return { success: false, error: 'Não foi possível salvar o progresso Wikelo.' };
+    window.dispatchEvent(new CustomEvent('sc_wikelo_updated', { detail: { missionId: payload.missionId, itemId: payload.itemId } }));
+    return { success: true, missionId: payload.missionId, itemId: payload.itemId, collected: Math.max(0, Number(payload.collected) || 0) };
+  }
+  if (action === 'alert-dismiss') {
+    const alerts = readMobileSnapshot('sc_uex_market_alerts_v1');
+    const next = alerts.filter(row => String(row.id ?? row.key ?? row.groupKey ?? '') !== String(payload.id));
+    if (next.length === alerts.length) return { success: false, error: 'Alerta não encontrado.' };
+    if (!setMobileJson('sc_uex_market_alerts_v1', next)) return { success: false, error: 'Não foi possível dispensar o alerta.' };
+    window.dispatchEvent(new CustomEvent('sc_uex_market_alerts_updated', { detail: { id: payload.id } }));
+    return { success: true, id: payload.id };
+  }
+  return { success: false, error: 'Ação mobile não permitida.' };
+}
+
 const NAV_COLLAPSE_KEY = 'sc_nav_collapsed_groups_v1';
 const SIDEBAR_COLLAPSED_KEY = 'sc_sidebar_collapsed_v1';
+const PAGE_HEADER_COLLAPSED_KEY = 'sc_page_header_collapsed_v1';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
@@ -234,9 +355,41 @@ export default function App() {
     } catch {}
     return typeof window !== 'undefined' && window.innerWidth <= 560;
   });
+  const [pageHeaderCollapsed, setPageHeaderCollapsed] = useState(() => {
+    try { return localStorage.getItem(PAGE_HEADER_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY)) || []; } catch { return []; }
   });
+  const [visualMode, setVisualMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('companheiro_emoto_visual_mode_v2');
+      if (saved === 'off' || saved === 'economic' || saved === 'immersive') return saved;
+    } catch {}
+    return 'economic';
+  });
+
+  useEffect(() => {
+    const mobileApi = window.electronAPI;
+    if (!mobileApi?.onMobileServerAction || !mobileApi?.mobileServerActionResponse) return undefined;
+    const clean = mobileApi.onMobileServerAction(async request => {
+      const result = await applyMobileRendererAction(request?.action, request?.payload);
+      mobileApi.mobileServerActionResponse({ requestId: request?.requestId, result });
+    });
+    return () => { if (typeof clean === 'function') clean(); };
+  }, []);
+
+  useEffect(() => {
+    const mobileApi = window.electronAPI;
+    if (!mobileApi?.mobileServerSyncState) return undefined;
+    let timer = null;
+    const sync = () => { try { mobileApi.mobileServerSyncState(buildMobileRendererState()); } catch {} };
+    const eventNames = ['sc_wikelo_updated', 'sc_uex_sales_updated', 'sc_uex_market_alerts_updated', 'sc_missions_reset', 'sc_data_updated'];
+    eventNames.forEach(name => window.addEventListener(name, sync));
+    sync();
+    timer = window.setInterval(sync, 5000);
+    return () => { eventNames.forEach(name => window.removeEventListener(name, sync)); if (timer) window.clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -262,6 +415,22 @@ export default function App() {
     setSidebarCollapsed(prev => {
       const next = !prev;
       try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
+
+  function togglePageHeader() {
+    setPageHeaderCollapsed(previous => {
+      const next = !previous;
+      try { localStorage.setItem(PAGE_HEADER_COLLAPSED_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
+
+  function cycleVisualMode() {
+    setVisualMode(previous => {
+      const next = previous === 'off' ? 'economic' : previous === 'economic' ? 'immersive' : 'off';
+      try { localStorage.setItem('companheiro_emoto_visual_mode_v2', next); } catch {}
       return next;
     });
   }
@@ -312,10 +481,126 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleTogglePiece         = async id     => { await api.togglePiece(id);         await loadData(); };
-  const handleTogglePieceWishlist = async id     => { await api.togglePieceWishlist(id);  await loadData(); };
-  const handleupdatePieceNotes    = async (id,n) => { await api.updatePieceNotes(id,n);   await loadData(); };
-  const handleUpdatePieceQuantity = async (id,qty) => { await api.updatePieceQuantity(id,qty); await loadData(); };
+  const refreshArmorStats = useCallback(async () => {
+    try { setStats(await api.getStats()); } catch (error) { console.error('[Armor] stats refresh failed', error); }
+  }, []);
+
+  const updateLocalArmorPiece = useCallback((pieceId, updater) => {
+    setSets(current => {
+      let changed = false;
+      const next = current.map(set => {
+        const pieces = Array.isArray(set?.pieces) ? set.pieces : [];
+        const index = pieces.findIndex(piece => String(piece?.id) === String(pieceId));
+        if (index < 0) return set;
+        const nextPiece = { ...pieces[index], ...updater(pieces[index]) };
+        const nextPieces = pieces.slice();
+        nextPieces[index] = nextPiece;
+        changed = true;
+        return { ...set, pieces: nextPieces };
+      });
+      return changed ? next : current;
+    });
+  }, []);
+
+  const handleTogglePiece = async id => {
+    updateLocalArmorPiece(id, piece => ({ owned: !piece.owned, quantity: !piece.owned ? Math.max(1, Number(piece.quantity) || 1) : 0, obtained_date: !piece.owned ? new Date().toISOString() : null }));
+    try { await api.togglePiece(id); await refreshArmorStats(); } catch (error) { await loadData(); console.error('[Armor] toggle failed', error); }
+  };
+  const handleTogglePieceWishlist = async id => {
+    updateLocalArmorPiece(id, piece => ({ wishlist: !piece.wishlist }));
+    try { await api.togglePieceWishlist(id); } catch (error) { await loadData(); console.error('[Armor] wishlist toggle failed', error); }
+  };
+
+  const handleDeleteArmorSet = async id => {
+    try {
+      const result = await api.deleteCustomSet(id);
+      if (result?.success) await loadData();
+      return result;
+    } catch (error) {
+      return { success:false, error:error.message || 'Não foi possível excluir a armadura.' };
+    }
+  };
+  const handleupdatePieceNotes = async (id, notes) => {
+    updateLocalArmorPiece(id, () => ({ notes }));
+    try { await api.updatePieceNotes(id, notes); } catch (error) { await loadData(); console.error('[Armor] notes update failed', error); }
+  };
+  const handleUpdatePieceQuantity = async (id, qty) => {
+    const nextQuantity = Math.max(1, Math.floor(Number(qty) || 1));
+    // Atualização otimista local: quantidade física não altera os KPIs
+    // estruturais, portanto não é necessário recarregar stats ou a coleção.
+    setSets(current => updateArmorPieceQuantityInSets(current, id, nextQuantity));
+    try {
+      await api.updatePieceQuantity(id, nextQuantity);
+    } catch (error) {
+      await loadData();
+      console.error('[Armor] quantity update failed', error);
+    }
+  };
+
+  const handleConsumeArmorStock = useCallback(async ({ pieceIds = [], setIds = [], quantity = 1 } = {}) => {
+    const requested = Math.max(1, Math.floor(Number(quantity) || 1));
+    const piecesById = new Map(sets.flatMap(set => (set.pieces || []).map(piece => [String(piece.id), { ...piece, set_id: set.id }])));
+    const deductions = new Map();
+    const errors = [];
+    const addDeduction = (piece, amount) => {
+      if (!piece || amount <= 0) return;
+      const available = piece.owned ? Math.max(0, Number(piece.quantity ?? 1) || 0) : 0;
+      const already = deductions.get(String(piece.id)) || 0;
+      if (already + amount > available) errors.push(`${piece.piece_name || piece.piece_type}: disponível ${available}, necessário ${already + amount}`);
+      deductions.set(String(piece.id), already + amount);
+    };
+    (pieceIds || []).map(id => piecesById.get(String(id))).forEach(piece => addDeduction(piece, requested));
+    (setIds || []).map(id => sets.find(set => String(set.id) === String(id))).forEach(set => {
+      const pieces = (set?.pieces || []).filter(piece => piece.piece_type || piece.type);
+      if (!pieces.length) { errors.push('Set sem peças cadastradas'); return; }
+      const byType = new Map();
+      pieces.forEach(piece => {
+        const type = String(piece.piece_type || piece.type);
+        if (!byType.has(type)) byType.set(type, []);
+        byType.get(type).push(piece);
+      });
+      byType.forEach(typePieces => {
+        const piece = typePieces.find(candidate => (candidate.owned ? Number(candidate.quantity ?? 1) : 0) > 0);
+        if (!piece) errors.push(`${set.base_name || set.set_name || 'Set'}: peça ${typePieces[0].piece_type || typePieces[0].type} ausente`);
+        else addDeduction(piece, requested);
+      });
+    });
+    if (errors.length) return { success:false, consumed:false, message:`Estoque de armadura insuficiente. ${errors.slice(0, 3).join(' · ')}` };
+    try {
+      for (const [pieceId, amount] of deductions) {
+        const piece = piecesById.get(pieceId);
+        await api.updatePieceQuantity(pieceId, Math.max(0, Math.floor(Number(piece.quantity ?? 1) - amount)));
+      }
+      setSets(current => current.map(set => ({ ...set, pieces:(set.pieces || []).map(piece => deductions.has(String(piece.id)) ? { ...piece, quantity:Math.max(0, Math.floor(Number(piece.quantity ?? 1) - deductions.get(String(piece.id)))), owned:Math.max(0, Math.floor(Number(piece.quantity ?? 1) - deductions.get(String(piece.id)))) > 0 } : piece) })));
+      await refreshArmorStats();
+      return { success:true, consumed:deductions.size > 0, message:`${deductions.size} peça(s) de armadura consumida(s).` };
+    } catch (error) {
+      await loadData();
+      return { success:false, consumed:false, message:error.message || 'Falha ao persistir a baixa da armadura.' };
+    }
+  }, [sets, refreshArmorStats, loadData]);
+
+  const handleConsumeInventoryStock = useCallback(async ({ name, locationKeys = [], quantity = 1 } = {}) => {
+    const inventoryApi = window.electronAPI;
+    if (!inventoryApi?.inventoryGetAll || !inventoryApi?.inventoryUpdate) {
+      return { success: false, consumed: 0, status: 'failed', message: 'A API segura do Inventário não está disponível.' };
+    }
+    try {
+      const currentItems = await inventoryApi.inventoryGetAll();
+      const plan = planInventoryStockConsumption(currentItems, { name, locationKeys, quantity });
+      if (!plan.success) return { ...plan, status: 'failed' };
+      for (const allocation of plan.allocations) {
+        const current = (Array.isArray(currentItems) ? currentItems : []).find(item => String(item.id) === String(allocation.inventoryId));
+        if (!current) throw new Error(`Registro de Inventário ${allocation.inventoryId} não encontrado durante a baixa.`);
+        await inventoryApi.inventoryUpdate({ ...current, quantity: allocation.afterQuantity });
+      }
+      const refreshed = await inventoryApi.inventoryGetAll();
+      publishInventoryUpdate(Array.isArray(refreshed) ? refreshed : []);
+      return { ...plan, success: true, consumed: plan.consumed > 0, status: plan.consumed > 0 ? 'consumed' : 'not_linked', message: `${plan.consumed} unidade(s) descontada(s) do Inventário de Itens.` };
+    } catch (error) {
+      return { success: false, consumed: 0, status: 'failed', message: error.message || 'Falha ao persistir a baixa do Inventário de Itens.' };
+    }
+  }, []);
 
   if (loading) return (
     <div className="app-loading">
@@ -330,7 +615,12 @@ export default function App() {
   const customCount = sets.filter(s=>s.is_custom).length;
 
   return (
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${pageHeaderCollapsed ? 'page-header-collapsed' : ''} visual-mode-${visualMode}`}>
+      <VisualEffectsLayer mode={visualMode} activePage={activePage} />
+      <BorderGlowController mode={visualMode} />
+      <CardNavEnhancer mode={visualMode} />
+      <GlareProfileController mode={visualMode} />
+      <ContextualSpotlightController mode={visualMode} />
       <aside className="sidebar">
         <div className="sidebar-logo">
           <EmotoIcon size={30} className="logo-icon" />
@@ -369,15 +659,31 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <span className="version-badge">v1.6.5</span>
+          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 3.0.1" aria-label={`Efeitos visuais: ${visualMode}`}>
+            <span className="visual-mode-dot" />
+            <span>{visualMode === 'off' ? 'Efeitos desligados' : visualMode === 'economic' ? 'Efeitos econômicos' : 'Efeitos imersivos'}</span>
+          </button>
+          {ENABLE_FX_DIAGNOSTICS && <VisualEffectsDiagnostics mode={visualMode} activePage={activePage} />}
+          <span className="version-badge">v3.0.1</span>
         </div>
       </aside>
 
       <main className="main-content">
-        <div key={activePage} className="page-transition-shell" data-active-page={activePage}>
+        <button
+          type="button"
+          className="page-header-toggle"
+          onClick={togglePageHeader}
+          aria-pressed={pageHeaderCollapsed}
+          title={pageHeaderCollapsed ? 'Expandir informações da tela' : 'Recolher informações da tela'}
+        >
+          {pageHeaderCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span>{pageHeaderCollapsed ? 'Expandir detalhes' : 'Recolher detalhes'}</span>
+        </button>
+        <AnimatedContent key={activePage} className="page-transition-shell" direction="vertical" distance={18} duration={0.45} allowMotion={visualMode !== 'off'}>
+          <div data-active-page={activePage}>
           {activePage==='dashboard'  && <DashboardPage    sets={sets} stats={stats} onNavigate={goToPage} />}
           {activePage==='all'        && <TodosArmorsPage    sets={sets} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
-          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} />}
+          {activePage==='collection' && <MyCollectionPage sets={sets} stats={stats} onTogglePiece={handleTogglePiece} onTogglePieceWishlist={handleTogglePieceWishlist} onupdatePieceNotes={handleupdatePieceNotes} onUpdatePieceQuantity={handleUpdatePieceQuantity} onDeleteArmorSet={handleDeleteArmorSet} />}
           {activePage==='inventory'  && <InventoryPage />}
           {activePage==='blueprints' && <BlueprintPage />}
           {activePage==='materials'  && <MaterialTrackerPage />}
@@ -387,11 +693,13 @@ export default function App() {
           {activePage==='clanvault' && <ClanVaultPage />}
           {activePage==='missions'   && <MissionTrackerPage />}
           {activePage==='orevault'   && <OreVaultPage />}
-          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} />}
+          {activePage==='uexsales'   && <UexSalesPage armorSets={sets} onConsumeArmorStock={handleConsumeArmorStock} onConsumeInventoryStock={handleConsumeInventoryStock} />}
           {activePage==='uexnegotiations' && (
             <UexNegotiationsPage
               targetNegotiationHash={pendingNegotiationHash}
               onTargetNegotiationConsumed={() => setPendingNegotiationHash('')}
+              onConsumeArmorStock={handleConsumeArmorStock}
+              onConsumeInventoryStock={handleConsumeInventoryStock}
             />
           )}
           {activePage==='wikelo'     && <WikeloTrackerPage />}
@@ -404,9 +712,11 @@ export default function App() {
           {activePage==='notes'      && <NotesPage />}
           {activePage==='system-admin' && <SystemAdminPage />}
           {activePage==='useful-links' && <UsefulLinksPage />}
-        </div>
+          </div>
+        </AnimatedContent>
       </main>
 
+      <InteractionFX allowMotion={visualMode !== 'off'} />
       <UexNotificationBell onNavigate={goToPage} />
       <CalculatorWidget />
       <ContextHelpOverlay />

@@ -11,7 +11,7 @@ const BACKUP_APP_NAME = 'Companheiro Emoto';
 const LEGACY_BACKUP_APP_NAME = ['SC', 'Toolbox'].join(' ');
 
 export const BACKUP_CATEGORIES = [
-  { id:'orevault',    label:'Baú de Minério',                 keys:['sc_ore_vault_v1'] },
+  { id:'orevault',    label:'Baú de Minério',                 keys:['sc_ore_vault_v1','sc_ore_vault_history_v1'] },
   { id:'clanvault',   label:'Cofre do Clã',                    keys:['sc_clan_vault_v1'] },
   { id:'mininggroup', label:'Mineração em Grupo',              keys:['sc_mining_group_v1','sc_mining_builds_v1'] },
     { id:'missions',   label:'Rastreador de Missões',           keys:['sc_missions_v2','sc_obj_library_v1','sc_daily_losses_v1'] },

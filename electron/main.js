@@ -1,9 +1,34 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { MissionLogWatcher } = require('./missionWatcher');
+const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigrations');
+const { createMobileServer, DEFAULT_PORT: MOBILE_DEFAULT_PORT } = require('./mobileServer');
+const { fileSignature, saveDatabaseSnapshot } = require('./dbPersistence.cjs');
+const { MAX_UEX_ENDPOINT_LENGTH, normalizeUexEndpoint } = require('./uexEndpoint.cjs');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
+
+// O banco é mantido em memória pelo sql.js e exportado por inteiro a cada
+// alteração. Duas instâncias simultâneas teriam snapshots diferentes e a
+// última a fechar poderia sobrescrever os dados da primeira. A trava precisa
+// ser adquirida antes de configurar diretórios, abrir o SQLite ou criar a UI.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+// Debug do Monitor Automático — descomente a próxima linha durante manutenção.
+const ENABLE_MISSION_MONITOR_DEBUG = false;
+// const ENABLE_MISSION_MONITOR_DEBUG = true; // ATIVAR: logs do processo Electron
 
 const APP_DIR_NAME = 'CompanheiroEmoto';
 const APP_ID = 'com.companheiroemoto.app';
@@ -21,21 +46,71 @@ const TRANSIENT_DATA_NAMES = new Set([
 ]);
 
 let db, SQL, dbPath;
+let dbLoadedSignature = null;
+let databaseRestartRequired = false;
 let dataRoot = null;
 let dataConfigPath = null;
 let legacyUserDataPath = null;
 let dataMigration = { copied: [], skipped: [], warnings: [] };
 let mainWindow;
 let missionLogWatcher;
+let mobileServer;
+let mobileRendererState = {};
+const pendingMobileRendererActions = new Map();
+
+function requestMobileRendererAction(action, payload = {}) {
+  return new Promise((resolve, reject) => {
+    if (!mainWindow || mainWindow.isDestroyed()) { reject(new Error('A janela principal não está disponível.')); return; }
+    const requestId = `mobile-action-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const timeout = setTimeout(() => { pendingMobileRendererActions.delete(requestId); reject(new Error('O renderer não respondeu a tempo.')); }, 8000);
+    pendingMobileRendererActions.set(requestId, { resolve, reject, timeout });
+    mainWindow.webContents.send('mobile-server-action-request', { requestId, action, payload });
+  });
+}
+
+
+function assertTrustedRenderer(event) {
+  const url = String(event?.senderFrame?.url || event?.sender?.getURL?.() || '');
+  const allowed = isDev
+    ? url.startsWith('http://localhost:3000')
+    : url.startsWith('file://');
+  if (!allowed) throw new Error('Origem IPC não autorizada.');
+}
+
+function normalizeMissionMonitorStatus(raw = {}) {
+  const status = raw && typeof raw === 'object' ? raw : {};
+  const activeMissions = Array.isArray(status.activeMissions)
+    ? status.activeMissions
+    : Array.isArray(status.active)
+      ? status.active
+      : [];
+  const rawDebug = status.debug || status.diagnostics || {};
+  const debug = {
+    ...rawDebug,
+    phase: rawDebug.phase || (status.running ? 'running_legacy_status' : 'idle'),
+    fileExists: rawDebug.fileExists !== undefined ? rawDebug.fileExists : Boolean(status.logPath),
+    fileReadable: rawDebug.fileReadable !== undefined ? rawDebug.fileReadable : Boolean(status.logPath),
+    activeCount: rawDebug.activeCount !== undefined ? rawDebug.activeCount : activeMissions.length,
+    statusShape: Object.keys(status),
+    legacyStatusShape: !status.debug,
+    watcherVersion: status.watcherVersion || 'unknown-legacy-watcher',
+  };
+  return { ...status, activeMissions, debug };
+}
 
 function getMissionLogWatcher() {
   if (missionLogWatcher) return missionLogWatcher;
   missionLogWatcher = new MissionLogWatcher(
     event => {
+      if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][event->renderer]', { type: event?.type, guid: event?.guid || event?.missionGuid || null, activeCount: missionLogWatcher?.active?.size || 0 });
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-event', event);
+      else console.warn('[MissionAutoMonitor][main] renderer indisponível para evento');
     },
     status => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-status', status);
+      const normalizedStatus = normalizeMissionMonitorStatus(status);
+      if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][status->renderer]', { running: normalizedStatus.running, logPath: normalizedStatus.logPath, phase: normalizedStatus.debug.phase, fileExists: normalizedStatus.debug.fileExists, readCount: normalizedStatus.debug.readCount, activeCount: normalizedStatus.debug.activeCount, statusShape: normalizedStatus.debug.statusShape, legacyStatusShape: normalizedStatus.debug.legacyStatusShape, watcherVersion: normalizedStatus.debug.watcherVersion });
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mission-monitor-status', normalizedStatus);
+      else console.warn('[MissionAutoMonitor][main] renderer indisponível para status');
     },
   );
   return missionLogWatcher;
@@ -224,18 +299,63 @@ function migrateDatabaseInsideDataRoot(root) {
   const currentDb = path.join(dataDir, DB_FILE_NAME);
   if (fs.existsSync(currentDb)) return false;
   const legacyDb = findDatabaseFile(root);
-  return Boolean(legacyDb && copyFileIfMissing(legacyDb, currentDb));
+  if (!legacyDb || path.resolve(legacyDb) === path.resolve(currentDb)) return false;
+  try {
+    backupDatabaseBeforeMigration(legacyDb, root);
+    return copyFileIfMissing(legacyDb, currentDb);
+  } catch (error) {
+    console.error('[Database] Não foi possível preservar o banco legado antes da migração.', error);
+    return false;
+  }
+}
+
+function backupDatabaseBeforeMigration(sourceDatabase, targetRoot) {
+  if (!sourceDatabase || !fs.existsSync(sourceDatabase)) return null;
+  const backupDir = ensureDirectory(path.join(targetRoot, 'backup', 'migracao-atualizacao'));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(backupDir, `origem-${stamp}-${path.basename(sourceDatabase)}`);
+  fs.copyFileSync(sourceDatabase, backupPath, fs.constants.COPYFILE_EXCL);
+  return backupPath;
+}
+
+function findLegacyDataSource(targetRoot) {
+  const candidates = [
+    legacyUserDataPath,
+    path.join(app.getPath('appData'), APP_DIR_NAME),
+    path.join(app.getPath('appData'), 'Companheiro Emoto'),
+    path.join(app.getPath('appData'), `${APP_DIR_NAME}-Dev`),
+  ].filter(Boolean);
+  const target = path.resolve(targetRoot);
+  return candidates
+    .map(candidate => path.resolve(candidate))
+    .filter((candidate, index, all) => candidate !== target && all.indexOf(candidate) === index)
+    .map(candidate => ({ root: candidate, database: findDatabaseFile(candidate) }))
+    .find(item => item.database && fs.existsSync(item.database)) || null;
 }
 
 function saveDb() {
-  if (!db || !dbPath) return;
-  ensureDirectory(path.dirname(dbPath));
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  const result = saveDatabaseSnapshot({
+    database: db,
+    databasePath: dbPath,
+    loadedSignature: dbLoadedSignature,
+    restartRequired: databaseRestartRequired,
+  });
+  if (!result.saved && result.reason === 'database-changed-externally') {
+    console.error('[Database] Escrita abortada: o arquivo SQLite foi alterado por outro processo.', {
+      dbPath,
+      loadedSignature: result.loadedSignature,
+      currentSignature: result.currentSignature,
+    });
+    return result;
+  }
+  if (result.fileSignature) dbLoadedSignature = result.fileSignature;
+  return result;
 }
 
 async function configureDataDirectory() {
-  // Captura apenas o caminho padrão para diagnóstico. Nenhum arquivo desse
-  // diretório é copiado automaticamente para a instalação atual.
+  // O caminho anterior é mantido para recuperar instalações que usavam o
+  // userData padrão antes da pasta central. A recuperação é somente aditiva:
+  // nunca substitui um banco já existente no destino.
   legacyUserDataPath = app.getPath('userData');
   dataConfigPath = getDataConfigPath();
   const savedConfig = safeReadJson(dataConfigPath);
@@ -269,42 +389,20 @@ async function configureDataDirectory() {
     startupWarnings.push(`Não foi possível usar o diretório escolhido: ${error.message}`);
   }
 
-  // Se a pasta escolhida já contém dados, mas não possui assinatura deste
-  // ambiente, não a abrimos silenciosamente. Por padrão preservamos a pasta
-  // antiga renomeando-a e iniciamos uma pasta limpa; o usuário pode escolher
-  // explicitamente a opção de reutilizar os dados existentes.
+  // Nunca renomear automaticamente uma pasta que contém dados. Esse comportamento
+  // fazia a atualização parecer apagar registros: uma pasta limpa era criada e o
+  // banco antigo ficava escondido com o sufixo "-legado".
   if (!hasValidSavedConfig && !isCurrentEnvironmentRoot(selectedRoot) && directoryHasPersistentData(selectedRoot)) {
-    const decision = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'Dados antigos encontrados',
-      message: 'A pasta escolhida já contém dados sem identificação deste ambiente.',
-      detail: `Para evitar misturar dados de teste, o Companheiro Emoto pode preservar essa pasta e iniciar uma nova. Pasta encontrada: ${selectedRoot}`,
-      buttons: ['Criar pasta limpa e preservar antigos', 'Usar dados existentes'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    if (decision.response === 0) {
-      archivedLegacyRoot = makeLegacyArchivePath(selectedRoot);
-      fs.renameSync(selectedRoot, archivedLegacyRoot);
-      ensureDirectory(selectedRoot);
-      startupWarnings.push(`A pasta antiga foi preservada em ${archivedLegacyRoot}.`);
-    } else {
-      startupWarnings.push('Dados existentes foram reutilizados somente por escolha explícita.');
-    }
+    startupWarnings.push('Dados existentes encontrados; a pasta foi mantida e será reutilizada sem sobrescrita.');
   }
 
   dataRoot = selectedRoot;
-  // Não migramos mais o userData antigo automaticamente. Esse diretório pode
-  // pertencer a uma execução de teste, a outro build ou a uma versão anterior.
-  // A transferência de dados deve acontecer somente por backup completo ou pela
-  // troca explícita de diretório dentro do aplicativo.
   dataMigration = {
     copied: [],
     skipped: [],
     warnings: startupWarnings,
     at: new Date().toISOString(),
-    automatic: false,
+    automatic: true,
     ignoredConfig: Boolean(ignoredConfig),
     archivedLegacyRoot,
     source: null,
@@ -312,15 +410,31 @@ async function configureDataDirectory() {
   if (ignoredConfig) {
     dataMigration.warnings.push('A configuração existente pertencia a outro ambiente ou versão e foi ignorada para evitar mistura de dados.');
   }
-  // Migração de um banco legado dentro da pasta central só é permitida quando
-  // a própria ponte confirma que essa pasta pertence a este ambiente. Em uma
-  // instalação limpa, um .db encontrado por acaso não é tratado como usuário.
-  if (hasValidSavedConfig && migrateDatabaseInsideDataRoot(dataRoot)) {
+  if (migrateDatabaseInsideDataRoot(dataRoot)) {
     dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
   }
   ensureDirectory(path.join(dataRoot, 'dados'));
   ensureDirectory(path.join(dataRoot, 'backup'));
   ensureDirectory(path.join(dataRoot, 'exportados'));
+
+  // Recupera o banco usado por versões antigas que gravavam diretamente em
+  // userData. O backup é criado antes da cópia e a operação é idempotente.
+  const destinationDb = path.join(dataRoot, 'dados', DB_FILE_NAME);
+  if (!fs.existsSync(destinationDb)) {
+    const legacySource = findLegacyDataSource(dataRoot);
+    if (legacySource) {
+      try {
+        const backupPath = backupDatabaseBeforeMigration(legacySource.database, dataRoot);
+        fs.copyFileSync(legacySource.database, destinationDb, fs.constants.COPYFILE_EXCL);
+        dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
+        dataMigration.source = legacySource.root;
+        dataMigration.backup = backupPath;
+        startupWarnings.push(`Banco legado recuperado de ${legacySource.root}; cópia de segurança criada antes da migração.`);
+      } catch (error) {
+        dataMigration.warnings.push(`Não foi possível migrar o banco legado: ${error.message}`);
+      }
+    }
+  }
   writeDataManifest(dataRoot);
   writeDataConfig(dataRoot);
 
@@ -334,9 +448,11 @@ async function configureDataDirectory() {
 async function initDatabase() {
   const sqlJsPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist');
   SQL = await require('sql.js')({ locateFile: f => path.join(sqlJsPath, f) });
-  db = fs.existsSync(dbPath)
+  const databaseExists = fs.existsSync(dbPath);
+  db = databaseExists
     ? new SQL.Database(fs.readFileSync(dbPath))
     : new SQL.Database();
+  dbLoadedSignature = databaseExists ? fileSignature(dbPath) : null;
 
   db.run(`
     CREATE TABLE IF NOT EXISTS armor_sets (
@@ -408,6 +524,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
       craft_status  TEXT DEFAULT '[]',
       craft_materials TEXT DEFAULT '[]',
       craft_attachments TEXT DEFAULT '[]',
+      item_image     TEXT DEFAULT '',
       reservations TEXT DEFAULT '[]',
       created_at    TEXT DEFAULT (datetime('now')),
       updated_at    TEXT DEFAULT (datetime('now'))
@@ -461,6 +578,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_status TEXT DEFAULT '[]'`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_materials TEXT DEFAULT '[]'`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN craft_attachments TEXT DEFAULT '[]'`); } catch(e) {}
+  try { db.run(`ALTER TABLE inventory_items ADD COLUMN item_image TEXT DEFAULT ''`); } catch(e) {}
   try { db.run(`ALTER TABLE inventory_items ADD COLUMN reservations TEXT DEFAULT '[]'`); } catch(e) {}
   // Migração idempotente: quantidade positiva representa cópias possuídas.
   try { db.run(`ALTER TABLE user_pieces ADD COLUMN quantity INTEGER DEFAULT 0`); } catch(e) {}
@@ -475,11 +593,12 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     installed_at TEXT DEFAULT (datetime('now'))
   )`);
 
+  const schemaMigration = applySchemaMigrations(db);
   const changed = seedData();
   const bpChanged = seedBlueprints();
   const scmdbChanged = seedScmdbBlueprints();
   const scmdbUnitsChanged = migrateScmdbFractionalUnits();
-  if (changed || bpChanged || scmdbChanged || scmdbUnitsChanged) saveDb();
+  if (changed || bpChanged || scmdbChanged || scmdbUnitsChanged || schemaMigration.tableReady) saveDb();
 }
 
 function queryAll(sql, params = []) {
@@ -2030,18 +2149,7 @@ ipcMain.handle('mymemory-translate', async (event, payload = {}) => {
 
 const UEX_API_ORIGIN = 'https://api.uexcorp.uk';
 const UEX_API_PREFIX = '/2.0/';
-const MAX_UEX_ENDPOINT_LENGTH = 320;
 const MAX_UEX_BODY_BYTES = 1024 * 1024;
-
-function normalizeUexEndpoint(endpoint) {
-  const value = String(endpoint || '').trim().replace(/^\/+/, '');
-  if (!value) throw new Error('Endpoint UEX não informado.');
-  if (value.length > MAX_UEX_ENDPOINT_LENGTH) throw new Error('Endpoint UEX excede o limite permitido.');
-  if (/^https?:\/\//i.test(value) || value.includes('..') || !/^[A-Za-z0-9_./?=&%:+-]+$/.test(value)) {
-    throw new Error('Endpoint UEX inválido ou não permitido.');
-  }
-  return value;
-}
 
 function uexRequest(endpoint, token, secretKey, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
@@ -2148,6 +2256,7 @@ ipcMain.handle('uex-test-token', async (event, token) => {
 });
 
 ipcMain.handle('uex-fetch', async (event, payload = {}) => {
+  assertTrustedRenderer(event);
   const { endpoint, token, secretKey } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey);
@@ -2236,6 +2345,7 @@ function fetchUexImage(rawUrl) {
 
 ipcMain.handle('uex-image', async (event, rawUrl) => {
   try {
+    assertTrustedRenderer(event);
     const dataUrl = await fetchUexImage(rawUrl);
     return { success: true, dataUrl };
   } catch (error) {
@@ -2245,6 +2355,7 @@ ipcMain.handle('uex-image', async (event, rawUrl) => {
 
 // POST genérico para a UEX (usado hoje para responder mensagens de negociação do Marketplace)
 ipcMain.handle('uex-post', async (event, payload = {}) => {
+  assertTrustedRenderer(event);
   const { endpoint, token, secretKey, body } = payload || {};
   try {
     const result = await uexRequest(endpoint, token, secretKey, 'POST', body);
@@ -2267,8 +2378,8 @@ ipcMain.handle('inventory-create', (event, item) => {
   db.run(`INSERT INTO inventory_items
     (name,category,subcategory,system,location_type,location_name,container,
      quantity,unit,size,grade,manufacturer,condition,value_auec,is_contraband,notes,
-           is_crafted,craft_status,craft_materials,craft_attachments,reservations)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           is_crafted,craft_status,craft_materials,craft_attachments,item_image,reservations)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [item.name, item.category||'Miscellaneous', item.subcategory||'',
      item.system||'Stanton', item.location_type||'Station',
      item.location_name||'', item.container||'',
@@ -2276,7 +2387,7 @@ ipcMain.handle('inventory-create', (event, item) => {
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
      item.is_contraband?1:0, item.notes||'',
-      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[])]);
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), String(item.item_image||''), JSON.stringify(item.reservations||[])]);
   const id = queryOne('SELECT last_insert_rowid() as id').id;
   saveDb();
   return { success: true, id };
@@ -2286,15 +2397,15 @@ ipcMain.handle('inventory-update', (event, item) => {
   db.run(`UPDATE inventory_items SET
     name=?,category=?,subcategory=?,system=?,location_type=?,location_name=?,
     container=?,quantity=?,unit=?,size=?,grade=?,manufacturer=?,condition=?,
-         value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,craft_materials=?,craft_attachments=?,reservations=?,updated_at=datetime('now')
+         value_auec=?,is_contraband=?,notes=?,is_crafted=?,craft_status=?,craft_materials=?,craft_attachments=?,item_image=?,reservations=?,updated_at=datetime('now')
      WHERE id=?`,
     [item.name, item.category, item.subcategory||'',
      item.system, item.location_type, item.location_name,
      item.container||'', (Number(item.quantity) >= 0 ? Number(item.quantity) : 0), item.unit||'un',
      item.size||'', item.grade||'', item.manufacturer||'',
      item.condition||'Good', Number(item.value_auec)||0,
-     item.is_contraband?1:0, item.notes||'',
-      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), JSON.stringify(item.reservations||[]), item.id]);
+      item.is_contraband?1:0, item.notes||'',
+      item.is_crafted?1:0, JSON.stringify(item.craft_status||[]), JSON.stringify(item.craft_materials||[]), JSON.stringify(item.craft_attachments||[]), String(item.item_image||''), JSON.stringify(item.reservations||[]), item.id]);
   saveDb();
   return { success: true };
 });
@@ -2333,6 +2444,7 @@ function dataInfo() {
     dataRoot,
     databasePath: dbPath,
     databaseExists: Boolean(dbPath && fs.existsSync(dbPath)),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     backupPath: path.join(dataRoot, 'backup'),
     exportPath: path.join(dataRoot, 'exportados'),
     pointerConfigPath: dataConfigPath,
@@ -2492,6 +2604,66 @@ ipcMain.handle('notes-download-attachment', async (event, payload = {}) => {
   }
 });
 
+const SELECTIVE_CLEANUP_SCOPES = {
+  armor_collection: {
+    countSql: 'SELECT COUNT(*) AS count FROM user_pieces WHERE owned=1 OR wishlist=1 OR quantity>0 OR COALESCE(notes, \'\')<>\'\' OR obtained_date IS NOT NULL',
+    clearSql: "UPDATE user_pieces SET owned=0, wishlist=0, notes='', obtained_date=NULL, quantity=0",
+  },
+  inventory_items: {
+    countSql: 'SELECT COUNT(*) AS count FROM inventory_items',
+    clearSql: 'DELETE FROM inventory_items',
+  },
+  blueprints_progress: {
+    countSql: 'SELECT COUNT(*) AS count FROM user_blueprints WHERE owned=1 OR wishlist=1 OR crafted_count>0 OR COALESCE(notes, \'\')<>\'\' OR obtained_date IS NOT NULL',
+    clearSql: "UPDATE user_blueprints SET owned=0, wishlist=0, crafted_count=0, notes='', obtained_date=NULL",
+  },
+};
+
+function selectiveCleanupCounts() {
+  const counts = {};
+  Object.entries(SELECTIVE_CLEANUP_SCOPES).forEach(([id, scope]) => {
+    counts[id] = Number(queryOne(scope.countSql)?.count || 0);
+  });
+  return counts;
+}
+
+function createSelectiveCleanupSnapshot(categoryId) {
+  if (!dataRoot || !dbPath || !fs.existsSync(dbPath)) return null;
+  const backupDir = ensureDirectory(path.join(dataRoot, 'backup', 'limpeza-seletiva'));
+  const stamp = makeBackupStamp();
+  const filename = `antes-da-limpeza-${categoryId}-${stamp}.db`;
+  const destination = path.join(backupDir, filename);
+  saveDb();
+  fs.copyFileSync(dbPath, destination);
+  return destination;
+}
+
+ipcMain.handle('data-selective-counts', () => {
+  try {
+    return { success: true, counts: selectiveCleanupCounts() };
+  } catch (error) {
+    return { success: false, error: error.message || 'Não foi possível contar os dados.' };
+  }
+});
+
+ipcMain.handle('data-selective-clear', (event, categoryId) => {
+  const id = String(categoryId || '').trim();
+  const scope = SELECTIVE_CLEANUP_SCOPES[id];
+  if (!scope) return { success: false, error: 'Categoria de limpeza inválida.' };
+  try {
+    const before = Number(queryOne(scope.countSql)?.count || 0);
+    const snapshotPath = createSelectiveCleanupSnapshot(id);
+    db.run('BEGIN');
+    db.run(scope.clearSql);
+    db.run('COMMIT');
+    saveDb();
+    return { success: true, categoryId: id, before, after: Number(queryOne(scope.countSql)?.count || 0), snapshotPath };
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch { /* rollback best effort */ }
+    return { success: false, error: error.message || 'Não foi possível limpar os dados selecionados.' };
+  }
+});
+
 ipcMain.handle('data-get-info', () => dataInfo());
 
 ipcMain.handle('data-open-folder', async () => {
@@ -2579,6 +2751,9 @@ ipcMain.handle('data-import-full', async () => {
       ensureDirectory(path.dirname(targetDatabase));
       fs.copyFileSync(sourceDatabase, targetDatabase);
       databaseRestored = true;
+      // O objeto `db` atual ainda contém o snapshot anterior. Até o reinício,
+      // nenhuma rotina pode exportá-lo novamente sobre o banco restaurado.
+      databaseRestartRequired = true;
     }
   }
   return { success: true, filePath, backup: parsed, databaseRestored, pendingRestart: databaseRestored };
@@ -2596,7 +2771,10 @@ ipcMain.handle('mission-monitor-choose-log', async () => {
 });
 
 ipcMain.handle('mission-monitor-start', async (_event, logPath) => {
-  return getMissionLogWatcher().start(logPath);
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.start.received]', { logPath, type: typeof logPath });
+  const status = normalizeMissionMonitorStatus(await getMissionLogWatcher().start(logPath));
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.start.return]', { logPath: status.logPath, running: status.running, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  return status;
 });
 
 ipcMain.handle('mission-monitor-stop', async () => {
@@ -2605,10 +2783,69 @@ ipcMain.handle('mission-monitor-stop', async () => {
 });
 
 ipcMain.handle('mission-monitor-status', () => {
-  return missionLogWatcher ? missionLogWatcher.status() : { running: false, logPath: null, channel: 'UNKNOWN', activeMissions: [], recentEvents: [] };
+  const status = normalizeMissionMonitorStatus(missionLogWatcher ? missionLogWatcher.status() : { running: false, logPath: null, channel: 'UNKNOWN', activeMissions: [] });
+  if (ENABLE_MISSION_MONITOR_DEBUG) console.info('[MissionAutoMonitor][main][ipc.status.return]', { running: status.running, logPath: status.logPath, phase: status.debug.phase, fileExists: status.debug.fileExists, readCount: status.debug.readCount, activeCount: status.debug.activeCount, statusShape: status.debug.statusShape, legacyStatusShape: status.debug.legacyStatusShape, watcherVersion: status.debug.watcherVersion });
+  return status;
+});
+
+// ── Servidor Mobile local ───────────────────────────────────────────────────────
+ipcMain.on('mobile-server-action-response', (event, message = {}) => {
+  try { assertTrustedRenderer(event); } catch { return; }
+  const pending = pendingMobileRendererActions.get(message.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingMobileRendererActions.delete(message.requestId);
+  pending.resolve(message.result || { success: false, error: 'Resposta mobile inválida.' });
+});
+
+ipcMain.handle('mobile-server-sync-state', (event, payload = {}) => {
+  assertTrustedRenderer(event);
+  const source = payload && typeof payload === 'object' ? payload : {};
+  mobileRendererState = {
+    wikeloMissions: Array.isArray(source.wikeloMissions) ? source.wikeloMissions.slice(0, 500) : [],
+    missions: Array.isArray(source.missions) ? source.missions.slice(0, 500) : [],
+    uexItems: Array.isArray(source.uexItems) ? source.uexItems.slice(0, 500) : [],
+    alerts: Array.isArray(source.alerts) ? source.alerts.slice(0, 500) : [],
+    blueprints: Array.isArray(source.blueprints) ? source.blueprints.slice(0, 500) : [],
+    materials: Array.isArray(source.materials) ? source.materials.slice(0, 500) : [],
+    mining: Array.isArray(source.mining) ? source.mining.slice(0, 500) : [],
+    miningGroup: Array.isArray(source.miningGroup) ? source.miningGroup.slice(0, 500) : [],
+    oreVault: Array.isArray(source.oreVault) ? source.oreVault.slice(0, 500) : [],
+    hangar: Array.isArray(source.hangar) ? source.hangar.slice(0, 500) : [],
+    clanVault: Array.isArray(source.clanVault) ? source.clanVault.slice(0, 500) : [],
+    notes: Array.isArray(source.notes) ? source.notes.slice(0, 500) : [],
+    syncedAt: new Date().toISOString(),
+  };
+  mobileServer?.setRendererState?.(mobileRendererState);
+  return { success: true, syncedAt: mobileRendererState.syncedAt };
+});
+
+ipcMain.handle('mobile-server-start', async (event, requestedPort) => {
+  assertTrustedRenderer(event);
+  if (!mobileServer) return { success: false, error: 'Servidor mobile ainda não foi inicializado.' };
+  try { return { success: true, ...await mobileServer.start(requestedPort || MOBILE_DEFAULT_PORT) }; }
+  catch (error) { return { success: false, error: error.code === 'EADDRINUSE' ? `A porta ${requestedPort || MOBILE_DEFAULT_PORT} já está em uso.` : (error.message || 'Não foi possível iniciar o servidor mobile.') }; }
+});
+ipcMain.handle('mobile-server-stop', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...mobileServer?.stop?.() };
+});
+ipcMain.handle('mobile-server-status', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...(mobileServer?.status?.() || { running: false, port: null, urls: [] }) };
+});
+ipcMain.handle('mobile-server-rotate-token', (event) => {
+  assertTrustedRenderer(event);
+  return { success: true, ...(mobileServer?.rotateToken?.() || { running: false, port: null, urls: [] }) };
 });
 
 // ── Window ────────────────────────────────────────────────────────────────────
+function resolveAppIcon() {
+  if (process.platform === 'win32') return path.join(__dirname, '../electron-icons/icon.ico');
+  if (process.platform === 'darwin') return path.join(__dirname, '../electron-icons/icon.icns');
+  return path.join(__dirname, '../electron-icons/icon.png');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width:1440,height:900,minWidth:1100,minHeight:700,
@@ -2620,7 +2857,7 @@ function createWindow() {
       preload:path.join(__dirname,'preload.js')
     },
     backgroundColor:'#05070c',show:false,
-    // icon: resolveAppIcon(),   ← comentada temporariamente
+    icon: resolveAppIcon(),
   });
 
   const isInternalNavigation = (url) => {
@@ -2651,8 +2888,34 @@ function createWindow() {
 app.whenReady().then(async()=>{
   await configureDataDirectory();
   await initDatabase();
+  mobileServer = createMobileServer({
+    queryAll,
+    queryOne,
+    getDataRoot: () => dataRoot,
+    getRendererState: () => mobileRendererState,
+    requestRendererAction: requestMobileRendererAction,
+    updateInventoryQuantity: async (id, payload = {}) => {
+      const current = queryOne('SELECT quantity FROM inventory_items WHERE id=?', [id]);
+      if (!current) return { success: false, error: 'Item de inventário não encontrado.' };
+      const requested = payload.quantity !== undefined ? Number(payload.quantity) : Number(current.quantity) + Number(payload.delta || 0);
+      const next = Math.max(0, Number.isFinite(requested) ? requested : Number(current.quantity) || 0);
+      db.run('UPDATE inventory_items SET quantity=?, updated_at=datetime(\'now\') WHERE id=?', [next, id]);
+      saveDb();
+      return { success: true, id, quantity: next };
+    },
+    updateArmorQuantity: async (id, payload = {}) => {
+      const current = queryOne('SELECT quantity FROM user_pieces WHERE piece_id=?', [id]);
+      if (!current) return { success: false, error: 'Peça de armadura não encontrada.' };
+      const requested = payload.quantity !== undefined ? Number(payload.quantity) : Number(current.quantity) + Number(payload.delta || 0);
+      const next = Math.max(0, Number.isFinite(requested) ? Math.floor(requested) : Number(current.quantity) || 0);
+      db.run('UPDATE user_pieces SET quantity=?, owned=?, obtained_date=? WHERE piece_id=?', [next, next > 0 ? 1 : 0, next > 0 ? new Date().toISOString() : null, id]);
+      saveDb();
+      return { success: true, pieceId: id, quantity: next, owned: next > 0 ? 1 : 0 };
+    },
+    getVersion: () => app.getVersion(),
+  });
   createWindow();
   app.on('activate',()=>{ if(!BrowserWindow.getAllWindows().length) createWindow(); });
 });
-app.on('before-quit',()=>{ try { saveDb(); } catch (_) {} try { if (missionLogWatcher) missionLogWatcher.stop(); } catch (_) {} });
+app.on('before-quit',()=>{ try { saveDb(); } catch (_) {} try { if (missionLogWatcher) missionLogWatcher.stop(); } catch (_) {} try { if (mobileServer) mobileServer.stop(); } catch (_) {} });
 app.on('window-all-closed',()=>{ app.quit(); });

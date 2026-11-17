@@ -13,6 +13,7 @@ import { buildUexListingUrl } from '../data/uexNegotiations';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
 import { loadVault, consumeVaultEntries } from '../data/oreVault';
+import { mergeBulkImportCatalog } from '../data/uexImportBatch';
 import { CARGO_UNITS, isCargoUnit, areCargoUnitsCompatible, normalizeCargoUnit, cargoEquivalentTotal, toCargoBase } from '../data/cargoUnits';
 import { recommendDiscount, extractActiveCompetitorPrices } from '../data/uexDiscount';
 
@@ -159,7 +160,8 @@ function getInventoryBinding(item) {
   ];
   const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
   const armorPieceIds = [...new Set((Array.isArray(raw.armorPieceIds) ? raw.armorPieceIds : Array.isArray(raw.armor_piece_ids) ? raw.armor_piece_ids : []).map(id => String(id || '').trim()).filter(Boolean))];
-  return { locationKeys, armorPieceIds, linked: locationKeys.length > 0 || armorPieceIds.length > 0, updatedAt: raw.updatedAt || null };
+  const armorSetIds = [...new Set((Array.isArray(raw.armorSetIds) ? raw.armorSetIds : Array.isArray(raw.armor_set_ids) ? raw.armor_set_ids : []).map(id => String(id || '').trim()).filter(Boolean))];
+  return { locationKeys, armorPieceIds, armorSetIds, linked: locationKeys.length > 0 || armorPieceIds.length > 0 || armorSetIds.length > 0, updatedAt: raw.updatedAt || null };
 }
 
 function getVaultBinding(item) {
@@ -296,21 +298,102 @@ function VaultStockLinkModal({ listing, vaultEntries, onSave, onClose }) {
   );
 }
 
-function getArmorCollectionMatches(listing, armorSets = []) {
+function armorPieceQuantity(piece) {
+  return piece?.owned ? Math.max(0, Number(piece.quantity ?? 1) || 0) : 0;
+}
+
+export function buildInventoryStockIndex(inventoryItems = []) {
+  const index = new Map();
+  (Array.isArray(inventoryItems) ? inventoryItems : []).forEach(entry => {
+    const key = normalizeInventoryName(entry?.name);
+    if (!key) return;
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(entry);
+  });
+  return index;
+}
+
+export function buildArmorStockIndex(armorSets = []) {
+  const piecesByName = new Map();
+  const setsByName = new Map();
+  (Array.isArray(armorSets) ? armorSets : []).forEach(set => {
+    const pieces = (set.pieces || []).map(piece => ({ ...piece, armor_set_id: set.id, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' }));
+    pieces.forEach(piece => {
+      const key = normalizeInventoryName(piece.piece_name);
+      if (!key) return;
+      if (!piecesByName.has(key)) piecesByName.set(key, []);
+      piecesByName.get(key).push(piece);
+    });
+    getArmorSetNameCandidates(set).forEach(key => {
+      if (!setsByName.has(key)) setsByName.set(key, []);
+      setsByName.get(key).push({ ...set, completeQuantity: getCompleteArmorSetQuantity(set), armorMatchName: key });
+    });
+  });
+  return { piecesByName, setsByName };
+}
+
+function getArmorCollectionMatches(listing, armorSets = [], armorIndex = null) {
   const target = normalizeInventoryName(listing?.title);
   if (!target) return [];
-  return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
+  if (armorIndex?.piecesByName instanceof Map) return armorIndex.piecesByName.get(target) || [];
+  return (Array.isArray(armorSets) ? armorSets : []).flatMap(set => (set.pieces || []).map(piece => ({ ...piece, armor_set_id: set.id, armor_set_name: set.base_name || set.set_name || '', armor_variant_name: set.variant_name || '' })))
     .filter(piece => normalizeInventoryName(piece.piece_name) === target);
 }
 
-function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = []) {
+function getCompleteArmorSetQuantity(set) {
+  const pieces = Array.isArray(set?.pieces) ? set.pieces : [];
+  if (!pieces.length) return 0;
+  const byType = new Map();
+  pieces.forEach(piece => {
+    const type = String(piece.piece_type || piece.type || piece.id);
+    const current = byType.get(type);
+    const quantity = armorPieceQuantity(piece);
+    byType.set(type, current === undefined ? quantity : Math.min(current, quantity));
+  });
+  return Math.max(0, Math.min(...byType.values()));
+}
+
+export function normalizeArmorSetListingName(value) {
+  let normalized = normalizeInventoryName(value);
+  // A UEX costuma acrescentar um descritor comercial ao título do anúncio.
+  // Esses termos não devem obrigar o usuário a renomear o set na coleção.
+  normalized = normalized
+    .replace(/\s+(?:suit\s+set|armor\s+set|armour\s+set|complete\s+set|set\s+completo)$/i, '')
+    .replace(/\s+(?:suit|armor|armour)$/i, '')
+    .trim();
+  return normalized;
+}
+
+export function getArmorSetNameCandidates(set) {
+  const base = String(set?.base_name || set?.set_name || '').trim();
+  const variant = String(set?.variant_name || '').trim();
+  const candidates = [base, set?.set_name];
+  if (variant && normalizeArmorSetListingName(variant) !== 'base') candidates.push(`${base} ${variant}`);
+  return [...new Set(candidates.map(normalizeArmorSetListingName).filter(Boolean))];
+}
+
+export function getArmorSetOptions(listing, armorSets = [], armorIndex = null) {
+  const target = normalizeArmorSetListingName(listing?.title);
+  if (!target) return [];
+  if (armorIndex?.setsByName instanceof Map) return armorIndex.setsByName.get(target) || [];
+  return (Array.isArray(armorSets) ? armorSets : [])
+    .map(set => ({ ...set, completeQuantity: getCompleteArmorSetQuantity(set), armorMatchName: getArmorSetNameCandidates(set).find(candidate => candidate === target) }))
+    .filter(set => Boolean(set.armorMatchName));
+}
+
+function getInventoryStockSummary(listing, inventoryItems = [], managedLocations = [], armorSets = [], armorIndex = null, inventoryIndex = null) {
   const name = normalizeInventoryName(listing?.title);
-  const matches = (Array.isArray(inventoryItems) ? inventoryItems : [])
-    .filter(entry => normalizeInventoryName(entry?.name) === name);
+  const matches = inventoryIndex instanceof Map
+    ? (inventoryIndex.get(name) || [])
+    : (Array.isArray(inventoryItems) ? inventoryItems : []).filter(entry => normalizeInventoryName(entry?.name) === name);
   const binding = getInventoryBinding(listing);
-  const armorMatches = getArmorCollectionMatches(listing, armorSets);
+  const armorMatches = getArmorCollectionMatches(listing, armorSets, armorIndex);
+  const armorSetOptions = getArmorSetOptions(listing, armorSets, armorIndex);
   const linkedArmor = armorMatches.filter(piece => binding.armorPieceIds.includes(String(piece.id)));
-  const armorQuantity = linkedArmor.reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
+  const linkedSets = armorSetOptions.filter(set => binding.armorSetIds.includes(String(set.id)));
+  const armorPieceQuantityTotal = linkedArmor.reduce((total, piece) => total + armorPieceQuantity(piece), 0);
+  const armorSetQuantity = linkedSets.reduce((total, set) => total + set.completeQuantity, 0);
+  const armorQuantity = armorPieceQuantityTotal + armorSetQuantity;
   const locationMap = new Map((managedLocations || []).map(location => [location.key, location]));
   const locationRows = [...new Map(matches.map(entry => {
     const key = inventoryLocationKey(entry);
@@ -349,11 +432,15 @@ function getInventoryStockSummary(listing, inventoryItems = [], managedLocations
     name,
     matches,
     armorMatches,
+    armorSetOptions,
     linkedArmor,
+    linkedSets,
+    armorPieceQuantityTotal,
+    armorSetQuantity,
     armorQuantity,
     locationRows,
     binding,
-    hasMatch: matches.length > 0 || armorMatches.length > 0,
+    hasMatch: matches.length > 0 || armorMatches.length > 0 || armorSetOptions.length > 0,
     isLinked: binding.linked,
     allQuantity,
     allReservedQuantity,
@@ -396,6 +483,55 @@ function sameRenewedListing(previous, fresh) {
   const previousState = listingExpiryState(previous);
   const freshState = listingExpiryState(fresh);
   return previousState.status === 'expired' && freshState.status !== 'expired';
+}
+
+// A API pode devolver um novo ID ao renovar um anúncio. Registros antigos
+// também podem não possuir source_listing_id. Sem esta chave, o catálogo local
+// exibe duas vezes o mesmo anúncio, normalmente com quantidades listadas
+// diferentes (uma cópia antiga e outra atualizada).
+function catalogListingIdentity(item = {}) {
+  const sourceId = String(item.source_listing_id || item.listing_id || item.id || '').trim();
+  if (sourceId) return `source-id:${sourceId}`;
+  const sourceSlug = normalizedListingValue(item.source_listing_slug || item.listing_slug || item.slug);
+  if (sourceSlug) return `source-slug:${sourceSlug}`;
+  const title = normalizedListingValue(item.title || item.name);
+  const location = normalizedListingValue(item.location);
+  const quality = normalizedListingValue(item.quality);
+  if (title) return `item:${title}|${location}|${quality}`;
+  return `source-id:${sourceId}`;
+}
+
+function deduplicateCatalog(catalog = []) {
+  const result = [];
+  const indexByIdentity = new Map();
+  for (const item of Array.isArray(catalog) ? catalog : []) {
+    const identity = catalogListingIdentity(item);
+    const previousIndex = indexByIdentity.get(identity);
+    if (previousIndex === undefined) {
+      indexByIdentity.set(identity, result.length);
+      result.push(item);
+      continue;
+    }
+
+    const previous = result[previousIndex];
+    const previousStock = Math.max(0, Number(previous?.in_stock) || 0);
+    const currentStock = Math.max(0, Number(item?.in_stock) || 0);
+    // Mantém campos personalizados do primeiro cadastro e os dados mais
+    // recentes do anúncio. A maior quantidade evita perder estoque listado
+    // quando a cópia antiga foi atualizada após uma venda parcial.
+    result[previousIndex] = {
+      ...previous,
+      ...item,
+      id: previous.id ?? item.id,
+      in_stock: Math.max(previousStock, currentStock),
+      internal_stock: Math.max(Number(previous?.internal_stock) || 0, Number(item?.internal_stock) || 0),
+      inventory_binding: item.inventory_binding || previous.inventory_binding,
+      vault_binding: item.vault_binding || previous.vault_binding,
+      notes: previous.notes || item.notes || '',
+      imported_at: previous.imported_at || item.imported_at,
+    };
+  }
+  return result;
 }
 
 // Detectar qualidade no título: "Caranite 716 Q" → 716
@@ -459,10 +595,12 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
   const summary = getInventoryStockSummary(listing, inventoryItems, managedLocations, armorSets);
   const [selectedKeys, setSelectedKeys] = useState(() => summary.binding.locationKeys);
   const [selectedArmorIds, setSelectedArmorIds] = useState(() => summary.binding.armorPieceIds);
+  const [selectedArmorSetIds, setSelectedArmorSetIds] = useState(() => summary.binding.armorSetIds);
   const selectedQuantity = summary.locationRows
     .filter(row => selectedKeys.includes(row.key))
     .reduce((total, row) => total + row.quantity, 0);
-  const selectedArmorQuantity = summary.armorMatches.filter(piece => selectedArmorIds.includes(String(piece.id))).reduce((total, piece) => total + Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0), 0);
+  const selectedArmorQuantity = summary.armorMatches.filter(piece => selectedArmorIds.includes(String(piece.id))).reduce((total, piece) => total + armorPieceQuantity(piece), 0);
+  const selectedArmorSetQuantity = summary.armorSetOptions.filter(set => selectedArmorSetIds.includes(String(set.id))).reduce((total, set) => total + set.completeQuantity, 0);
 
   function toggleLocation(key) {
     setSelectedKeys(previous => previous.includes(key)
@@ -475,8 +613,13 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
     setSelectedArmorIds(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key]);
   }
 
+  function toggleArmorSet(id) {
+    const key = String(id);
+    setSelectedArmorSetIds(previous => previous.includes(key) ? previous.filter(value => value !== key) : [...previous, key]);
+  }
+
   function handleSave() {
-    onSave(selectedKeys.length || selectedArmorIds.length ? { locationKeys: selectedKeys, armorPieceIds: selectedArmorIds, updatedAt: new Date().toISOString() } : null);
+    onSave(selectedKeys.length || selectedArmorIds.length || selectedArmorSetIds.length ? { locationKeys: selectedKeys, armorPieceIds: selectedArmorIds, armorSetIds: selectedArmorSetIds, updatedAt: new Date().toISOString() } : null);
   }
 
   return (
@@ -497,11 +640,21 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
           </div>
         ) : (
           <>
-            {summary.armorMatches.length > 0 && (
+            {(summary.armorMatches.length > 0 || summary.armorSetOptions.length > 0) && (
               <div style={{ marginBottom:12, padding:10, border:'1px solid rgba(167,139,250,0.28)', background:'rgba(167,139,250,0.06)', borderRadius:7 }}>
                 <div style={{ color:'var(--accent-purple)', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Coleção de armaduras</div>
-                <div style={{ color:'var(--text-muted)', fontSize:10, marginBottom:8 }}>Selecione as peças que devem alimentar este anúncio. A quantidade é lida diretamente da sua coleção.</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                <div style={{ color:'var(--text-muted)', fontSize:10, marginBottom:8 }}>Escolha peças avulsas ou um set completo. A quantidade é lida diretamente da sua coleção e a baixa será feita somente após a venda.</div>
+                {summary.armorSetOptions.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:5, marginBottom:8 }}>
+                  {summary.armorSetOptions.map(set => {
+                    const selected = selectedArmorSetIds.includes(String(set.id));
+                    return <label key={`set-${set.id}`} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', border:`1px solid ${selected ? 'rgba(52,211,153,0.48)' : 'var(--border-subtle)'}`, background:selected ? 'rgba(52,211,153,0.1)' : 'rgba(255,255,255,0.02)', borderRadius:6, cursor:set.completeQuantity > 0 ? 'pointer' : 'not-allowed', opacity:set.completeQuantity > 0 ? 1 : 0.55 }}>
+                      <input type="checkbox" checked={selected} disabled={set.completeQuantity <= 0} onChange={() => toggleArmorSet(set.id)} />
+                      <span style={{ flex:1, minWidth:0, color:'var(--text-secondary)', fontSize:11 }}><strong style={{ color:'var(--accent-green)' }}>SET COMPLETO</strong> · {set.base_name || set.set_name}{set.variant_name && set.variant_name !== 'Base' ? ` · ${set.variant_name}` : ''}<small style={{ display:'block', marginTop:3, color:'var(--text-muted)', fontSize:9 }}>Correspondência automática: o sufixo descritivo do anúncio foi ignorado.</small></span>
+                      <strong style={{ color:'var(--accent-green)', fontFamily:'Share Tech Mono,monospace', fontSize:11 }}>{set.completeQuantity} set{set.completeQuantity === 1 ? '' : 's'}</strong>
+                    </label>;
+                  })}
+                </div>}
+                {summary.armorMatches.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
                   {summary.armorMatches.map(piece => {
                     const quantity = Math.max(0, Number(piece.quantity ?? (piece.owned ? 1 : 0)) || 0);
                     const selected = selectedArmorIds.includes(String(piece.id));
@@ -511,8 +664,8 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
                       <strong style={{ color:'var(--accent-purple)', fontFamily:'Share Tech Mono,monospace', fontSize:11 }}>{quantity} un</strong>
                     </label>;
                   })}
-                </div>
-                <div style={{ marginTop:8, color:'var(--text-secondary)', fontSize:10 }}>Coleção selecionada: <strong style={{ color:'var(--accent-purple)' }}>{selectedArmorQuantity} unidades</strong></div>
+                </div>}
+                <div style={{ marginTop:8, color:'var(--text-secondary)', fontSize:10 }}>Coleção selecionada: <strong style={{ color:'var(--accent-purple)' }}>{selectedArmorQuantity} peças + {selectedArmorSetQuantity} sets completos</strong></div>
               </div>
             )}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7, marginBottom:9 }}>
@@ -522,7 +675,7 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
               </div>
               <div style={{ padding:'8px 10px', border:'1px solid rgba(56,189,248,0.18)', background:'rgba(56,189,248,0.05)', borderRadius:7 }}>
                 <div style={{ color:'var(--text-muted)', fontSize:10 }}>Quantidade selecionada</div>
-                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity + selectedArmorQuantity} unidade{selectedQuantity + selectedArmorQuantity === 1 ? '' : 's'}</strong>
+                <strong style={{ color:'var(--accent-primary)', fontFamily:'Share Tech Mono,monospace', fontSize:13 }}>{selectedQuantity + selectedArmorQuantity + selectedArmorSetQuantity} unidade{selectedQuantity + selectedArmorQuantity + selectedArmorSetQuantity === 1 ? '' : 's'}</strong>
               </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -550,7 +703,7 @@ function InventoryStockLinkModal({ listing, inventoryItems, managedLocations, ar
 }
 
 // ── Modal de confirmação / edição de listagem importada ───────────────────────
-function ImportConfirmModal({ listing, onConfirm, onSkip }) {
+function ImportConfirmModal({ listing, queueLength = 0, bulkImporting = false, onConfirm, onSkip, onAddAll }) {
   const suggestedQ = extractQualityFromTitle(listing.title || '');
   const [title,    setTitle]    = useState(listing.title || '');
   const [price,    setPrice]    = useState(String(listing.price || 0));
@@ -628,9 +781,12 @@ function ImportConfirmModal({ listing, onConfirm, onSkip }) {
         </div>
 
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onSkip} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
+          <button onClick={onSkip} disabled={bulkImporting} style={{ padding:'7px 14px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:6, color:'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:bulkImporting?'not-allowed':'pointer', textTransform:'uppercase', opacity:bulkImporting ? 0.5 : 1 }}>
             Pular
           </button>
+          {queueLength > 1 && <button onClick={onAddAll} disabled={bulkImporting} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 14px', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.35)', borderRadius:6, color:'var(--accent-green)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:800, cursor:bulkImporting?'wait':'pointer', textTransform:'uppercase', opacity:bulkImporting ? 0.7 : 1 }}>
+            <CheckCircle2 size={12}/> {bulkImporting ? 'Adicionando...' : `Adicionar todos (${queueLength})`}
+          </button>}
           <button onClick={handleConfirm} style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:6, color:'var(--accent-primary)', fontFamily:'"Exo 2",sans-serif', fontSize:11, fontWeight:700, cursor:'pointer', textTransform:'uppercase' }}>
             <CheckCircle2 size={12}/> Confirmar e Adicionar
           </button>
@@ -826,12 +982,26 @@ function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySu
       borderRadius:8, overflow:'hidden', marginBottom:6,
     }}>
       {/* Header row */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 13px', cursor:'pointer' }} onClick={() => setExpanded(!expanded)}>
+      <div
+        className="uex-catalog-item-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-controls={`uex-item-details-${item.id}`}
+        onClick={() => setExpanded(value => !value)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setExpanded(value => !value);
+          }
+        }}
+        style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'10px 13px', cursor:'pointer', textAlign:'left', color:'inherit', outline:'none' }}
+      >
         <Package size={14} style={{ color:'var(--accent-primary)', flexShrink:0 }}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', marginBottom:2 }}>
             <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
-            {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
+            {item.quality !== null && item.quality !== undefined && String(item.quality).trim() !== '' && Number(item.quality) > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.3)', fontWeight:700 }}>★ {item.quality}</span>}
             {suggestedQ && !item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.06)', color:'rgba(255,200,0,0.7)', border:'1px solid rgba(255,200,0,0.2)', fontStyle:'italic' }}>Q sugerida: {suggestedQ}</span>}
             {isExpired ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.15)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.35)', fontWeight:700 }}>⚠ ANÚNCIO EXPIRADO</span>
               : item.is_sold_out ? <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(251,113,133,0.1)', color:'var(--accent-red)', border:'1px solid rgba(251,113,133,0.3)', fontWeight:700 }}>ESGOTADO</span>
@@ -879,7 +1049,7 @@ function CatalogItemCard({ item, sales, itemSales: indexedItemSales, inventorySu
 
       {/* Expanded: detalhes + mercado + estoque interno */}
       {expanded && (
-        <div style={{ padding:'8px 38px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
+        <div id={`uex-item-details-${item.id}`} style={{ padding:'8px 38px 14px', borderTop:'1px solid var(--border-subtle)', background:'rgba(0,0,0,0.08)' }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
 
             {/* Coluna 1: Dados do item + estoque interno */}
@@ -1075,7 +1245,9 @@ function MyItemsTab({ catalog, sales, trendData, trendDataFetchedAt, inventoryIt
   const [sortBy, setSortBy] = useState('date');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
-  const stockById = useMemo(() => new Map(catalog.map(item => [String(item.id), getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets)])), [catalog, inventoryItems, managedLocations, armorSets]);
+  const armorStockIndex = useMemo(() => buildArmorStockIndex(armorSets), [armorSets]);
+  const inventoryStockIndex = useMemo(() => buildInventoryStockIndex(inventoryItems), [inventoryItems]);
+  const stockById = useMemo(() => new Map(catalog.map(item => [String(item.id), getInventoryStockSummary(item, inventoryItems, managedLocations, armorSets, armorStockIndex, inventoryStockIndex)])), [catalog, inventoryItems, managedLocations, armorSets, armorStockIndex, inventoryStockIndex]);
   const vaultById = useMemo(() => new Map(catalog.map(item => [String(item.id), getVaultStockSummary(item, vaultEntries)])), [catalog, vaultEntries]);
   const expiryById = useMemo(() => new Map(catalog.map(item => [String(item.id), listingExpiryState(item)])), [catalog]);
   const salesByTitle = useMemo(() => {
@@ -1476,7 +1648,7 @@ function SalesTab({ sales, onDelete, onUpdate }) {
                   <div style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</div>
                   <div style={{ fontSize:10, color:'var(--text-muted)' }}>
                     {ptDateTime(s.date)}
-                    {s.quality && <span style={{ marginLeft:8, color:'var(--accent-gold)' }}>★ {s.quality}</span>}
+                    {s.quality !== null && s.quality !== undefined && String(s.quality).trim() !== '' && Number(s.quality) > 0 && <span style={{ marginLeft:8, color:'var(--accent-gold)' }}>★ {s.quality}</span>}
                     {s.buyer && <span style={{ marginLeft:8 }}>→ {s.buyer}</span>}
                     {s.notes && <span style={{ marginLeft:8, fontStyle:'italic' }}>{s.notes}</span>}
                   </div>
@@ -1693,7 +1865,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4, flexWrap:'wrap' }}>
                       <span style={{ fontFamily:'"Exo 2",sans-serif', fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.title}</span>
-                      {item.quality && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
+                      {item.quality !== null && item.quality !== undefined && String(item.quality).trim() !== '' && Number(item.quality) > 0 && <span style={{ fontSize:9, padding:'1px 5px', borderRadius:3, background:'rgba(255,200,0,0.1)', color:'var(--accent-gold)', border:'1px solid rgba(255,200,0,0.25)', fontWeight:700 }}>★ {item.quality}</span>}
                       {variation !== null && (
                         <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:10, color: variation>=0?'var(--accent-green)':'var(--accent-red)', fontWeight:700 }}>
                           {variation >= 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
@@ -1790,8 +1962,8 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
 }
 
 // ── Página Principal ──────────────────────────────────────────────────────────
-export default function UexSalesPage({ armorSets = [] }) {
-  const [catalog,   setCatalog]   = useState(() => loadCatalog());
+export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onConsumeInventoryStock }) {
+  const [catalog,   setCatalog]   = useState(() => deduplicateCatalog(loadCatalog()));
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
   const [trendDataFetchedAt, setTrendDataFetchedAt] = useState(null);
@@ -1800,6 +1972,7 @@ export default function UexSalesPage({ armorSets = [] }) {
   const [loading,   setLoading]   = useState(false);
   const [syncMsg,   setSyncMsg]   = useState('');
   const [importQueue, setImportQueue] = useState([]); // listagens aguardando confirmação
+  const [bulkImporting, setBulkImporting] = useState(false);
   const [showManualSale, setShowManualSale] = useState(false);
   const [showEsgotadoForm, setShowEsgotadoForm] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username);
@@ -1814,6 +1987,16 @@ export default function UexSalesPage({ armorSets = [] }) {
 
   // Sincronizar refs com state
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+
+  useEffect(() => {
+    const stored = loadCatalog();
+    const normalized = deduplicateCatalog(stored);
+    if (normalized.length !== stored.length) {
+      catalogRef.current = normalized;
+      setCatalog(normalized);
+      saveCatalog(normalized);
+    }
+  }, []);
 
   const loadInventoryForStock = useCallback(async () => {
     try {
@@ -1855,7 +2038,7 @@ export default function UexSalesPage({ armorSets = [] }) {
 
   useEffect(() => {
     const refreshFromNegotiation = () => {
-      const nextCatalog = loadCatalog();
+      const nextCatalog = deduplicateCatalog(loadCatalog());
       const nextSales = loadSales();
       catalogRef.current = nextCatalog;
       setCatalog(nextCatalog);
@@ -1865,7 +2048,12 @@ export default function UexSalesPage({ armorSets = [] }) {
     return () => window.removeEventListener('sc_uex_sales_updated', refreshFromNegotiation);
   }, []);
 
-  function refreshCatalog(d) { catalogRef.current = d; setCatalog(d); saveCatalog(d); }
+  function refreshCatalog(d) {
+    const normalized = deduplicateCatalog(d);
+    catalogRef.current = normalized;
+    setCatalog(normalized);
+    saveCatalog(normalized);
+  }
   function refreshSales(d) {
     setSales(d);
     saveSales(d);
@@ -1877,13 +2065,23 @@ export default function UexSalesPage({ armorSets = [] }) {
     if (!username.trim()) { setSyncMsg('⚠ Configure seu IGN da UEX primeiro.'); return; }
     setLoading(true); setSyncMsg('Buscando seus anúncios na UEX...');
     try {
-      const data = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
+      const response = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
+      // Algumas versões do endpoint entregam o array diretamente; outras o
+      // envolvem em data/listings. Normalizar aqui evita tratar uma resposta
+      // válida como vazia e descartar anúncios novos.
+      const data = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.listings)
+            ? response.listings
+            : [];
       if (!data || data.length === 0) { setSyncMsg('Nenhum anúncio encontrado para este username.'); setLoading(false); return; }
 
       // Usar catalogRef.current para leitura mais recente (evita closure stale).
       // A UEX pode criar um novo ID ao renovar o anúncio; por isso, depois de
       // tentar o ID, fazemos uma correspondência segura por título, local e qualidade.
-      const currentCatalog = catalogRef.current;
+      const currentCatalog = deduplicateCatalog(catalogRef.current);
       const unusedFreshIndexes = new Set(data.map((_, index) => index));
       const findFreshListing = cat => {
         let index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && cat.id !== null && cat.id !== undefined && fresh.id !== null && fresh.id !== undefined && String(fresh.id) === String(cat.id));
@@ -1924,10 +2122,13 @@ export default function UexSalesPage({ armorSets = [] }) {
       if (newListings.length === 0) {
         setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizado${updatedExisting.length!==1?'s':''}${renewedCount ? ` · ${renewedCount} anúncio${renewedCount!==1?'s':''} renovado${renewedCount!==1?'s':''} reconhecido${renewedCount!==1?'s':''}` : ''}.`);
       } else {
-        setSyncMsg(`${newListings.length} novo${newListings.length!==1?'s':''} anúncio${newListings.length!==1?'s':''} encontrado${newListings.length!==1?'s':''}. Confirme cada um...`);
-        // Guardar fila na ref E no state
-        importQueueRef.current = newListings;
-        setImportQueue([...newListings]);
+        // Sincronizar deve ser suficiente para persistir anúncios novos. A fila
+        // continua disponível para o fluxo antigo, mas não bloqueia a gravação.
+        const { entries, catalog: catalogWithNew } = mergeBulkImportCatalog(updatedExisting, newListings, new Date().toISOString());
+        refreshCatalog(catalogWithNew);
+        importQueueRef.current = [];
+        setImportQueue([]);
+        setSyncMsg(`✓ Catálogo atualizado. ${catalogWithNew.length} item${catalogWithNew.length !== 1 ? 's' : ''} sincronizado${catalogWithNew.length !== 1 ? 's' : ''}; ${entries.length} novo${entries.length !== 1 ? 's' : ''} anúncio${entries.length !== 1 ? 's' : ''} salvo${entries.length !== 1 ? 's' : ''}.`);
       }
       // A mesma ação de sincronização atualiza também o snapshot de mercado.
       // O endpoint da UEX possui cache próprio de aproximadamente uma hora.
@@ -1939,10 +2140,22 @@ export default function UexSalesPage({ armorSets = [] }) {
   }
 
   // ── Confirmação de import — usa ref para evitar closure stale ──
+  function handleImportAll() {
+    const queue = [...importQueueRef.current];
+    if (!queue.length || bulkImporting) return;
+    setBulkImporting(true);
+    const { entries, catalog: updatedCatalog } = mergeBulkImportCatalog(deduplicateCatalog(catalogRef.current), queue, new Date().toISOString());
+    refreshCatalog(updatedCatalog);
+    importQueueRef.current = [];
+    setImportQueue([]);
+    setBulkImporting(false);
+    setSyncMsg(`✓ ${entries.length} novo${entries.length !== 1 ? 's' : ''} anúncio${entries.length !== 1 ? 's' : ''} adicionado${entries.length !== 1 ? 's' : ''} em lote. Catálogo: ${updatedCatalog.length} item${updatedCatalog.length !== 1 ? 's' : ''}.`);
+  }
+
   function handleImportConfirm(listing) {
     // Adicionar ao catálogo usando ref (valor sempre atualizado)
     const entry = { ...listing, id: listing.id, internal_stock: listing.in_stock || 0, notes: listing.notes || '', imported_at: new Date().toISOString() };
-    const updatedCatalog = [...catalogRef.current, entry];
+    const updatedCatalog = [...deduplicateCatalog(catalogRef.current), entry];
     refreshCatalog(updatedCatalog);
 
     // Avançar fila pela ref
@@ -2020,8 +2233,9 @@ export default function UexSalesPage({ armorSets = [] }) {
     ];
     const locationKeys = [...new Set(candidates.map(key => String(key || '').trim()).filter(Boolean))];
     const armorPieceIds = [...new Set((Array.isArray(binding?.armorPieceIds) ? binding.armorPieceIds : []).map(id => String(id || '').trim()).filter(Boolean))];
-    const normalizedBinding = locationKeys.length || armorPieceIds.length
-      ? { locationKeys, armorPieceIds, updatedAt: binding?.updatedAt || new Date().toISOString() }
+    const armorSetIds = [...new Set((Array.isArray(binding?.armorSetIds) ? binding.armorSetIds : []).map(id => String(id || '').trim()).filter(Boolean))];
+    const normalizedBinding = locationKeys.length || armorPieceIds.length || armorSetIds.length
+      ? { locationKeys, armorPieceIds, armorSetIds, updatedAt: binding?.updatedAt || new Date().toISOString() }
       : null;
     const updated = catalogRef.current.map(item => item.id === itemId
       ? { ...item, inventory_binding: normalizedBinding }
@@ -2033,19 +2247,43 @@ export default function UexSalesPage({ armorSets = [] }) {
   function handleDeleteItem(itemId) {
     refreshCatalog(catalog.filter(i => i.id !== itemId));
   }
-  function handleManualSale(sale) {
+  async function consumeBoundArmor(target, quantity) {
+    if (!target || !onConsumeArmorStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false, status:'not_linked' };
+    const binding = getInventoryBinding(target);
+    if (!binding.armorPieceIds.length && !binding.armorSetIds.length) return { success:true, consumed:false, status:'not_linked' };
+    return onConsumeArmorStock({ pieceIds: binding.armorPieceIds, setIds: binding.armorSetIds, quantity: Number(quantity) });
+  }
+
+  async function consumeBoundInventory(target, quantity) {
+    if (!target || !onConsumeInventoryStock || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return { success:true, consumed:false, status:'not_linked' };
+    const binding = getInventoryBinding(target);
+    if (!binding.locationKeys.length) return { success:true, consumed:false, status:'not_linked' };
+    return onConsumeInventoryStock({ name: target.title, locationKeys: binding.locationKeys, quantity: Number(quantity), listing: target });
+  }
+
+  async function handleManualSale(sale) {
     let nextSale = sale;
     let updatedCatalog = catalogRef.current;
-    const boundCandidates = updatedCatalog.filter(item => normalizeInventoryName(item.title) === normalizeInventoryName(sale.title) && item.vault_binding?.entryIds?.length);
+    const boundCandidates = updatedCatalog.filter(item => {
+      if (normalizeInventoryName(item.title) !== normalizeInventoryName(sale.title)) return false;
+      const vault = getVaultBinding(item);
+      const inventory = getInventoryBinding(item);
+      return vault.linked || inventory.linked;
+    });
     const target = sale.listingId
       ? updatedCatalog.find(item => String(item.id) === String(sale.listingId))
       : boundCandidates.length === 1 ? boundCandidates[0] : null;
-    if (sale.type === 'sold' && target?.vault_binding?.entryIds?.length) {
+    if (sale.type === 'sold' && target) {
       const binding = target.vault_binding;
-      const boxQuantity = Number(binding.boxQuantity) || 1;
-      const boxUnit = normalizeCargoUnit(binding.boxUnit || 'un');
-      const consumption = consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit);
-      nextSale = { ...sale, vault_consumption_status: consumption.success ? 'consumed' : 'failed', vault_consumed_at: consumption.success ? new Date().toISOString() : null, vault_consumption_message: consumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding.quality || '' };
+      const armorConsumption = await consumeBoundArmor(target, sale.qty);
+      const inventoryConsumption = await consumeBoundInventory(target, sale.qty);
+      if (!armorConsumption.success) {
+        setSyncMsg(`⚠ Venda registrada sem baixa da armadura: ${armorConsumption.message || 'estoque insuficiente.'}`);
+      }
+      const boxQuantity = Number(binding?.boxQuantity) || 1;
+      const boxUnit = normalizeCargoUnit(binding?.boxUnit || 'un');
+      const vaultConsumption = binding?.entryIds?.length ? consumeVaultEntries(binding.entryIds, boxQuantity * sale.qty, boxUnit) : { success:true, consumed:false };
+      nextSale = { ...sale, armor_consumption_status: armorConsumption.success ? (armorConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', armor_consumed_at: armorConsumption.consumed ? new Date().toISOString() : null, armor_consumption_message: armorConsumption.message || '', inventory_consumption_status: inventoryConsumption.success ? (inventoryConsumption.consumed ? 'consumed' : 'not_bound') : 'failed', inventory_consumed_at: inventoryConsumption.consumed ? new Date().toISOString() : null, inventory_consumption_message: inventoryConsumption.message || '', vault_consumption_status: vaultConsumption.success ? 'consumed' : 'failed', vault_consumed_at: vaultConsumption.success ? new Date().toISOString() : null, vault_consumption_message: vaultConsumption.message || '', vault_box_quantity:boxQuantity, vault_box_unit:boxUnit, vault_quality:binding?.quality || '' };
       const nextStock = Math.max(0, (Number(target.in_stock) || 0) - sale.qty);
       updatedCatalog = updatedCatalog.map(item => String(item.id) === String(target.id) ? { ...item, in_stock:nextStock, is_sold_out:nextStock <= 0 ? 1 : 0, last_sale_at:new Date().toISOString() } : item);
       refreshCatalog(updatedCatalog);
@@ -2099,8 +2337,11 @@ export default function UexSalesPage({ armorSets = [] }) {
         <ImportConfirmModal
           key={importQueue[0]?.id || importQueue[0]?.title || 0}
           listing={importQueue[0]}
+          queueLength={importQueue.length}
+          bulkImporting={bulkImporting}
           onConfirm={handleImportConfirm}
           onSkip={handleImportSkip}
+          onAddAll={handleImportAll}
         />
       )}
       {showManualSale && (
@@ -2180,7 +2421,7 @@ export default function UexSalesPage({ armorSets = [] }) {
         {TABS.map(t => (
           <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', background:'transparent', border:'none', borderBottom:`2px solid ${activeTab===t.id?'var(--accent-primary)':'transparent'}`, color:activeTab===t.id?'var(--accent-primary)':'var(--text-secondary)', fontFamily:'"Exo 2",sans-serif', fontSize:12, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer', transition:'all 0.2s' }}>
             <t.icon size={12}/>{t.label}
-            {t.badge && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
+            {t.badge !== null && t.badge !== undefined && String(t.badge).trim() !== '' && <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:10, padding:'1px 6px', background:activeTab===t.id?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.05)', borderRadius:8 }}>{t.badge}</span>}
           </button>
         ))}
       </div>

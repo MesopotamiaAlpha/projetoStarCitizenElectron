@@ -1,7 +1,10 @@
 import {
   listingMatchesAlert,
+  listingManualMatchReason,
+  listingPrice,
   marketAlertDefaults,
   sortMarketAlertListings,
+  compareMarketAlertEvents,
   selectMarketAlertMatches,
   filterMarketAlertsForAutomaticCheck,
   shouldCheckMarketAlertAutomatically,
@@ -52,6 +55,20 @@ describe('UEX market alerts', () => {
     expect(selectedAfterSecondRemoval.map(row => row.id)).toEqual([3, 4, 5, 6]);
   });
 
+  test('uma nova oferta melhor ocupa a janela e substitui o pior resultado', () => {
+    const current = [
+      { key: 'id:1', price: 100000, resultSort: 'price' },
+      { key: 'id:2', price: 120000, resultSort: 'price' },
+      { key: 'id:3', price: 150000, resultSort: 'price' },
+      { key: 'id:4', price: 180000, resultSort: 'price' },
+      { key: 'id:5', price: 220000, resultSort: 'price' },
+    ];
+    const newOffer = { key: 'id:6', price: 110000, resultSort: 'price' };
+    const window = [...current, newOffer].sort(compareMarketAlertEvents).slice(0, 5);
+    expect(window.map(event => event.key)).toEqual(['id:1', 'id:6', 'id:2', 'id:3', 'id:4']);
+    expect(window.some(event => event.key === 'id:5')).toBe(false);
+  });
+
   test('filtra qualidade desconhecida quando solicitado', () => {
     const alert = marketAlertDefaults({ itemName: 'Gold', qualityAny: true, qualityKnownOnly: true });
     expect(listingMatchesAlert(alert, { price: 100000, quality: 864, in_stock: 1 })).toBe(true);
@@ -65,6 +82,20 @@ describe('UEX market alerts', () => {
     expect(listingMatchesAlert(alert, { price: 100000, last_activity: new Date(Date.now() - 9 * 86400000).toISOString(), availability: 'immediate', in_stock: 3 })).toBe(false);
     expect(listingMatchesAlert(alert, { price: 100000, last_activity: recent, availability: 'negotiable', in_stock: 3 })).toBe(false);
     expect(listingMatchesAlert(alert, { price: 100000, last_activity: recent, availability: 'immediate', in_stock: 1 })).toBe(false);
+  });
+
+  test('preserva preços UEC com separadores de milhar', () => {
+    expect(listingPrice({ price: '20.000.000' })).toBe(20000000);
+    expect(listingPrice({ price: '20000000' })).toBe(20000000);
+    expect(listingPrice({ price_auec: '19.500.000' })).toBe(19500000);
+  });
+
+  test('busca manual reconhece Pure Caranite em títulos invertidos e com variação mínima da UEX', () => {
+    const alert = marketAlertDefaults({ itemName: 'Pure Caranite', itemMode: 'manual', manualMatchMode: 'title', qualityAny: true });
+    expect(listingManualMatchReason(alert, { title: 'Pure Caranite' })).toBe('Nome/título do anúncio');
+    expect(listingManualMatchReason(alert, { title: 'Caranite (Pure)' })).toBe('Nome/título do anúncio');
+    expect(listingManualMatchReason(alert, { title: 'Carinite (Pure)' })).toBe('Nome/título do anúncio');
+    expect(listingManualMatchReason(alert, { title: 'Iron' })).toBeNull();
   });
 
   test('permite desligar a automação de um alerta sem apagar seus critérios', () => {

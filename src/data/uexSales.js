@@ -179,7 +179,7 @@ function buildCatalogEntry(existing, sale) {
   };
 }
 
-export function registerNegotiationSale(negotiation, overrides = {}) {
+export async function registerNegotiationSale(negotiation, overrides = {}, consumers = {}) {
   const sale = buildNegotiationSale(negotiation, overrides);
   if (!sale.source_negotiation_hash) throw new Error('A negociação não possui hash identificador.');
   if (!sale.title) throw new Error('A negociação não informa o nome do item.');
@@ -223,6 +223,42 @@ export function registerNegotiationSale(negotiation, overrides = {}) {
   savedSale.vault_box_quantity = vaultConsumption.boxQuantity || previousSale?.vault_box_quantity || null;
   savedSale.vault_box_unit = vaultConsumption.boxUnit || previousSale?.vault_box_unit || null;
   savedSale.vault_quality = vaultConsumption.quality || previousSale?.vault_quality || '';
+
+  let armorConsumption = previousSale?.armor_consumption_status === 'consumed'
+    ? { success: true, status: 'consumed', consumed: true, message: 'A coleção de armaduras desta negociação já foi descontada.' }
+    : { success: true, status: 'not_linked', consumed: false, message: 'Nenhum vínculo com a coleção de armaduras foi configurado.' };
+  const inventoryBinding = existingCatalog?.inventory_binding || {};
+  const armorPieceIds = Array.isArray(inventoryBinding.armorPieceIds) ? inventoryBinding.armorPieceIds : (Array.isArray(inventoryBinding.armor_piece_ids) ? inventoryBinding.armor_piece_ids : []);
+  const armorSetIds = Array.isArray(inventoryBinding.armorSetIds) ? inventoryBinding.armorSetIds : (Array.isArray(inventoryBinding.armor_set_ids) ? inventoryBinding.armor_set_ids : []);
+  if (!previousSale && (armorPieceIds.length || armorSetIds.length) && typeof consumers.onConsumeArmorStock === 'function') {
+    armorConsumption = await consumers.onConsumeArmorStock({ pieceIds: armorPieceIds, setIds: armorSetIds, quantity: sale.qty });
+    armorConsumption = {
+      ...armorConsumption,
+      status: armorConsumption?.success ? (armorConsumption?.consumed ? 'consumed' : 'not_linked') : 'failed',
+      message: armorConsumption?.message || '',
+    };
+  }
+
+  let inventoryConsumption = previousSale?.inventory_consumption_status === 'consumed'
+    ? { success: true, status: 'consumed', consumed: true, message: 'O Inventário de Itens desta negociação já foi descontado.' }
+    : { success: true, status: 'not_linked', consumed: false, message: 'Nenhum local do Inventário de Itens foi vinculado.' };
+  const locationKeys = Array.isArray(inventoryBinding.locationKeys)
+    ? inventoryBinding.locationKeys
+    : (Array.isArray(inventoryBinding.location_keys) ? inventoryBinding.location_keys : (inventoryBinding.locationKey ? [inventoryBinding.locationKey] : []));
+  if (!previousSale && locationKeys.length && typeof consumers.onConsumeInventoryStock === 'function') {
+    inventoryConsumption = await consumers.onConsumeInventoryStock({ name: sale.title, locationKeys, quantity: sale.qty, listing: existingCatalog || sale });
+    inventoryConsumption = {
+      ...inventoryConsumption,
+      status: inventoryConsumption?.success ? (inventoryConsumption?.consumed ? 'consumed' : 'not_linked') : 'failed',
+      message: inventoryConsumption?.message || '',
+    };
+  }
+  savedSale.armor_consumption_status = armorConsumption.status;
+  savedSale.armor_consumed_at = armorConsumption.success && armorConsumption.consumed ? (previousSale?.armor_consumed_at || new Date().toISOString()) : (previousSale?.armor_consumed_at || null);
+  savedSale.armor_consumption_message = armorConsumption.message || previousSale?.armor_consumption_message || '';
+  savedSale.inventory_consumption_status = inventoryConsumption.status;
+  savedSale.inventory_consumed_at = inventoryConsumption.success && inventoryConsumption.consumed ? (previousSale?.inventory_consumed_at || new Date().toISOString()) : (previousSale?.inventory_consumed_at || null);
+  savedSale.inventory_consumption_message = inventoryConsumption.message || previousSale?.inventory_consumption_message || '';
   const savedSaleIndex = sales.findIndex(item => item.id === savedSale.id);
   if (savedSaleIndex >= 0) sales[savedSaleIndex] = savedSale;
   else sales.unshift(savedSale);
@@ -243,6 +279,8 @@ export function registerNegotiationSale(negotiation, overrides = {}) {
     saleCreated: !previousSale,
     catalogCreated: !existingCatalog,
     vaultConsumption,
+    armorConsumption,
+    inventoryConsumption,
   };
 }
 

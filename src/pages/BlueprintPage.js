@@ -9,7 +9,7 @@ import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { setProvenance, SOURCES } from '../data/provenance';
 import {
   loadQueue, queueBlueprint, dequeueBlueprint,
-  updateQueuedQty,
+  updateQueuedQty, syncQueuedBlueprint,
 } from '../data/materialQueue';
 import { CARGO_UNITS, isCargoUnit, normalizeCargoUnit, toCargoBase, fromCargoBase, formatCargoNumber } from '../data/cargoUnits';
 
@@ -242,7 +242,7 @@ function IngPill({ ing }) {
         <div style={{ width:8,height:8,borderRadius:'50%',background:color,flexShrink:0 }}/>
         <span style={{ color }}>{ing.material_name}</span>
         <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-secondary)' }}>{fmt.primary}</span>
-        {ing.quality_min>0 && <span style={{ fontSize:10,color:'var(--text-muted)',borderLeft:'1px solid var(--border-subtle)',paddingLeft:5 }}>Q≥{ing.quality_min}</span>}
+        <span style={{ fontSize:10,color:'var(--text-muted)',borderLeft:'1px solid var(--border-subtle)',paddingLeft:5 }}>{ing.quality_operator === 'any' || !(Number(ing.quality_min) > 0) ? 'Qualidade livre' : `${ing.quality_operator === 'lte' ? 'Q≤' : ing.quality_operator === 'eq' ? 'Q=' : 'Q≥'}${ing.quality_min}`}</span>
       </div>
       {fmt.secondary && (
         <span style={{ fontFamily:'Share Tech Mono,monospace',fontSize:10,color:'var(--text-muted)',paddingLeft:13 }}>{fmt.secondary}</span>
@@ -253,7 +253,7 @@ function IngPill({ ing }) {
 
 // ── Blueprint Form (create + edit) ────────────────────────────────────────────
 const emptyBp = () => ({ name:'',category:'FPS Weapon',subcategory:'',manufacturer:'',item_size:'Personal',grade:'',item_class:'',description:'',how_to_get:'',faction:'',mission_type:'',patch_added:'4.7' });
-const emptyIng = () => ({ material_name:'',quantity:1,quality_min:0,unit:'un',notes:'' });
+const emptyIng = () => ({ material_name:'',quantity:1,quality_min:0,quality_operator:'any',unit:'un',notes:'' });
 
 function BpForm({ initial, onSave, onCancelar }) {
   const [bp,   setBp]   = useState(() => initial ? {
@@ -265,7 +265,7 @@ function BpForm({ initial, onSave, onCancelar }) {
     mission_type: initial.mission_type||'', patch_added: initial.patch_added||'4.7',
   } : emptyBp());
   const [ings, setIngs] = useState(() => initial?.ingredients?.length
-    ? initial.ingredients.map(i=>({...i})) : [emptyIng()]);
+    ? initial.ingredients.map(i=>({...i, quality_operator: i.quality_operator || (Number(i.quality_min) > 0 ? 'gte' : 'any')})) : [emptyIng()]);
   const [error,setError]= useState('');
   const setF = (k,v) => setBp(p=>({...p,[k]:v}));
 
@@ -335,7 +335,7 @@ function BpForm({ initial, onSave, onCancelar }) {
           </button>
         </div>
         {ings.map((ing,i)=>(
-          <div key={i} className="blueprint-material-row" style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr auto',gap:8,alignItems:'end',marginBottom:6 }}>
+          <div key={i} className="blueprint-material-row" style={{ display:'grid',gridTemplateColumns:'2fr 1fr 1.3fr 0.9fr 1fr auto',gap:8,alignItems:'end',marginBottom:6 }}>
             <div>
               {i===0&&<label style={LS}>Material</label>}
               <input style={IS} value={ing.material_name} onChange={e=>updateIng(i,'material_name',e.target.value)} placeholder="ex: Titanium, Orotite..."/>
@@ -345,8 +345,17 @@ function BpForm({ initial, onSave, onCancelar }) {
               <input style={IS} type="number" min="1" value={ing.quantity} onChange={e=>updateIng(i,'quantity',Number(e.target.value))}/>
             </div>
             <div>
-              {i===0&&<label style={LS}>Qualidade Min.</label>}
-              <input style={IS} type="number" min="0" max="1000" value={ing.quality_min} onChange={e=>updateIng(i,'quality_min',Number(e.target.value))} placeholder="0=qualquer"/>
+              {i===0&&<label style={LS}>Qualidade</label>}
+              <select style={SS} value={ing.quality_operator || (Number(ing.quality_min) > 0 ? 'gte' : 'any')} onChange={e=>{ const op=e.target.value; const a=[...ings]; a[i]={...a[i],quality_operator:op,quality_min:op==='any'?0:a[i].quality_min}; setIngs(a); }}>
+                <option value="gte">≥ Maior ou igual</option>
+                <option value="eq">= Igual</option>
+                <option value="lte">≤ Menor ou igual</option>
+                <option value="any">Qualquer qualidade</option>
+              </select>
+            </div>
+            <div>
+              {i===0&&<label style={LS}>Valor</label>}
+              <input style={IS} type="number" min="0" max="1000" disabled={(ing.quality_operator || 'any')==='any'} value={ing.quality_min || 0} onChange={e=>updateIng(i,'quality_min',Number(e.target.value))} placeholder="ex: 800"/>
             </div>
             <div>
               {i===0&&<label style={LS}>Unidade</label>}
@@ -572,6 +581,14 @@ export default function BlueprintPage() {
       // Blueprints SCMDB padrão são registros editáveis pelo usuário.
       await api.updateCustom({ bpId: editingBp.id, ...data });
     }
+    // A fila mantém um snapshot dos ingredientes. Atualize-o após editar
+    // a blueprint para refletir imediatamente cada quality_min no Tracking.
+    syncQueuedBlueprint({
+      id: editingBp.id,
+      ...data.bp,
+      ingredients: data.ingredients,
+    });
+    refreshQueue();
     setProvenance('blueprint', data.bp.name, SOURCES.MANUAL);
     setEditingBp(null);
     await loadData();

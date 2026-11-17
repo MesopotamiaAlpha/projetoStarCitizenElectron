@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const HELP_DELAY_MS = 10000;
+const HELP_DELAY_MS = 2600;
 const INTERACTIVE_SELECTOR = [
   'button',
   'input:not([type="hidden"])',
@@ -9,7 +9,9 @@ const INTERACTIVE_SELECTOR = [
   '[role="button"]',
   '[role="checkbox"]',
   '[role="tab"]',
+  'label',
   '[data-help]',
+  '[data-help-anchor]',
 ].join(',');
 
 function cleanText(value) {
@@ -17,6 +19,9 @@ function cleanText(value) {
 }
 
 function getLabelText(element) {
+  if (element.matches('label')) {
+    return cleanText(element.cloneNode(true).textContent);
+  }
   if (element.id) {
     const label = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
     if (label) return cleanText(label.textContent);
@@ -32,6 +37,18 @@ function getElementHelp(element) {
 
   const explicit = cleanText(element.getAttribute('data-help'));
   if (explicit) return explicit;
+
+  const anchorHelp = cleanText(element.getAttribute('data-help-anchor'));
+  if (anchorHelp) return anchorHelp;
+
+  if (element.matches('label')) {
+    const field = element.querySelector('input, select, textarea');
+    const fieldName = cleanText(element.textContent);
+    if (fieldName && field) {
+      const kind = field.tagName.toLowerCase() === 'select' ? 'selecione' : 'preencha';
+      return `Ajuda do campo “${fieldName}”: ${kind} esta informação para usar o filtro ou salvar o registro.`;
+    }
+  }
 
   const aria = cleanText(element.getAttribute('aria-label'));
   const title = cleanText(element.getAttribute('title'));
@@ -60,20 +77,30 @@ function getElementHelp(element) {
   if (type === 'number') return 'Informe um valor numérico válido neste campo.';
   if (tag === 'button' || element.getAttribute('role') === 'button' || element.getAttribute('role') === 'tab') {
     const action = text || value || 'esta ação';
-    return `Clique para executar: ${action}.`;
+    return `Clique ou pressione Enter para executar: ${action}.`;
+  }
+
+  if (element.matches('[data-help-anchor]')) {
+    return 'Passe o cursor ou use o teclado para consultar a explicação desta área.';
   }
 
   return '';
 }
 
 function getPosition(element, pointer) {
-  if (pointer) return { x: pointer.x, y: pointer.y };
+  const safePointer = pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+    ? pointer
+    : null;
+  if (safePointer) return { x: safePointer.x, y: safePointer.y };
+  if (!element || !element.isConnected || typeof element.getBoundingClientRect !== 'function') return null;
   const rect = element.getBoundingClientRect();
+  if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.bottom)) return null;
   return { x: rect.left + rect.width / 2, y: rect.bottom };
 }
 
 function clampPosition(position) {
-  const width = Math.min(320, window.innerWidth - 28);
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return null;
+  const width = Math.min(320, Math.max(180, window.innerWidth - 28));
   const x = Math.max(14, Math.min(position.x, window.innerWidth - width - 14));
   const y = Math.max(14, Math.min(position.y + 12, window.innerHeight - 118));
   return { x, y, width };
@@ -126,10 +153,9 @@ export default function ContextHelpOverlay() {
       setHelp(null);
       timer.current = window.setTimeout(() => {
         if (activeElement.current !== element) return;
-        setHelp({
-          text: description,
-          position: clampPosition(getPosition(element, pointer.current)),
-        });
+        const position = clampPosition(getPosition(element, pointer.current));
+        if (!position || !element.isConnected || activeElement.current !== element) return;
+        setHelp({ text: description, position });
       }, HELP_DELAY_MS);
     };
 
@@ -148,7 +174,9 @@ export default function ContextHelpOverlay() {
       const element = activeElement.current;
       if (!element || !element.contains(event.target)) return;
       pointer.current = { x: event.clientX, y: event.clientY };
-      setHelp(current => current ? { ...current, position: clampPosition(pointer.current) } : current);
+      const position = clampPosition(pointer.current);
+      if (!position) return;
+      setHelp(current => current ? { ...current, position } : current);
     };
 
     const onPointerOut = event => {
@@ -191,7 +219,7 @@ export default function ContextHelpOverlay() {
     };
   }, []);
 
-  if (!help) return null;
+  if (!help || !help.position) return null;
 
   return (
     <div

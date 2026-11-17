@@ -1,5 +1,59 @@
+export const WIKELO_UPDATED_EVENT = 'sc_wikelo_updated';
+
+export function publishWikeloUpdate(missions = []) {
+  try {
+    window.dispatchEvent(new CustomEvent(WIKELO_UPDATED_EVENT, {
+      detail: { missions, updatedAt: new Date().toISOString() },
+    }));
+  } catch { /* ambiente sem DOM */ }
+}
+
 function normalizedName(value) {
   return String(value || '').trim().toLocaleLowerCase();
+}
+
+function compactName(value) {
+  return normalizedName(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+}
+
+export function isWikeloFavorName(name) {
+  const compact = compactName(name);
+  return compact === 'wikelofavor' || compact === 'wikelofavors';
+}
+
+export function isWikeloScripName(name) {
+  const compact = compactName(name);
+  return compact === 'mgscrip' || compact === 'concuiscrip' || compact === 'councilscrip';
+}
+
+export function getWikeloScripInventorySummary(inventoryItems = []) {
+  const rows = (Array.isArray(inventoryItems) ? inventoryItems : [])
+    .filter(item => isWikeloScripName(item?.name));
+  const byType = rows.reduce((summary, item) => {
+    const type = compactName(item?.name) === 'mgscrip' ? 'mgScrip' : 'councilScrip';
+    summary[type] += availableQuantity(item);
+    return summary;
+  }, { mgScrip: 0, councilScrip: 0 });
+  return { ...byType, conCuiScrip: byType.councilScrip, total: byType.mgScrip + byType.councilScrip };
+}
+
+export function getWikeloScripRequirement(item, inventoryItems = []) {
+  const needed = Math.max(0, Number(item?.needed) || 0);
+  const collected = Math.min(needed, Math.max(0, Number(item?.collected) || 0));
+  const missingFavors = isWikeloFavorName(item?.name) ? Math.max(0, needed - collected) : 0;
+  const requiredScrip = missingFavors * 50;
+  const inventory = getWikeloScripInventorySummary(inventoryItems);
+  return {
+    isWikeloFavor: isWikeloFavorName(item?.name),
+    missingFavors,
+    requiredScrip,
+    inventoryScrip: inventory.total,
+    inventoryMgScrip: inventory.mgScrip,
+    inventoryConCuiScrip: inventory.councilScrip,
+    remainingScrip: Math.max(0, requiredScrip - inventory.total),
+    surplusScrip: Math.max(0, inventory.total - requiredScrip),
+    favorsCoveredByScrip: Math.min(missingFavors, Math.floor(inventory.total / 50)),
+  };
 }
 
 function availableQuantity(item) {
@@ -162,6 +216,30 @@ export function applyWikeloDeliveryPlan(inventoryItems = [], plan) {
       return { ...item, quantity: allocation.afterQuantity };
     })
     .filter(item => Number(item.quantity) > 0);
+}
+
+export function getWikeloMissionShortages(missions = []) {
+  return (Array.isArray(missions) ? missions : []).flatMap(mission => {
+    if (!mission || mission.wikelo_delivered_at || mission.wikelo_delivery_status === 'delivered') return [];
+    const items = (Array.isArray(mission.items) ? mission.items : []).map(item => {
+      const needed = Math.max(0, Number(item?.needed) || 0);
+      const collected = Math.min(needed, Math.max(0, Number(item?.collected) || 0));
+      const remaining = Math.max(0, needed - collected);
+      if (!item?.name || remaining <= 0) return null;
+      return {
+        itemId: item.id ?? `${mission.id}:${item.name}`,
+        name: String(item.name).trim(),
+        unit: String(item.unit || 'un').trim() || 'un',
+        needed,
+        collected,
+        remaining,
+        inventoryAvailable: Math.max(0, Number(item.inventory_available) || 0),
+        missionId: mission.id,
+        missionTitle: String(mission.title || 'Missão Wikelo').trim(),
+      };
+    }).filter(Boolean);
+    return items;
+  });
 }
 
 export function getWikeloMissionProgress(mission) {

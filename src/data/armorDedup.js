@@ -13,7 +13,17 @@ export function normalizeArmorIdentity(value, variant = 'Base') {
 }
 
 export function getArmorIdentity(set) {
-  return normalizeArmorIdentity(set?.base_name || set?.set_name || set?.name, set?.variant_name || 'Base');
+  const rawBase = String(set?.base_name || set?.set_name || set?.name || '').trim();
+  const rawVariant = String(set?.variant_name || 'Base').trim();
+  // Algumas importações chegam como `Novikov "Ascension"` + variante Base,
+  // enquanto outros registros chegam como `Novikov` + variante `Ascension`.
+  // Canonicalizar os dois formatos evita duplicatas sem alterar o texto exibido.
+  const embeddedVariant = rawVariant.toLocaleLowerCase() === 'base'
+    ? rawBase.match(/^(.+?)\s+["“]([^"”]+)["”]\s*$/)
+    : null;
+  const base = embeddedVariant ? embeddedVariant[1].trim() : rawBase;
+  const variant = embeddedVariant ? embeddedVariant[2].trim() : rawVariant;
+  return normalizeArmorIdentity(base, variant);
 }
 
 export function getDuplicateArmorGroups(sets = []) {

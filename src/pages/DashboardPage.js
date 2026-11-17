@@ -87,6 +87,9 @@ function readOreVault() {
 function readMissions() {
   try { return JSON.parse(localStorage.getItem('sc_missions_v2')) || []; } catch { return []; }
 }
+function readWikeloMissions() {
+  try { return JSON.parse(localStorage.getItem('sc_wikelo_missions_v1')) || []; } catch { return []; }
+}
 
 function readDashboardOverview(inventoryItems = []) {
   const inventoryQuantity = inventoryItems.reduce((total, item) => total + Math.max(0, Number(item.quantity) || 0), 0);
@@ -134,6 +137,7 @@ function readDashboardOverview(inventoryItems = []) {
     return saleTimestamp > latestTimestamp ? sale : latest;
   }, null);
 
+  const wikeloShortages = getWikeloMissionShortages(readWikeloMissions());
   const marketAlerts = loadMarketAlerts().filter(alert => alert.enabled);
   const marketEvents = loadMarketAlertEvents();
   const alertSettings = loadMarketAlertSettings();
@@ -164,6 +168,7 @@ function readDashboardOverview(inventoryItems = []) {
     marketAlerts: marketAlerts.length,
     activeAlertMatches,
     alertSettings,
+    wikeloShortages,
   };
 }
 
@@ -185,7 +190,9 @@ function dashboardCountdown(nextCheckAt) {
   return minutes > 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}min` : `${minutes}min`;
 }
 import { Shield, Package, Star, Trophy, ChevronRight, HardHat, Shirt, Dumbbell, Footprints, Backpack, AlertTriangle, Zap, Satellite, Battery, Crosshair, Radio, Pickaxe, Lock, ListChecks, Users, Building2, Rocket, BarChart3, Bell, Boxes, CircleDollarSign, Clock3, Database, Gauge, TrendingUp, CheckCircle2 } from 'lucide-react';
+import OperationalStatusBar from '../components/OperationalStatusBar';
 import { isScriptItem, isWikeloFavorItem, normalizeScriptName, calcWikeloFavors } from '../data/wikelo';
+import { getWikeloMissionShortages, WIKELO_UPDATED_EVENT } from '../data/wikeloInventory';
 import { calcDchsExecutiveHangars } from '../data/dchsCards';
 import { loadMyHangar, MY_HANGAR_UPDATED_EVENT, UEX_VEHICLES_UPDATED_EVENT } from '../data/uexVehicles';
 import { loadQueue, calcShoppingList } from '../data/materialQueue';
@@ -286,6 +293,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
       'sc_ore_vault_updated',
       'sc_material_queue_updated',
       'sc_missions_updated',
+      WIKELO_UPDATED_EVENT,
       'sc_uex_sales_updated',
       MARKET_ALERTS_CHECKED_EVENT,
       MARKET_ALERTS_UPDATED_EVENT,
@@ -344,6 +352,7 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
       </div>
 
       <div className="page-body">
+        <OperationalStatusBar overview={overview} activeMissionsCount={groupActivity.activeMissionsCount} onNavigate={onNavigate} />
         {/* Main stats */}
         <div className="dashboard-grid" style={{ marginBottom:20 }}>
           {[
@@ -411,6 +420,24 @@ export default function DashboardPage({ sets, stats, onNavigate }) {
               {overview.latestSale && <div className="dashboard-latest-sale"><Clock3 size={12} /> Última venda: <strong>{overview.latestSale.title || 'Item UEX'}</strong> · {Math.round(Number(overview.latestSale.total_revenue || overview.latestSale.price || 0)).toLocaleString('pt-BR')} aUEC</div>}
             </div>
           </div>
+          {overview.wikeloShortages.length > 0 && (
+            <div className="dashboard-wikelo-shortages">
+              <div className="dashboard-wikelo-shortages-heading">
+                <div><Star size={14} /><span>WIKELO · ITENS FALTANTES</span></div>
+                <button type="button" onClick={() => onNavigate('wikelo')}>Abrir acompanhamento <ChevronRight size={13} /></button>
+              </div>
+              <div className="dashboard-wikelo-shortages-list">
+                {overview.wikeloShortages.slice(0, 6).map(shortage => (
+                  <button type="button" className="dashboard-wikelo-shortage" key={`${shortage.missionId}:${shortage.itemId}`} onClick={() => onNavigate('wikelo')}>
+                    <span className="dashboard-wikelo-shortage-mission">{shortage.missionTitle}</span>
+                    <span className="dashboard-wikelo-shortage-detail">faltam <strong>{Number(shortage.remaining).toLocaleString('pt-BR')}</strong> {shortage.unit} de {shortage.name}</span>
+                    <ChevronRight size={13} />
+                  </button>
+                ))}
+              </div>
+              {overview.wikeloShortages.length > 6 && <small className="dashboard-wikelo-shortages-more">+ {overview.wikeloShortages.length - 6} pendência(s) no Acompanhamento Wikelo</small>}
+            </div>
+          )}
         </section>
 
         {/* Atividade do grupo — mineração, cofre, baú, missões */}

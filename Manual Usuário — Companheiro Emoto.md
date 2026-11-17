@@ -4,6 +4,19 @@
 
 O **Companheiro Emoto** é uma ferramenta desktop para organizar atividades no *Star Citizen*. Ele reúne coleção de armaduras, inventário, blueprints, materiais, mineração, missões, Wikelo, marketplace UEX, Hangar de Naves, notas e cópias de segurança em um só lugar.[1]
 
+> **Atualização 2.0.0 — agosto de 2026:** o aplicativo recebeu melhorias de desempenho para bases grandes, sincronização UEX em lote, alertas de compra mais estáveis, cálculo de scrip para Wikelo Favor, limpeza seletiva, correções no teclado da calculadora e uma interface com contraste e textos auxiliares mais legíveis. As instruções abaixo refletem o comportamento atual do programa.
+
+## Novidades importantes da versão atual
+
+| Recurso | Como funciona para o usuário |
+|---|---|
+| **Adicionar todos — UEX** | Depois de sincronizar seus anúncios, você pode importar todos os registros que ainda não existem em uma única ação, sem clicar item por item. Registros duplicados são ignorados. |
+| **Wikelo Favor e scrip** | Para cada Wikelo Favor faltante, o programa calcula 50 scrip. O saldo é descontado somando MG Scrip, Council Scrip e ConCuI Scrip cadastrados no Inventário de Itens. |
+| **Limpeza Seletiva** | Em Diretório de Dados, escolha o módulo que deseja limpar. O programa cria um snapshot antes da exclusão; confirme cuidadosamente porque a limpeza do módulo é destrutiva. |
+| **Legibilidade** | Textos secundários, metadados, placeholders, labels e tabelas usam contraste maior. O foco pelo teclado também fica visível. |
+| **Calculadora aberta durante o chat** | A calculadora aceita teclado quando está em foco, mas não captura números nem Backspace enquanto você escreve em português ou inglês no chat UEX. |
+| **Minha Coleção e Acompanhamento UEX** | Quantidades e anúncios usam atualizações seletivas e índices reutilizáveis para reduzir congelamentos em bases grandes. |
+
 ## Sumário
 
 1. [Primeiros passos](#1-primeiros-passos)
@@ -110,6 +123,10 @@ Preencha o nome do conjunto, variante, fabricante e tipo. Depois adicione as pe�
 ## 5. Inventário, blueprints e materiais
 
 ### 5.1 Inventário de Itens
+
+O inventário também é a fonte usada pelo Acompanhamento Wikelo para consultar **MG Scrip**, **Council Scrip** e **ConCuI Scrip**. Cadastre cada tipo com o nome correspondente e informe a quantidade real; registros em locais diferentes são somados. Itens reservados para outra pessoa não devem ser confundidos com saldo livre quando você estiver planejando uma entrega.
+
+
 
 A tela **Itens & Crafting → Inventário de Itens** serve para registrar qualquer item que você possui: armas, roupas, cartões, recursos, peças, itens de missão e outros.
 
@@ -394,6 +411,27 @@ O sino global emite som quando há um novo resultado, desde que o som não estej
 
 ## 10. Acompanhamento Wikelo
 
+O Acompanhamento Wikelo permite cadastrar várias missões e itens repetidos sem reutilizar automaticamente a mesma unidade do inventário. Use **Escanear seus itens** para consultar o estoque sem removê-lo; a entrega só reduz o Inventário quando você confirma **Entregar para o Wikelo**.
+
+### 10.1 Cálculo de Wikelo Favor e scrip
+
+Quando o item da missão for **Wikelo Favor**, a tela mostra a quantidade faltante e converte esse saldo para scrip:
+
+> **1 Wikelo Favor = 50 scrip.**
+
+O programa soma todos os registros disponíveis de **MG Scrip**, **Council Scrip** e **ConCuI Scrip** no Inventário de Itens. O card mostra o scrip necessário, o saldo encontrado e quanto ainda falta. O cálculo é informativo: ele não remove scrip do inventário e não marca o Favor como coletado automaticamente.
+
+### 10.2 Fluxo recomendado
+
+1. Cadastre a missão e adicione `Wikelo Favor` como item, com a quantidade necessária.
+2. Confira a indicação de Favors faltantes e scrip necessário.
+3. Cadastre ou revise MG Scrip e Council/ConCuI Scrip no Inventário de Itens.
+4. Use **Escanear seus itens** quando quiser considerar itens físicos disponíveis.
+5. Corrija uma coleta acidental com **− Remover** ou **Zerar quantidade**.
+6. Quando todos os itens estiverem completos, confirme a entrega. A redução do inventário ocorre somente nessa confirmação.
+
+
+
 Em **UEX → Acompanhamento Wikelo**, acompanhe missões, scripts e o progresso de recompensas do Wikelo.
 
 Registre ou ajuste suas quantidades de **Mg Scrip**, **Council Scrip** e **Wikelo Favor**. Os botões de adicionar e remover scripts salvam a quantidade atual. O total de Favors considera tanto os Favors diretos no inventário quanto a conversão de scripts.
@@ -565,7 +603,7 @@ Se um problema persistir, faça um backup completo antes de qualquer tentativa d
 
 ## Referências
 
-[1]: README.md "Documentação técnica do Companheiro Emoto"
+[1]: MANUAL-DO-PROGRAMADOR.md "Manual do programador do Companheiro Emoto"
 
 ---
 

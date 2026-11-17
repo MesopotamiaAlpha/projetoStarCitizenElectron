@@ -1,0 +1,10 @@
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync('electron/mobileServer.js', 'utf8');
+const start = source.indexOf('<script>');
+const end = source.indexOf('</script>', start);
+if (start < 0 || end < 0) throw new Error('Script mobile não encontrado');
+const script = source.slice(start + '<script>'.length, end);
+fs.writeFileSync('/tmp/companion-emoto-mobile-portal.js', script);
+new vm.Script(script, { filename: 'mobile-portal.js' });
+console.log(`Portal mobile válido: ${script.length} caracteres`);

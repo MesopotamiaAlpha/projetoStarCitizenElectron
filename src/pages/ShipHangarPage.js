@@ -314,9 +314,10 @@ function VehicleCard({ vehicle, catalog, purchasedQuantity = 0, onBought, expand
   const hasPurchased = purchasedQuantity > 0;
   const purchaseAccent = '#63e6be';
   return (
-    <article style={{ display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-card)', border: `1px solid ${expanded ? `${COLORS.orange}77` : hasPurchased ? `${purchaseAccent}66` : 'var(--border-subtle)'}`, borderRadius: 9, overflow: 'hidden', boxShadow: hasPurchased ? `0 0 0 1px ${purchaseAccent}22, 0 0 18px ${purchaseAccent}12` : expanded ? `0 0 0 1px ${COLORS.orange}22` : 'none' }}>
+    <article className="hangar-vehicle-card" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-card)', border: `1px solid ${expanded ? `${COLORS.orange}77` : hasPurchased ? `${purchaseAccent}66` : 'var(--border-subtle)'}`, borderRadius: 9, overflow: 'hidden', boxShadow: hasPurchased ? `0 0 0 1px ${purchaseAccent}22, 0 0 18px ${purchaseAccent}12` : expanded ? `0 0 0 1px ${COLORS.orange}22` : 'none' }}>
       <div style={{ height: 138, background: 'linear-gradient(135deg, rgba(251,146,60,0.14), rgba(56,189,248,0.05))', position: 'relative', overflow: 'hidden' }}>
         <UexVehicleImage src={vehicle.url_photo} alt={vehicle.name_full || vehicle.name} containerStyle={{ width: '100%', height: '100%' }} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.8 }} />
+        
         {hasPurchased && <span style={{ position: 'absolute', top: 9, right: 9, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 7px', borderRadius: 5, background: 'rgba(17,53,48,0.88)', border: `1px solid ${purchaseAccent}77`, color: purchaseAccent, fontFamily: 'Share Tech Mono,monospace', fontSize: 10, fontWeight: 800, boxShadow: `0 0 10px ${purchaseAccent}22` }}><Check size={11} /> x{formatNumber(purchasedQuantity)} comprada{purchasedQuantity === 1 ? '' : 's'}</span>}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(12,17,28,0.95), transparent 70%)' }} />
         <span style={{ position: 'absolute', top: 9, left: 9, padding: '3px 7px', borderRadius: 4, background: 'rgba(7,12,20,0.8)', border: `1px solid ${COLORS.orange}66`, color: COLORS.orange, fontSize: 9, fontWeight: 800, textTransform: 'uppercase' }}>{getTypeLabel(vehicle)}</span>

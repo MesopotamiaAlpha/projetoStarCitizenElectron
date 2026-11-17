@@ -168,15 +168,25 @@ export async function sendNegotiationMessage(hash, message) {
   throw new Error(result.message || 'Erro ao enviar mensagem para a UEX');
 }
 
-/** Traduz texto usando somente o serviço gratuito MyMemory. */
+const TRANSLATION_CACHE_LIMIT = 100;
+const translationCache = new Map();
+
+/** Traduz texto usando MyMemory e fallback automático quando ele estiver indisponível. */
 export async function translateText(text, source = 'pt', target = 'en') {
   const sourceText = String(text || '').trim();
   if (!sourceText) throw new Error('Escreva um texto antes de traduzir.');
   if (!window.electronAPI?.mymemoryTranslate) throw new Error('A tradução só funciona no app Electron.');
 
+  const cacheKey = `${source}|${target}|${sourceText}`;
+  if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+
   const result = await window.electronAPI.mymemoryTranslate({ text: sourceText, source, target });
-  if (result?.success && result.translation) return result.translation;
-  throw new Error(result?.message || 'O limite gratuito do MyMemory foi atingido ou o serviço não respondeu.');
+  if (result?.success && result.translation) {
+    translationCache.set(cacheKey, result.translation);
+    while (translationCache.size > TRANSLATION_CACHE_LIMIT) translationCache.delete(translationCache.keys().next().value);
+    return result.translation;
+  }
+  throw new Error(result?.message || 'Não foi possível traduzir a mensagem.');
 }
 
 export function translatePortugueseToEnglish(text) {

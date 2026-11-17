@@ -1,21 +1,12 @@
-const fs = require('fs');
-const path = require('path');
+#!/usr/bin/env node
 
-const projectRoot = path.resolve(__dirname, '..');
-const distDir = path.join(projectRoot, 'dist');
+const fs = require('node:fs');
+const path = require('node:path');
 
-try {
-  fs.rmSync(distDir, { recursive: true, force: true });
-  console.log(`[build] Artefatos antigos removidos: ${distDir}`);
-} catch (error) {
-  console.error(`[build] Não foi possível limpar ${distDir}: ${error.message}`);
-  process.exitCode = 1;
+const dist = path.resolve(__dirname, '..', 'dist');
+if (fs.existsSync(dist)) {
+  fs.rmSync(dist, { recursive: true, force: true });
+  console.log(`Diretório removido: ${dist}`);
+} else {
+  console.log(`Nada para limpar: ${dist}`);
 }
-
-process.exit(process.exitCode || 0);
-
-// Este script só remove artefatos de distribuição. Ele nunca toca em:
-// - build/ (React é recompilado pelo comando anterior);
-// - node_modules/;
-// - C:\CompanheiroEmoto ou qualquer diretório de dados do usuário;
-// - arquivos de backup e bancos fora do diretório do projeto.

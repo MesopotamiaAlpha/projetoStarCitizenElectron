@@ -1,4 +1,4 @@
-import { upsertAutomaticMissionRecord } from './missionAutoMonitor';
+import { upsertAutomaticMissionRecord, rememberMissionRewardPreferences, findMissionRewardPreferences } from './missionAutoMonitor';
 import { loadUnknownVault } from './unknownVault';
 
 beforeEach(() => {
@@ -6,6 +6,38 @@ beforeEach(() => {
 });
 
 describe('recompensa histórica do Monitor Automático', () => {
+  test('memoriza Scrip e Secure Drive e reaplica na próxima ocorrência automática', () => {
+    rememberMissionRewardPreferences({
+      auto: true,
+      title: 'Desafio de Combate - Cenário 5',
+      canonical_title: 'Desafio de Combate - Cenário 5',
+      scrip_type: 'mg_scrip',
+      scrip_qty: 12,
+      secure_drive_enabled: true,
+      secure_drive_qty: 2,
+    });
+
+    expect(findMissionRewardPreferences({ debugName: 'Desafio de Combate - Cenário 5' })).toMatchObject({
+      scrip_type: 'mg_scrip',
+      scrip_qty: 12,
+      secure_drive_enabled: true,
+      secure_drive_qty: 2,
+    });
+
+    const nextMission = upsertAutomaticMissionRecord({
+      type: 'mission_start',
+      guid: 'reward-preference-new-guid',
+      debugName: 'Desafio de Combate - Cenário 5',
+      reward: 0,
+      startTs: Date.parse('2026-08-16T10:00:00.000Z'),
+    }, ['Outro']);
+
+    expect(nextMission.scrip_type).toBe('mg_scrip');
+    expect(nextMission.scrip_qty).toBe(12);
+    expect(nextMission.secure_drive_enabled).toBe(true);
+    expect(nextMission.secure_drive_qty).toBe(2);
+  });
+
   test('preenche o último aUEC conhecido para o mesmo nome de missão', () => {
     window.localStorage.setItem('sc_missions_v2', JSON.stringify([
       {
@@ -36,6 +68,61 @@ describe('recompensa histórica do Monitor Automático', () => {
     expect(mission.auto_reward_status).toBe('filled');
     expect(mission.auto_reward_source).toBe('historical');
     expect(mission.auto_reward_source_mission_id).toBe('old-1');
+  });
+
+  test('reaproveita os dados editados quando a mesma missão retorna com novo GUID', () => {
+    window.localStorage.setItem('sc_missions_v2', JSON.stringify([
+      {
+        id: 'historical-mission-1',
+        title: 'Transporte de Carga Especial',
+        canonical_title: 'Transporte de Carga Especial',
+        type: 'Delivery',
+        faction: 'Covalex',
+        system: 'Stanton',
+        location: 'Lorville',
+        difficulty: 'Elite',
+        reward: 150000,
+        reputation_gain: 42,
+        crew_needed: 3,
+        notes: 'Usar rota segura pelo cinturão.',
+        objectives: [{ text: 'Entregar a carga', done: true }],
+        status: 'Completed',
+        auto: true,
+        watcher_guid: 'old-guid',
+        contract_definition_id: 'same-contract-definition',
+        external_generator: 'Delivery_Special',
+        completed_at: '2026-08-14T10:00:00.000Z',
+      },
+    ]));
+
+    const mission = upsertAutomaticMissionRecord({
+      type: 'mission_start',
+      guid: 'new-guid',
+      debugName: 'internal_delivery_special',
+      displayName: 'Transporte de Carga Especial',
+      generator: 'Delivery_Special',
+      contractDefinitionId: 'same-contract-definition',
+      reward: 0,
+      startTs: Date.parse('2026-08-15T10:00:00.000Z'),
+    }, ['Outro', 'Delivery']);
+
+    expect(mission).toMatchObject({
+      auto: true,
+      watcher_guid: 'new-guid',
+      title: 'Transporte de Carga Especial',
+      faction: 'Covalex',
+      type: 'Delivery',
+      system: 'Stanton',
+      location: 'Lorville',
+      difficulty: 'Elite',
+      reward: 150000,
+      reputation_gain: 42,
+      crew_needed: 3,
+      notes: 'Usar rota segura pelo cinturão.',
+      status: 'Active',
+    });
+    expect(mission.objectives).toEqual([{ text: 'Entregar a carga', done: false }]);
+    expect(mission.id).not.toBe('historical-mission-1');
   });
 
   test('não mistura nomes parecidos quando não há correspondência exata', () => {

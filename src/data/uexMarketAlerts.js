@@ -94,13 +94,49 @@ export function manualMatchModeLabel(value) {
   return MARKET_ALERT_MANUAL_MATCH_MODES.find(mode => mode.value === normalizeManualMatchMode(value))?.label || MARKET_ALERT_MANUAL_MATCH_MODES[0].label;
 }
 
+function editDistance(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = row[j];
+      row[j] = left[i - 1] === right[j - 1]
+        ? diagonal
+        : Math.min(diagonal + 1, row[j] + 1, row[j - 1] + 1);
+      diagonal = above;
+    }
+  }
+  return row[right.length];
+}
+
+function similarSearchToken(needle, candidate) {
+  if (needle === candidate) return true;
+  if (needle.length < 5 || candidate.length < 5) return false;
+  return editDistance(needle, candidate) <= 1;
+}
+
 function containsNormalizedPhrase(text, phrase) {
   const haystack = normalizeItemSearch(text);
   const needle = normalizeItemSearch(phrase);
   if (!haystack || !needle) return false;
-  const haystackWords = haystack.split(' ');
-  const needleWords = needle.split(' ');
-  return haystackWords.some((_, index) => needleWords.every((word, offset) => haystackWords[index + offset] === word));
+  const haystackWords = haystack.split(' ').filter(Boolean);
+  const needleWords = needle.split(' ').filter(Boolean);
+  if (haystackWords.some((_, index) => needleWords.every((word, offset) => haystackWords[index + offset] === word))) return true;
+
+  // A UEX pode inverter a ordem do nome ou ter uma pequena variação textual,
+  // como "Carinite (Pure)" para uma busca por "Pure Caranite". Para busca
+  // manual, a aceitação é limitada: todos os tokens procurados precisam ter
+  // um token correspondente, e no máximo uma diferença de edição é permitida.
+  const used = new Set();
+  return needleWords.every(word => {
+    const index = haystackWords.findIndex((candidate, candidateIndex) => !used.has(candidateIndex) && similarSearchToken(word, candidate));
+    if (index < 0) return false;
+    used.add(index);
+    return true;
+  });
 }
 
 function manualMatchFields(listing = {}) {
@@ -148,8 +184,20 @@ export function listingQuality1000(row) {
   return titleQuality1000(row);
 }
 
+function listingPriceValue(value) {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    // Preços UEX são inteiros em UEC. Preserve agrupamentos como
+    // "20.000.000" antes da heurística decimal genérica.
+    if (/^\d{1,3}(?:\.\d{3})+$/.test(text)) return Number(text.replace(/\./g, ''));
+  }
+  return numberValue(value, 0);
+}
+
 export function listingPrice(row) {
-  return numberValue(row?.price, numberValue(row?.price_auec, 0));
+  const primary = row?.price;
+  if (primary !== null && primary !== undefined && primary !== '') return listingPriceValue(primary);
+  return listingPriceValue(row?.price_auec);
 }
 
 export function listingDateAddedMs(row) {
@@ -251,6 +299,12 @@ function exactName(value) {
 
 function rowIds(row = {}) {
   return [row.id_item, row.item_id, row.id_commodity, row.commodity_id, row.id]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean);
+}
+
+function listingItemIds(row = {}) {
+  return [row.id_item, row.item_id, row.item_uuid]
     .map(value => String(value ?? '').trim())
     .filter(Boolean);
 }
@@ -442,6 +496,21 @@ export function loadMarketAlertFocus() {
   return readJson(MARKET_ALERT_FOCUS_KEY, null);
 }
 
+/**
+ * Consome o foco criado pelo sininho. O foco é transitório: serve apenas para
+ * levar o usuário até o grupo uma vez e não deve sobreviver às atualizações
+ * periódicas dos alertas.
+ */
+export function consumeMarketAlertFocus() {
+  const focus = loadMarketAlertFocus();
+  try {
+    window.localStorage.removeItem(MARKET_ALERT_FOCUS_KEY);
+  } catch {
+    // O armazenamento pode estar indisponível em um contexto Electron isolado.
+  }
+  return focus;
+}
+
 function saveMarketAlertEvents(events) {
   const safe = (Array.isArray(events) ? events : []).slice(0, MARKET_ALERT_MAX_EVENTS);
   writeJson(MARKET_ALERT_EVENTS_KEY, safe);
@@ -524,6 +593,8 @@ function eventFromListing(alert, listing, rank = 0, referencePrice = 0) {
     stock: listingStock(listing),
     opportunityScore: listingOpportunityScore(listing, referencePrice),
     resultRank: rank + 1,
+    resultSort: normalizeResultSort(alert.resultSort),
+    referencePrice: numberValue(alert.referencePrice, 0),
     source: listing.source || '',
     matchMode: alert.itemMode === 'manual' ? normalizeManualMatchMode(alert.manualMatchMode) : 'catalog',
     matchReason: matchReason || 'Correspondência do anúncio',
@@ -553,6 +624,15 @@ export function sortMarketAlertListings(alert, listings = []) {
     if (sort === 'newest') return (listingDateAddedMs(b) || 0) - (listingDateAddedMs(a) || 0) || listingPrice(a) - listingPrice(b);
     return listingPrice(a) - listingPrice(b) || (listingQuality1000(b) ?? -1) - (listingQuality1000(a) ?? -1);
   });
+}
+
+export function compareMarketAlertEvents(a = {}, b = {}) {
+  const sort = normalizeResultSort(a.resultSort || b.resultSort);
+  const referencePrice = numberValue(a.referencePrice ?? b.referencePrice, 0);
+  if (sort === 'quality') return (Number(b.quality) || -1) - (Number(a.quality) || -1) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  if (sort === 'value') return (Number(b.opportunityScore) || -Infinity) - (Number(a.opportunityScore) || -Infinity) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  if (sort === 'newest') return (listingDateAddedMs(b.listing || b) || Number(b.dateAdded) || 0) - (listingDateAddedMs(a.listing || a) || Number(a.dateAdded) || 0) || (Number(a.price) || 0) - (Number(b.price) || 0);
+  return (Number(a.price) || 0) - (Number(b.price) || 0) || (Number(b.quality) || -1) - (Number(a.quality) || -1);
 }
 
 /**
@@ -593,6 +673,22 @@ export async function fetchMarketListingsForAlert(alert) {
     await fetchRows({ operation: 'sell' });
   }
 
+  // Busca manual: o endpoint sem id pode devolver apenas uma janela global de
+  // anúncios. Use um anúncio que já corresponda ao nome para descobrir o
+  // id_item e então consulte a coleção completa desse item.
+  if (itemName && alert?.itemMode === 'manual') {
+    const discoveredIds = new Set();
+    Array.from(rowsByKey.values())
+      .filter(listing => listingManualMatchReason(alert, listing))
+      .forEach(listing => listingItemIds(listing).forEach(id => discoveredIds.add(id)));
+    for (const id of discoveredIds) {
+      if (!itemIds.includes(id)) {
+        itemIds.push(id);
+        await fetchRows({ id_item: id, operation: 'sell' });
+      }
+    }
+  }
+
   const rows = Array.from(rowsByKey.values()).filter(listing => {
     if (alert?.itemMode === 'manual') return Boolean(listingManualMatchReason(alert, listing));
     return listingBelongsToAlert(alert, listing, itemIds);
@@ -614,8 +710,13 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     return { newEvents: [], checkedAt: new Date(checkTimestamp).toISOString(), checkedAlerts: 0 };
   }
   const previousEvents = loadMarketAlertEvents();
-  const previousKeys = new Set(previousEvents.map(row => row.key));
-  const knownListingIds = new Set(previousEvents.map(row => row.listingId).filter(value => value !== null && value !== undefined).map(String));
+  const alertById = new Map(configuredAlerts.map(alert => [String(alert.id), alert]));
+  const validPreviousEvents = previousEvents.filter(event => {
+    const alert = alertById.get(String(event.alertId || ''));
+    return !alert || !event.listing || listingMatchesAlert(alert, event.listing);
+  });
+  const previousKeys = new Set(validPreviousEvents.map(row => row.key));
+  const knownListingIds = new Set(validPreviousEvents.map(row => row.listingId).filter(value => value !== null && value !== undefined).map(String));
   const dismissedKeys = loadDismissedMarketAlertKeys();
   const seenKeysThisCheck = new Set(previousKeys);
   const newEvents = [];
@@ -661,7 +762,7 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     groupLimits.set(key, Math.max(groupLimits.get(key) || 0, clampMaxResults(alert.maxResults)));
   });
   const eventsByGroup = new Map();
-  [...newEvents, ...previousEvents].forEach(event => {
+  [...newEvents, ...validPreviousEvents].forEach(event => {
     const key = event.groupKey || marketAlertGroupKey(event);
     const rows = eventsByGroup.get(key) || [];
     rows.push(event);
@@ -669,8 +770,9 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
     eventsByGroup.set(key, rows);
   });
   const limitedEvents = Array.from(eventsByGroup.entries()).flatMap(([key, rows]) => rows
-    .sort((a, b) => Number(a.price || 0) - Number(b.price || 0) || Number(b.dateAdded || 0) - Number(a.dateAdded || 0))
-    .slice(0, groupLimits.get(key) || DEFAULT_MARKET_ALERT_MAX_RESULTS));
+    .sort(compareMarketAlertEvents)
+    .slice(0, groupLimits.get(key) || DEFAULT_MARKET_ALERT_MAX_RESULTS)
+    .map((event, index) => ({ ...event, resultRank: index + 1 })));
   saveMarketAlertEvents(limitedEvents);
   saveMarketAlertSettings({ lastCheckAt: checkTimestamp, nextCheckAt });
   emit(MARKET_ALERTS_CHECKED_EVENT, { newEvents, checkedAt, nextCheckAt });

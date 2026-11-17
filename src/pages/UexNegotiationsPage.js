@@ -12,6 +12,7 @@ import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
 import { getNegotiationClosedAt, isNegotiationClosed } from '../data/uexNegotiationStatus';
 import { formatRelativeMessageTime } from '../data/uexMessageTime';
+import { loadUexChatReadState, isUexChatUnread, markUexChatRead, markAllUexChatsRead, UEX_CHAT_READ_STATE_UPDATED_EVENT } from '../data/uexChatReadState';
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -35,7 +36,13 @@ async function copyTextToClipboard(text) {
 }
 
 const CHAT_POLL_INTERVAL_MS = 5000;
+const CHAT_BOTTOM_THRESHOLD_PX = 36;
 const UEX_TEXTS_KEY = 'sc_uex_texts_v1';
+
+export function isChatNearBottom(element, threshold = CHAT_BOTTOM_THRESHOLD_PX) {
+  if (!element) return true;
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+}
 
 function loadQuickUexTexts() {
   try {
@@ -183,7 +190,7 @@ function SaleCompletionModal({ negotiation, onCancel, onConfirm, saving }) {
   );
 }
 
-function NegotiationThread({ negotiation, onBack }) {
+function NegotiationThread({ negotiation, onBack, onConsumeArmorStock, onConsumeInventoryStock }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -216,6 +223,8 @@ function NegotiationThread({ negotiation, onBack }) {
   const isMyListing = Number(negotiation.is_listing_advertiser) === 1 || negotiation.is_listing_advertiser === true;
   const isBuyer = !isMyListing;
   const messagesEndRef = React.useRef(null);
+  const messagesContainerRef = React.useRef(null);
+  const shouldFollowMessagesRef = React.useRef(true);
   const knownMessageIdsRef = React.useRef(new Set());
   const firstLoadRef = React.useRef(true);
   const pollingRef = React.useRef(false);
@@ -290,6 +299,7 @@ function NegotiationThread({ negotiation, onBack }) {
     setTranslationMessageError('');
     setLastUpdatedAt(null);
     setError('');
+    shouldFollowMessagesRef.current = true;
     load();
     const timer = window.setInterval(() => load({ silent: true }), CHAT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
@@ -326,9 +336,11 @@ function NegotiationThread({ negotiation, onBack }) {
     return () => window.clearTimeout(timer);
   }, [replyPt]);
 
-  // Rola pra última mensagem sempre que a conversa carrega ou recebe algo novo
+  // Acompanha o fim somente se o usuário já estava no fim. Ao subir para ler
+  // mensagens antigas, o polling continua atualizando o chat sem reposicionar a tela.
   useEffect(() => {
-    if (!loading) messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    if (loading || !shouldFollowMessagesRef.current) return;
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, loading]);
 
   async function handleSendMessage(message, language) {
@@ -338,6 +350,7 @@ function NegotiationThread({ negotiation, onBack }) {
     setSendError('');
     try {
       await sendNegotiationMessage(negotiation.hash, text);
+      shouldFollowMessagesRef.current = true;
       setReplyPt('');
       setReplyEn('');
       englishManualEditRef.current = false;
@@ -384,9 +397,14 @@ function NegotiationThread({ negotiation, onBack }) {
   }
 
   function revealNewMessages() {
+    shouldFollowMessagesRef.current = true;
     setNewMessagesCount(0);
     setIncomingPreview(null);
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function handleMessagesScroll(event) {
+    shouldFollowMessagesRef.current = isChatNearBottom(event.currentTarget);
   }
 
     async function handleCopyBuyerNick() {
@@ -409,19 +427,21 @@ function NegotiationThread({ negotiation, onBack }) {
     }
   }
 
-  function handleCloseNegotiation(status, saleOverrides = {}) {
+  async function handleCloseNegotiation(status, saleOverrides = {}) {
     if (closing || closure) return;
     setClosing(true);
     setCloseError('');
     try {
       let result = null;
-      if (status === 'success') result = registerNegotiationSale(negotiation, saleOverrides);
+      if (status === 'success') result = await registerNegotiationSale(negotiation, saleOverrides, { onConsumeArmorStock, onConsumeInventoryStock });
       const savedClosure = closeNegotiation(negotiation.hash, status, {
         role: 'seller',
         saleId: result?.sale?.id || null,
         saleCreated: result?.saleCreated || false,
         catalogCreated: result?.catalogCreated || false,
         vaultConsumption: result?.vaultConsumption || null,
+        armorConsumption: result?.armorConsumption || null,
+        inventoryConsumption: result?.inventoryConsumption || null,
       });
       setClosure({ ...savedClosure, sale: result?.sale || null });
       setSaleModalOpen(false);
@@ -456,9 +476,9 @@ function NegotiationThread({ negotiation, onBack }) {
   const negotiationListingUrl = getNegotiationListingUrl(negotiation);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="uex-thread-shell" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       {saleModalOpen && <SaleCompletionModal negotiation={negotiation} saving={closing} onCancel={() => setSaleModalOpen(false)} onConfirm={values => handleCloseNegotiation('success', values)} />}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <div className="uex-thread-header" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexShrink: 0 }}>
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
           <ArrowLeft size={14} /> Voltar
         </button>
@@ -513,6 +533,10 @@ function NegotiationThread({ negotiation, onBack }) {
             {closure.status === 'success' && closure.vaultConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Baú atualizado: {closure.vaultConsumption.boxes} caixa{closure.vaultConsumption.boxes === 1 ? '' : 's'} de {closure.vaultConsumption.boxQuantity} {closure.vaultConsumption.boxUnit} descontada{closure.vaultConsumption.boxes === 1 ? '' : 's'}{closure.vaultConsumption.quality ? ` · qualidade ${closure.vaultConsumption.quality}` : ''}.</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Baú não foi descontado: {closure.vaultConsumption.message}</span></>}
             {closure.status === 'success' && closure.vaultConsumption?.status === 'not_linked' && <><br/><span style={{ color:'var(--text-muted)' }}>O anúncio não possui vínculo com o Baú; nenhuma quantidade foi descontada.</span></>}
+            {closure.status === 'success' && closure.armorConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Coleção de armaduras atualizada: estoque vendido descontado.</span></>}
+            {closure.status === 'success' && closure.armorConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas a coleção de armaduras não foi descontada: {closure.armorConsumption.message || 'estoque insuficiente ou vínculo inválido.'}</span></>}
+            {closure.status === 'success' && closure.inventoryConsumption?.status === 'consumed' && <><br/><span style={{ color:'var(--accent-green)' }}>Inventário de Itens atualizado: quantidade vendida descontada.</span></>}
+            {closure.status === 'success' && closure.inventoryConsumption?.status === 'failed' && <><br/><span style={{ color:'var(--accent-gold)' }}>Venda registrada, mas o Inventário de Itens não foi descontado: {closure.inventoryConsumption.message || 'estoque insuficiente ou vínculo inválido.'}</span></>}
           </span>
         </div>
       ) : (
@@ -556,7 +580,7 @@ function NegotiationThread({ negotiation, onBack }) {
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div ref={messagesContainerRef} onScroll={handleMessagesScroll} className="uex-thread-messages" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {newMessagesCount > 0 && <button type="button" onClick={revealNewMessages} style={{ position:'sticky', top:0, zIndex:2, display:'flex', alignItems:'center', justifyContent:'center', gap:7, padding:'8px 10px', background:'rgba(56,189,248,0.14)', border:'1px solid rgba(56,189,248,0.4)', borderRadius:7, color:'var(--accent-primary)', cursor:'pointer', fontSize:11, fontWeight:800 }}><BellRing size={13}/> {newMessagesCount} nova{newMessagesCount !== 1 ? 's' : ''} mensagem{newMessagesCount !== 1 ? 'ns' : ''} recebida{newMessagesCount !== 1 ? 's' : ''} — ver agora</button>}
         {loading && <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Carregando mensagens...</div>}
         {!loading && messages.length === 0 && !error && (
@@ -606,7 +630,7 @@ function NegotiationThread({ negotiation, onBack }) {
           Esta negociação está encerrada — não é possível enviar novas mensagens.
         </div>
       ) : (
-        <div style={{ marginTop: 12, flexShrink: 0 }}>
+        <div className="uex-thread-composer" style={{ marginTop: 12, flexShrink: 0, minHeight: 0 }}>
           {sendError && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px', background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.25)', borderRadius: 6, color: 'var(--accent-red)', fontSize: 11, marginBottom: 8 }}>
               <AlertTriangle size={12} />{sendError}
@@ -670,11 +694,12 @@ function NegotiationThread({ negotiation, onBack }) {
   );
 }
 
-export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed }) {
+export default function UexNegotiationsPage({ targetNegotiationHash = '', onTargetNegotiationConsumed, onConsumeArmorStock, onConsumeInventoryStock }) {
   const [negotiations, setNegotiations] = useState([]);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState('');
   const [selected, setSelected]         = useState(null);
+  const [chatReadStateVersion, setChatReadStateVersion] = useState(0);
   const hasToken = !!loadToken();
 
   const load = useCallback(async () => {
@@ -689,6 +714,12 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
   }, [hasToken]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const refreshReadState = () => setChatReadStateVersion(version => version + 1);
+    window.addEventListener(UEX_CHAT_READ_STATE_UPDATED_EVENT, refreshReadState);
+    return () => window.removeEventListener(UEX_CHAT_READ_STATE_UPDATED_EVENT, refreshReadState);
+  }, []);
 
   const [statusFilter, setStatusFilter] = useState('active');
 
@@ -705,6 +736,9 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
     return negotiations.filter(negotiation => getNegotiationListStatus(negotiation) === statusFilter);
   }, [negotiations, statusFilter, getNegotiationListStatus]);
 
+  const readState = useMemo(() => loadUexChatReadState(), [chatReadStateVersion]);
+  const unreadNegotiations = useMemo(() => negotiations.filter(negotiation => isUexChatUnread(negotiation, readState)), [negotiations, readState]);
+
   const statusCounts = useMemo(() => negotiations.reduce((counts, negotiation) => {
     const status = getNegotiationListStatus(negotiation);
     counts[status] = (counts[status] || 0) + 1;
@@ -717,10 +751,19 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
     if (!target || !negotiations.length) return;
     const match = negotiations.find(negotiation => String(negotiation.hash || negotiation.id || '').trim() === target);
     if (match) {
-      setSelected(match);
+      openNegotiation(match);
       onTargetNegotiationConsumed?.();
     }
   }, [targetNegotiationHash, negotiations, onTargetNegotiationConsumed]);
+
+  function openNegotiation(negotiation) {
+    markUexChatRead(negotiation);
+    setSelected(negotiation);
+  }
+  function markAllChatsAsRead() {
+    if (!unreadNegotiations.length) return;
+    markAllUexChatsRead(unreadNegotiations);
+  }
 
   if (!hasToken) {
     return (
@@ -736,7 +779,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
   }
 
   return (
-    <>
+    <div className="uex-negotiations-page">
       <div className="page-header">
         <div>
           <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -749,9 +792,11 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
         </button>
       </div>
 
-      <div className="page-body" style={{ padding: 24, height: '100%' }}>
+      <div className={`page-body uex-negotiations-body${selected ? ' has-selected-thread' : ''}`} style={{ padding: 24, height: '100%', minHeight: 0, boxSizing: 'border-box' }}>
         {!selected && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+              {unreadNegotiations.length > 0 && <span style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 8px', borderRadius:6, background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)', color:'var(--accent-gold)', fontSize:10, fontWeight:800 }}><BellRing size={12}/> {unreadNegotiations.length} chat{unreadNegotiations.length === 1 ? '' : 's'} com mensagem nova</span>}
+              <button type="button" onClick={markAllChatsAsRead} disabled={unreadNegotiations.length === 0} title={unreadNegotiations.length ? 'Marcar todos os chats com mensagem nova como vistos' : 'Não há chats novos'} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 9px', borderRadius:6, border:'1px solid rgba(52,211,153,0.35)', background:unreadNegotiations.length ? 'rgba(52,211,153,0.1)' : 'rgba(148,163,184,0.06)', color:unreadNegotiations.length ? 'var(--accent-green)' : 'var(--text-muted)', fontSize:10, fontWeight:800, cursor:unreadNegotiations.length ? 'pointer' : 'not-allowed', opacity:unreadNegotiations.length ? 1 : 0.65 }}><ClipboardCheck size={12}/> {unreadNegotiations.length ? 'Marcar todos como vistos' : 'Todos os chats vistos'}</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}><Filter size={13} /> Mostrar</div>
             <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} style={{ padding: '7px 28px 7px 9px', background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', borderRadius: 6, color: 'var(--text-primary)', fontFamily: '"Exo 2",sans-serif', fontSize: 11, fontWeight: 700, outline: 'none' }}>
               <option value="active">Ativas ({statusCounts.active || 0})</option>
@@ -770,7 +815,7 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
         )}
 
         {selected ? (
-          <NegotiationThread negotiation={selected} onBack={() => setSelected(null)} />
+          <NegotiationThread negotiation={selected} onBack={() => setSelected(null)} onConsumeArmorStock={onConsumeArmorStock} onConsumeInventoryStock={onConsumeInventoryStock} />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {loading && negotiations.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Carregando...</div>}
@@ -786,23 +831,25 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
               const localClosure = getNegotiationClosure(n.hash);
               const apiClosedAt = getNegotiationClosedAt(n);
               const isLocallyClosed = Boolean(apiClosedAt || localClosure);
+              const unread = isUexChatUnread(n, readState);
               const initial = counterparty.name.replace(/^@/, '').charAt(0).toUpperCase() || '?';
               return (
-                <button key={n.id || n.hash} type="button" onClick={() => setSelected(n)} style={{
+                <button key={n.id || n.hash} type="button" onClick={() => openNegotiation(n)} style={{
                   position:'relative', overflow:'hidden', width:'100%', textAlign:'left', display:'flex', gap:13, alignItems:'center',
                   padding:'13px 15px 13px 17px', background:`linear-gradient(105deg, ${palette.soft}, var(--bg-card) 42%)`,
-                  border:'1px solid var(--border-subtle)', borderLeft:`4px solid ${palette.accent}`,
+                  border:`1px solid ${unread ? 'rgba(251,191,36,0.62)' : 'var(--border-subtle)'}`, borderLeft:`4px solid ${unread ? 'var(--accent-gold)' : palette.accent}`,
                   borderRadius:9, cursor:'pointer', transition:'transform 0.15s, border-color 0.15s, box-shadow 0.15s',
                 }}
                   onMouseEnter={e=>{e.currentTarget.style.transform='translateX(2px)';e.currentTarget.style.borderColor=palette.accent;e.currentTarget.style.boxShadow=`0 5px 18px ${palette.soft}`;}}
-                  onMouseLeave={e=>{e.currentTarget.style.transform='translateX(0)';e.currentTarget.style.borderColor='var(--border-subtle)';e.currentTarget.style.boxShadow='none';}}
+                  onMouseLeave={e=>{e.currentTarget.style.transform='translateX(0)';e.currentTarget.style.borderColor=unread?'rgba(251,191,36,0.62)':'var(--border-subtle)';e.currentTarget.style.boxShadow='none';}}
                 >
                   <div style={{ width:38, height:38, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', background:palette.soft, border:`1px solid ${palette.accent}66`, color:palette.accent, fontFamily:'Michroma,sans-serif', fontSize:15, fontWeight:800 }}>
                     {initial}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5, minWidth:0 }}>
-                      <div style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:13, fontWeight:800, color:'var(--text-primary)' }}>{n.listing_title || 'Item sem título'}</div>
+                      <div style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:13, fontWeight:unread ? 900 : 800, color:'var(--text-primary)' }}>{n.listing_title || 'Item sem título'}</div>
+                      {unread && <span title="Mensagem nova não visualizada" style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:4, padding:'3px 7px', borderRadius:10, background:'rgba(251,191,36,0.14)', border:'1px solid rgba(251,191,36,0.4)', color:'var(--accent-gold)', fontSize:8, fontWeight:900, textTransform:'uppercase', letterSpacing:'0.04em' }}><BellRing size={10}/> Nova</span>}
                       <span style={{ flexShrink:0, padding:'2px 7px', borderRadius:10, background:isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.12)':'rgba(251,113,133,0.1)'):'rgba(52,211,153,0.1)', border:`1px solid ${isLocallyClosed?(localClosure?.status==='success'?'rgba(52,211,153,0.3)':'rgba(251,113,133,0.25)'):'rgba(52,211,153,0.25)'}`, color:isLocallyClosed?(localClosure?.status==='success'?'var(--accent-green)':'var(--accent-red)'):'var(--accent-green)', fontSize:9, fontWeight:800, textTransform:'uppercase' }}>
                         {localClosure?.status==='success' ? 'Concluída' : localClosure?.status==='failed' ? 'Sem sucesso' : apiClosedAt ? 'Encerrada' : 'Ativa'}
                       </span>
@@ -814,6 +861,8 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
                       {n.deal_value !== null && n.deal_value !== undefined && <span style={{ color:'var(--accent-green)', fontWeight:700 }}>· valor acordado</span>}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6, fontSize:9, color:'var(--text-muted)' }}>
+                      <span>{unread ? 'Mensagem nova não visualizada' : 'Chat visualizado'}</span>
+                      <span>·</span>
                       <span>#{String(n.hash || n.id || '').slice(-8)}</span>
                       <span>·</span>
                       <span>{fmtDate(n.date_modified)}</span>
@@ -826,6 +875,6 @@ export default function UexNegotiationsPage({ targetNegotiationHash = '', onTarg
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
