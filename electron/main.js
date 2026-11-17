@@ -299,7 +299,38 @@ function migrateDatabaseInsideDataRoot(root) {
   const currentDb = path.join(dataDir, DB_FILE_NAME);
   if (fs.existsSync(currentDb)) return false;
   const legacyDb = findDatabaseFile(root);
-  return Boolean(legacyDb && copyFileIfMissing(legacyDb, currentDb));
+  if (!legacyDb || path.resolve(legacyDb) === path.resolve(currentDb)) return false;
+  try {
+    backupDatabaseBeforeMigration(legacyDb, root);
+    return copyFileIfMissing(legacyDb, currentDb);
+  } catch (error) {
+    console.error('[Database] Não foi possível preservar o banco legado antes da migração.', error);
+    return false;
+  }
+}
+
+function backupDatabaseBeforeMigration(sourceDatabase, targetRoot) {
+  if (!sourceDatabase || !fs.existsSync(sourceDatabase)) return null;
+  const backupDir = ensureDirectory(path.join(targetRoot, 'backup', 'migracao-atualizacao'));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(backupDir, `origem-${stamp}-${path.basename(sourceDatabase)}`);
+  fs.copyFileSync(sourceDatabase, backupPath, fs.constants.COPYFILE_EXCL);
+  return backupPath;
+}
+
+function findLegacyDataSource(targetRoot) {
+  const candidates = [
+    legacyUserDataPath,
+    path.join(app.getPath('appData'), APP_DIR_NAME),
+    path.join(app.getPath('appData'), 'Companheiro Emoto'),
+    path.join(app.getPath('appData'), `${APP_DIR_NAME}-Dev`),
+  ].filter(Boolean);
+  const target = path.resolve(targetRoot);
+  return candidates
+    .map(candidate => path.resolve(candidate))
+    .filter((candidate, index, all) => candidate !== target && all.indexOf(candidate) === index)
+    .map(candidate => ({ root: candidate, database: findDatabaseFile(candidate) }))
+    .find(item => item.database && fs.existsSync(item.database)) || null;
 }
 
 function saveDb() {
@@ -322,8 +353,9 @@ function saveDb() {
 }
 
 async function configureDataDirectory() {
-  // Captura apenas o caminho padrão para diagnóstico. Nenhum arquivo desse
-  // diretório é copiado automaticamente para a instalação atual.
+  // O caminho anterior é mantido para recuperar instalações que usavam o
+  // userData padrão antes da pasta central. A recuperação é somente aditiva:
+  // nunca substitui um banco já existente no destino.
   legacyUserDataPath = app.getPath('userData');
   dataConfigPath = getDataConfigPath();
   const savedConfig = safeReadJson(dataConfigPath);
@@ -357,42 +389,20 @@ async function configureDataDirectory() {
     startupWarnings.push(`Não foi possível usar o diretório escolhido: ${error.message}`);
   }
 
-  // Se a pasta escolhida já contém dados, mas não possui assinatura deste
-  // ambiente, não a abrimos silenciosamente. Por padrão preservamos a pasta
-  // antiga renomeando-a e iniciamos uma pasta limpa; o usuário pode escolher
-  // explicitamente a opção de reutilizar os dados existentes.
+  // Nunca renomear automaticamente uma pasta que contém dados. Esse comportamento
+  // fazia a atualização parecer apagar registros: uma pasta limpa era criada e o
+  // banco antigo ficava escondido com o sufixo "-legado".
   if (!hasValidSavedConfig && !isCurrentEnvironmentRoot(selectedRoot) && directoryHasPersistentData(selectedRoot)) {
-    const decision = await dialog.showMessageBox({
-      type: 'warning',
-      title: 'Dados antigos encontrados',
-      message: 'A pasta escolhida já contém dados sem identificação deste ambiente.',
-      detail: `Para evitar misturar dados de teste, o Companheiro Emoto pode preservar essa pasta e iniciar uma nova. Pasta encontrada: ${selectedRoot}`,
-      buttons: ['Criar pasta limpa e preservar antigos', 'Usar dados existentes'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    if (decision.response === 0) {
-      archivedLegacyRoot = makeLegacyArchivePath(selectedRoot);
-      fs.renameSync(selectedRoot, archivedLegacyRoot);
-      ensureDirectory(selectedRoot);
-      startupWarnings.push(`A pasta antiga foi preservada em ${archivedLegacyRoot}.`);
-    } else {
-      startupWarnings.push('Dados existentes foram reutilizados somente por escolha explícita.');
-    }
+    startupWarnings.push('Dados existentes encontrados; a pasta foi mantida e será reutilizada sem sobrescrita.');
   }
 
   dataRoot = selectedRoot;
-  // Não migramos mais o userData antigo automaticamente. Esse diretório pode
-  // pertencer a uma execução de teste, a outro build ou a uma versão anterior.
-  // A transferência de dados deve acontecer somente por backup completo ou pela
-  // troca explícita de diretório dentro do aplicativo.
   dataMigration = {
     copied: [],
     skipped: [],
     warnings: startupWarnings,
     at: new Date().toISOString(),
-    automatic: false,
+    automatic: true,
     ignoredConfig: Boolean(ignoredConfig),
     archivedLegacyRoot,
     source: null,
@@ -400,15 +410,31 @@ async function configureDataDirectory() {
   if (ignoredConfig) {
     dataMigration.warnings.push('A configuração existente pertencia a outro ambiente ou versão e foi ignorada para evitar mistura de dados.');
   }
-  // Migração de um banco legado dentro da pasta central só é permitida quando
-  // a própria ponte confirma que essa pasta pertence a este ambiente. Em uma
-  // instalação limpa, um .db encontrado por acaso não é tratado como usuário.
-  if (hasValidSavedConfig && migrateDatabaseInsideDataRoot(dataRoot)) {
+  if (migrateDatabaseInsideDataRoot(dataRoot)) {
     dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
   }
   ensureDirectory(path.join(dataRoot, 'dados'));
   ensureDirectory(path.join(dataRoot, 'backup'));
   ensureDirectory(path.join(dataRoot, 'exportados'));
+
+  // Recupera o banco usado por versões antigas que gravavam diretamente em
+  // userData. O backup é criado antes da cópia e a operação é idempotente.
+  const destinationDb = path.join(dataRoot, 'dados', DB_FILE_NAME);
+  if (!fs.existsSync(destinationDb)) {
+    const legacySource = findLegacyDataSource(dataRoot);
+    if (legacySource) {
+      try {
+        const backupPath = backupDatabaseBeforeMigration(legacySource.database, dataRoot);
+        fs.copyFileSync(legacySource.database, destinationDb, fs.constants.COPYFILE_EXCL);
+        dataMigration.copied.push(path.join('dados', DB_FILE_NAME));
+        dataMigration.source = legacySource.root;
+        dataMigration.backup = backupPath;
+        startupWarnings.push(`Banco legado recuperado de ${legacySource.root}; cópia de segurança criada antes da migração.`);
+      } catch (error) {
+        dataMigration.warnings.push(`Não foi possível migrar o banco legado: ${error.message}`);
+      }
+    }
+  }
   writeDataManifest(dataRoot);
   writeDataConfig(dataRoot);
 
@@ -2814,6 +2840,12 @@ ipcMain.handle('mobile-server-rotate-token', (event) => {
 });
 
 // ── Window ────────────────────────────────────────────────────────────────────
+function resolveAppIcon() {
+  if (process.platform === 'win32') return path.join(__dirname, '../electron-icons/icon.ico');
+  if (process.platform === 'darwin') return path.join(__dirname, '../electron-icons/icon.icns');
+  return path.join(__dirname, '../electron-icons/icon.png');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width:1440,height:900,minWidth:1100,minHeight:700,
@@ -2825,7 +2857,7 @@ function createWindow() {
       preload:path.join(__dirname,'preload.js')
     },
     backgroundColor:'#05070c',show:false,
-    // icon: resolveAppIcon(),   ← comentada temporariamente
+    icon: resolveAppIcon(),
   });
 
   const isInternalNavigation = (url) => {

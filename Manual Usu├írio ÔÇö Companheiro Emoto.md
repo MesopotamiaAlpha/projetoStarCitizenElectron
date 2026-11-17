@@ -614,11 +614,11 @@ Se um problema persistir, faça um backup completo antes de qualquer tentativa d
 
 ## Servidor Mobile — acesso pelo celular
 
-A versão 3.0.0 permite consultar parte do Companheiro Emoto pelo navegador do celular, usando o computador como servidor local. O recurso é opcional e fica desligado até que você o ative.
+A versão 3.0.1 permite consultar parte do Companheiro Emoto pelo navegador do celular, usando o computador como servidor local. O recurso é opcional e fica desligado até que você o ative.
 
 ### Como ligar
 
-Abra **Sistema → Diretório de Dados** e localize o cartão **Servidor Mobile · v3.0.0**. Confira a porta sugerida, normalmente `47821`, e pressione **Ligar servidor**. O programa exibirá um ou mais endereços de rede, além de um token temporário.
+Abra **Sistema → Diretório de Dados** e localize o cartão **Servidor Mobile · v3.0.1**. Confira a porta sugerida, normalmente `47821`, e pressione **Ligar servidor**. O programa exibirá um ou mais endereços de rede, além de um token temporário.
 
 O computador e o celular precisam estar conectados à mesma rede Wi-Fi. Copie o endereço completo mostrado pelo programa e abra-o no navegador do celular. O token já está incluído no link. Se preferir, copie o token separadamente e use o endereço com `?token=SEU_TOKEN`.
 
@@ -637,7 +637,7 @@ O celular não acessa diretamente a pasta de dados do computador. Operações co
 Se o celular não abrir o endereço, confirme que os dois dispositivos estão na mesma rede, que o servidor está marcado como **LIGADO**, que o endereço foi copiado completo e que o Firewall do Windows permitiu o aplicativo Electron na rede privada. Se a rede tiver mais de um endereço, tente os outros endereços exibidos pelo cartão.
 
 
-## 16. Acesso pelo celular — versão 3.0.0
+## 16. Acesso pelo celular — versão 3.0.1
 
 O Companheiro Emoto pode abrir uma versão adaptada para celular sem transferir o banco para a internet. O computador continua ligado e funcionando como servidor local; o celular apenas acessa os dados pela mesma rede Wi-Fi.
 

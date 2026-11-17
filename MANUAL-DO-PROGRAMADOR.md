@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** permitir que outro programador consiga instalar, executar, entender, corrigir, estender e empacotar o Companheiro Emoto sem depender do histórico de desenvolvimento.
 
-O **Companheiro Emoto 3.0.0** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. A versão 3.0.0 adiciona uma camada visual opcional com PixiJS 8 para efeitos espaciais e HUD futurista, mantendo os componentes funcionais em React/HTML. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
+O **Companheiro Emoto 3.0.1** é um aplicativo desktop para Windows construído com Electron e React para acompanhar dados de Star Citizen. A versão 3.0.1 adiciona uma camada visual opcional com PixiJS 8 para efeitos espaciais e HUD futurista, mantendo os componentes funcionais em React/HTML. Ele reúne rastreamento de armaduras, coleção, inventário de itens, blueprints, materiais para crafting, baú de minério, mineração, missões, cofre de clã, Wikelo, marketplace UEX, notas, locais administráveis, calculadora e ferramentas de backup.
 
 > **Estado atual da manutenção — agosto de 2026:** o projeto inclui otimizações para bases grandes de armaduras e anúncios UEX, importação UEX em lote com **Adicionar todos**, limpeza seletiva de dados com snapshots, cálculo de scrip para Wikelo Favor, correções de foco no chat/calculadora e nos alertas UEX, além de uma camada global de legibilidade com contraste elevado. As funcionalidades novas devem preservar os eventos locais `sc_wikelo_updated`, `sc_inventory_updated` e os contratos IPC existentes.
 
@@ -1401,9 +1401,9 @@ export const ENABLE_FX_DIAGNOSTICS = true; // ATIVAR: Diagnóstico FX visual
 Não transforme essas flags em uma preferência de `localStorage`: elas existem para uso do programador e devem permanecer sob controle do código-fonte. Antes de publicar uma build, confirme que todas as linhas `ATIVAR` estão comentadas.
 
 
-## 31. Servidor Mobile local da versão 3.0.0
+## 31. Servidor Mobile local da versão 3.0.1
 
-A versão 3.0.0 introduz um servidor HTTP opcional executado dentro do processo principal do Electron. O usuário controla o serviço em `Sistema → Diretório de Dados → Servidor Mobile`. O serviço permanece desligado por padrão e só aceita conexões depois de uma ativação explícita.
+A versão 3.0.1 introduz um servidor HTTP opcional executado dentro do processo principal do Electron. O usuário controla o serviço em `Sistema → Diretório de Dados → Servidor Mobile`. O serviço permanece desligado por padrão e só aceita conexões depois de uma ativação explícita.
 
 O módulo principal está em `electron/mobileServer.js`. Ele escuta em `0.0.0.0` na porta configurável, padrão `47821`, gera um token aleatório temporário e expõe uma interface mobile responsiva diretamente pelo navegador. O processo Electron continua sendo o único responsável pelo SQLite, diretório de dados, arquivos, proxy UEX e monitor do Game.log.
 
@@ -1455,7 +1455,7 @@ O build React e a verificação sintática do Electron devem continuar passando 
 A próxima etapa é extrair adaptadores de dados compartilhados para que o desktop Electron e o cliente mobile usem as mesmas regras. Depois podem ser adicionados WebSocket para eventos `sc_wikelo_updated` e `sc_inventory_updated`, consulta de Wikelo e UEX, autenticação por dispositivo, PWA instalável e operações de escrita com confirmação.
 
 
-## 15. Portal mobile expandido da versão 3.0.0
+## 15. Portal mobile expandido da versão 3.0.1
 
 O servidor local fica em `electron/mobileServer.js`. Ele serve um portal HTML responsivo e uma API autenticada por token temporário. A interface desktop controla o ciclo de vida por meio de `mobile-server-start`, `mobile-server-stop`, `mobile-server-status` e `mobile-server-rotate-token`, expostos pelo `electron/preload.js`.
 
@@ -1496,7 +1496,7 @@ Ao desligar o servidor, os clientes SSE são encerrados e o token é invalidado.
 
 ## 16. Auditoria final do escopo mobile
 
-A rodada completa da versão 3.0.0 disponibiliza consulta mobile para Dashboard, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, anúncios UEX, Negociações UEX e Alertas de Compra. O portal também possui ajustes de quantidade do Inventário, progresso Wikelo, status de missão, dispensa de alerta e consulta de mensagens de negociações por proxy autenticado do renderer.
+A rodada completa da versão 3.0.1 disponibiliza consulta mobile para Dashboard, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, anúncios UEX, Negociações UEX e Alertas de Compra. O portal também possui ajustes de quantidade do Inventário, progresso Wikelo, status de missão, dispensa de alerta e consulta de mensagens de negociações por proxy autenticado do renderer.
 
 Continuam exclusivas do desktop as operações de backup e restauração, Limpeza Seletiva, escolha de diretório, acesso ao Game.log, controle do Monitor Automático, configuração de tokens UEX, sincronização UEX que inicia chamadas de importação, cadastro completo de registros e operações irreversíveis de consumo, venda e entrega. Essa separação evita expor caminhos locais, credenciais e ações destrutivas pela rede.
 

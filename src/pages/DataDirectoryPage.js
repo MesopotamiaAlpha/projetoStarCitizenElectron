@@ -251,7 +251,7 @@ function MobileServerPanel({ setMessage }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, marginBottom: 17 }}>
         <div style={{ display: 'grid', placeItems: 'center', width: 42, height: 42, borderRadius: 12, background: 'rgba(56,189,248,.14)', border: '1px solid rgba(56,189,248,.35)', flexShrink: 0 }}><Smartphone size={21} style={{ color: 'var(--accent-primary)' }} /></div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 14, fontWeight: 700, letterSpacing: '.05em' }}>SERVIDOR MOBILE <span style={{ color: 'var(--accent-primary)', fontSize: 11 }}>V3.0.0</span></div>
+          <div style={{ fontFamily: 'Michroma,sans-serif', fontSize: 14, fontWeight: 700, letterSpacing: '.05em' }}>SERVIDOR MOBILE <span style={{ color: 'var(--accent-primary)', fontSize: 11 }}>V3.0.1</span></div>
           <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, marginTop: 6 }}>Transforme o computador em um servidor pessoal e acesse o Companheiro Emoto pelo navegador do celular na mesma rede Wi-Fi.</div>
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 10px', borderRadius: 999, background: status.running ? 'rgba(52,211,153,.12)' : 'rgba(148,163,184,.08)', border: `1px solid ${status.running ? 'rgba(52,211,153,.36)' : 'var(--border-subtle)'}`, color: runningColor, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: runningColor, boxShadow: status.running ? `0 0 12px ${runningColor}` : 'none' }} />{status.running ? 'ONLINE' : 'OFFLINE'}</div>

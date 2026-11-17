@@ -485,6 +485,55 @@ function sameRenewedListing(previous, fresh) {
   return previousState.status === 'expired' && freshState.status !== 'expired';
 }
 
+// A API pode devolver um novo ID ao renovar um anúncio. Registros antigos
+// também podem não possuir source_listing_id. Sem esta chave, o catálogo local
+// exibe duas vezes o mesmo anúncio, normalmente com quantidades listadas
+// diferentes (uma cópia antiga e outra atualizada).
+function catalogListingIdentity(item = {}) {
+  const sourceId = String(item.source_listing_id || item.listing_id || item.id || '').trim();
+  if (sourceId) return `source-id:${sourceId}`;
+  const sourceSlug = normalizedListingValue(item.source_listing_slug || item.listing_slug || item.slug);
+  if (sourceSlug) return `source-slug:${sourceSlug}`;
+  const title = normalizedListingValue(item.title || item.name);
+  const location = normalizedListingValue(item.location);
+  const quality = normalizedListingValue(item.quality);
+  if (title) return `item:${title}|${location}|${quality}`;
+  return `source-id:${sourceId}`;
+}
+
+function deduplicateCatalog(catalog = []) {
+  const result = [];
+  const indexByIdentity = new Map();
+  for (const item of Array.isArray(catalog) ? catalog : []) {
+    const identity = catalogListingIdentity(item);
+    const previousIndex = indexByIdentity.get(identity);
+    if (previousIndex === undefined) {
+      indexByIdentity.set(identity, result.length);
+      result.push(item);
+      continue;
+    }
+
+    const previous = result[previousIndex];
+    const previousStock = Math.max(0, Number(previous?.in_stock) || 0);
+    const currentStock = Math.max(0, Number(item?.in_stock) || 0);
+    // Mantém campos personalizados do primeiro cadastro e os dados mais
+    // recentes do anúncio. A maior quantidade evita perder estoque listado
+    // quando a cópia antiga foi atualizada após uma venda parcial.
+    result[previousIndex] = {
+      ...previous,
+      ...item,
+      id: previous.id ?? item.id,
+      in_stock: Math.max(previousStock, currentStock),
+      internal_stock: Math.max(Number(previous?.internal_stock) || 0, Number(item?.internal_stock) || 0),
+      inventory_binding: item.inventory_binding || previous.inventory_binding,
+      vault_binding: item.vault_binding || previous.vault_binding,
+      notes: previous.notes || item.notes || '',
+      imported_at: previous.imported_at || item.imported_at,
+    };
+  }
+  return result;
+}
+
 // Detectar qualidade no título: "Caranite 716 Q" → 716
 function extractQualityFromTitle(title) {
   const match = title.match(/(\d+)\s*Q\b/i);
@@ -1914,7 +1963,7 @@ function TrendsTab({ catalog, trendData, trendDataFetchedAt, loading, onRefresh 
 
 // ── Página Principal ──────────────────────────────────────────────────────────
 export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onConsumeInventoryStock }) {
-  const [catalog,   setCatalog]   = useState(() => loadCatalog());
+  const [catalog,   setCatalog]   = useState(() => deduplicateCatalog(loadCatalog()));
   const [sales,     setSales]     = useState(() => loadSales());
   const [trendData, setTrendData] = useState([]);
   const [trendDataFetchedAt, setTrendDataFetchedAt] = useState(null);
@@ -1938,6 +1987,16 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
 
   // Sincronizar refs com state
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+
+  useEffect(() => {
+    const stored = loadCatalog();
+    const normalized = deduplicateCatalog(stored);
+    if (normalized.length !== stored.length) {
+      catalogRef.current = normalized;
+      setCatalog(normalized);
+      saveCatalog(normalized);
+    }
+  }, []);
 
   const loadInventoryForStock = useCallback(async () => {
     try {
@@ -1979,7 +2038,7 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
 
   useEffect(() => {
     const refreshFromNegotiation = () => {
-      const nextCatalog = loadCatalog();
+      const nextCatalog = deduplicateCatalog(loadCatalog());
       const nextSales = loadSales();
       catalogRef.current = nextCatalog;
       setCatalog(nextCatalog);
@@ -1989,7 +2048,12 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
     return () => window.removeEventListener('sc_uex_sales_updated', refreshFromNegotiation);
   }, []);
 
-  function refreshCatalog(d) { catalogRef.current = d; setCatalog(d); saveCatalog(d); }
+  function refreshCatalog(d) {
+    const normalized = deduplicateCatalog(d);
+    catalogRef.current = normalized;
+    setCatalog(normalized);
+    saveCatalog(normalized);
+  }
   function refreshSales(d) {
     setSales(d);
     saveSales(d);
@@ -2001,13 +2065,23 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
     if (!username.trim()) { setSyncMsg('⚠ Configure seu IGN da UEX primeiro.'); return; }
     setLoading(true); setSyncMsg('Buscando seus anúncios na UEX...');
     try {
-      const data = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
+      const response = await uexFetch(`marketplace_listings?username=${encodeURIComponent(username.trim())}`);
+      // Algumas versões do endpoint entregam o array diretamente; outras o
+      // envolvem em data/listings. Normalizar aqui evita tratar uma resposta
+      // válida como vazia e descartar anúncios novos.
+      const data = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.listings)
+            ? response.listings
+            : [];
       if (!data || data.length === 0) { setSyncMsg('Nenhum anúncio encontrado para este username.'); setLoading(false); return; }
 
       // Usar catalogRef.current para leitura mais recente (evita closure stale).
       // A UEX pode criar um novo ID ao renovar o anúncio; por isso, depois de
       // tentar o ID, fazemos uma correspondência segura por título, local e qualidade.
-      const currentCatalog = catalogRef.current;
+      const currentCatalog = deduplicateCatalog(catalogRef.current);
       const unusedFreshIndexes = new Set(data.map((_, index) => index));
       const findFreshListing = cat => {
         let index = data.findIndex((fresh, candidateIndex) => unusedFreshIndexes.has(candidateIndex) && cat.id !== null && cat.id !== undefined && fresh.id !== null && fresh.id !== undefined && String(fresh.id) === String(cat.id));
@@ -2048,10 +2122,13 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
       if (newListings.length === 0) {
         setSyncMsg(`✓ Catálogo atualizado. ${updatedExisting.length} item${updatedExisting.length!==1?'s':''} sincronizado${updatedExisting.length!==1?'s':''}${renewedCount ? ` · ${renewedCount} anúncio${renewedCount!==1?'s':''} renovado${renewedCount!==1?'s':''} reconhecido${renewedCount!==1?'s':''}` : ''}.`);
       } else {
-        setSyncMsg(`${newListings.length} novo${newListings.length!==1?'s':''} anúncio${newListings.length!==1?'s':''} encontrado${newListings.length!==1?'s':''}. Confirme cada um...`);
-        // Guardar fila na ref E no state
-        importQueueRef.current = newListings;
-        setImportQueue([...newListings]);
+        // Sincronizar deve ser suficiente para persistir anúncios novos. A fila
+        // continua disponível para o fluxo antigo, mas não bloqueia a gravação.
+        const { entries, catalog: catalogWithNew } = mergeBulkImportCatalog(updatedExisting, newListings, new Date().toISOString());
+        refreshCatalog(catalogWithNew);
+        importQueueRef.current = [];
+        setImportQueue([]);
+        setSyncMsg(`✓ Catálogo atualizado. ${catalogWithNew.length} item${catalogWithNew.length !== 1 ? 's' : ''} sincronizado${catalogWithNew.length !== 1 ? 's' : ''}; ${entries.length} novo${entries.length !== 1 ? 's' : ''} anúncio${entries.length !== 1 ? 's' : ''} salvo${entries.length !== 1 ? 's' : ''}.`);
       }
       // A mesma ação de sincronização atualiza também o snapshot de mercado.
       // O endpoint da UEX possui cache próprio de aproximadamente uma hora.
@@ -2067,7 +2144,7 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
     const queue = [...importQueueRef.current];
     if (!queue.length || bulkImporting) return;
     setBulkImporting(true);
-    const { entries, catalog: updatedCatalog } = mergeBulkImportCatalog(catalogRef.current, queue, new Date().toISOString());
+    const { entries, catalog: updatedCatalog } = mergeBulkImportCatalog(deduplicateCatalog(catalogRef.current), queue, new Date().toISOString());
     refreshCatalog(updatedCatalog);
     importQueueRef.current = [];
     setImportQueue([]);
@@ -2078,7 +2155,7 @@ export default function UexSalesPage({ armorSets = [], onConsumeArmorStock, onCo
   function handleImportConfirm(listing) {
     // Adicionar ao catálogo usando ref (valor sempre atualizado)
     const entry = { ...listing, id: listing.id, internal_stock: listing.in_stock || 0, notes: listing.notes || '', imported_at: new Date().toISOString() };
-    const updatedCatalog = [...catalogRef.current, entry];
+    const updatedCatalog = [...deduplicateCatalog(catalogRef.current), entry];
     refreshCatalog(updatedCatalog);
 
     // Avançar fila pela ref

@@ -9,7 +9,7 @@ import {
   roundCargo,
 } from './cargoUnits';
 import { readJson, writeJson } from '../utils/storage';
-import { qualityMeetsMinimum } from './oreVault';
+import { qualityMeetsRequirement, normalizeQualityOperator } from './oreVault';
 
 const KEY = 'sc_material_queue_v1';
 const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
@@ -45,9 +45,23 @@ export function normalizeQualityMin(value) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-// Uma chave diferente para Iron Q≥800 e Iron sem exigência de qualidade.
-export function materialKey(materialName, qualityMin = 0) {
-  return `${String(materialName || '').trim().toLowerCase()}::q${normalizeQualityMin(qualityMin)}`;
+export function getQualityOperator(value, qualityMin = 0) {
+  const operator = normalizeQualityOperator(value);
+  return normalizeQualityMin(qualityMin) > 0 ? operator : 'any';
+}
+
+export function qualityRequirementLabel(qualityMin = 0, qualityOperator = 'gte') {
+  const value = normalizeQualityMin(qualityMin);
+  const operator = getQualityOperator(qualityOperator, value);
+  if (operator === 'any') return 'Qualidade livre';
+  return `Q${operator === 'lte' ? '≤' : operator === 'eq' ? '=' : '≥'}${value}`;
+}
+
+// Uma chave diferente para Iron Q≥800, Iron Q≤800 e Iron sem exigência.
+export function materialKey(materialName, qualityMin = 0, qualityOperator = 'gte') {
+  const value = normalizeQualityMin(qualityMin);
+  const operator = getQualityOperator(qualityOperator, value);
+  return `${String(materialName || '').trim().toLowerCase()}::q${operator === 'any' ? '0' : `${operator}${value}`}`;
 }
 
 // Compatibilidade com blueprints antigas que podem ter usado qualityMin ou quality.
@@ -55,12 +69,16 @@ export function getIngredientQualityMin(ingredient = {}) {
   return normalizeQualityMin(ingredient.quality_min ?? ingredient.qualityMin ?? ingredient.quality ?? 0);
 }
 
+export function getIngredientQualityOperator(ingredient = {}) {
+  return getQualityOperator(ingredient.quality_operator ?? ingredient.qualityOperator ?? ingredient.quality_op, getIngredientQualityMin(ingredient));
+}
+
 function legacyMaterialKey(materialName) {
   return String(materialName || '').trim().toLowerCase();
 }
 
-function getCollectedAmount(queue, materialName, qualityMin = 0) {
-  const key = materialKey(materialName, qualityMin);
+function getCollectedAmount(queue, materialName, qualityMin = 0, qualityOperator = 'gte') {
+  const key = materialKey(materialName, qualityMin, qualityOperator);
   if (queue.collectedMaterials?.[key] !== undefined) return Number(queue.collectedMaterials[key]) || 0;
   // Compatibilidade: somente materiais sem exigência podem herdar coletas antigas.
   if (normalizeQualityMin(qualityMin) === 0) return Number(queue.collectedMaterials?.[legacyMaterialKey(materialName)]) || 0;
@@ -72,6 +90,7 @@ function snapshotBlueprintIngredients(ingredients) {
     material_name: i.material_name,
     quantity:      i.quantity,
     quality_min:   getIngredientQualityMin(i),
+    quality_operator: getIngredientQualityOperator(i),
     unit:          i.unit || 'un',
   }));
 }
@@ -151,12 +170,12 @@ function baseUnit(unit) {
 }
 
 // Mark N units of a material as collected (unit must match the ingredient unit)
-export function collectMaterial(materialName, amountCollected, unit = 'un', qualityMin = 0) {
+export function collectMaterial(materialName, amountCollected, unit = 'un', qualityMin = 0, qualityOperator = 'gte') {
   const q = loadQueue();
-  const key = materialKey(materialName, qualityMin);
+  const key = materialKey(materialName, qualityMin, qualityOperator);
   // Normalizar para unidade base antes de somar
   const inBase = toBase(Number(amountCollected) || 0, unit);
-  const current = getCollectedAmount(q, materialName, qualityMin);
+  const current = getCollectedAmount(q, materialName, qualityMin, qualityOperator);
   q.collectedMaterials[key] = current + inBase;
   q.collectedMaterials[key] = Math.max(0, q.collectedMaterials[key]);
   q.collectedUnits = q.collectedUnits || {};
@@ -167,11 +186,11 @@ export function collectMaterial(materialName, amountCollected, unit = 'un', qual
 }
 
 // Subtrair quantidade coletada (correção de erro)
-export function uncollectMaterial(materialName, amount, unit = 'un', qualityMin = 0) {
+export function uncollectMaterial(materialName, amount, unit = 'un', qualityMin = 0, qualityOperator = 'gte') {
   const q = loadQueue();
-  const key = materialKey(materialName, qualityMin);
+  const key = materialKey(materialName, qualityMin, qualityOperator);
   const inBase = toBase(Number(amount) || 0, unit);
-  const current = getCollectedAmount(q, materialName, qualityMin);
+  const current = getCollectedAmount(q, materialName, qualityMin, qualityOperator);
   q.collectedMaterials[key] = Math.max(0, current - inBase);
   if (normalizeQualityMin(qualityMin) === 0) delete q.collectedMaterials[legacyMaterialKey(materialName)];
   saveQueue(q);
@@ -179,14 +198,14 @@ export function uncollectMaterial(materialName, amount, unit = 'un', qualityMin 
 }
 
 // Adicionar material manual à lista extra (não vem de blueprint)
-export function addManualMaterial(materialName, amount, unit = 'un', qualityMin = 0) {
+export function addManualMaterial(materialName, amount, unit = 'un', qualityMin = 0, qualityOperator = 'gte') {
   const q = loadQueue();
   if (!q.manualMaterials) q.manualMaterials = [];
-    const existing = q.manualMaterials.findIndex(m => materialKey(m.material_name, m.quality_min) === materialKey(materialName, qualityMin) && m.unit === unit);
+    const existing = q.manualMaterials.findIndex(m => materialKey(m.material_name, m.quality_min, m.quality_operator) === materialKey(materialName, qualityMin, qualityOperator) && m.unit === unit);
   if (existing >= 0) {
     q.manualMaterials[existing].quantity += Number(amount) || 0;
   } else {
-    q.manualMaterials.push({ material_name: materialName, quantity: Number(amount) || 0, unit, quality_min: normalizeQualityMin(qualityMin), addedAt: new Date().toISOString() });
+    q.manualMaterials.push({ material_name: materialName, quantity: Number(amount) || 0, unit, quality_min: normalizeQualityMin(qualityMin), quality_operator: getQualityOperator(qualityOperator, qualityMin), addedAt: new Date().toISOString() });
   }
   saveQueue(q);
   return q;
@@ -201,9 +220,9 @@ export function removeManualMaterial(materialName) {
 }
 
 // Reset collected amount for a material
-export function resetMaterialCollected(materialName, qualityMin = 0) {
+export function resetMaterialCollected(materialName, qualityMin = 0, qualityOperator = 'gte') {
   const q = loadQueue();
-  delete q.collectedMaterials[materialKey(materialName, qualityMin)];
+  delete q.collectedMaterials[materialKey(materialName, qualityMin, qualityOperator)];
   if (normalizeQualityMin(qualityMin) === 0) delete q.collectedMaterials[legacyMaterialKey(materialName)];
   saveQueue(q);
   return q;
@@ -213,12 +232,12 @@ function normalizeStockName(value) {
   return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function getVaultCollectedBase(stockEntries, materialName, qualityMin, requiredUnit = 'un') {
+function getVaultCollectedBase(stockEntries, materialName, qualityMin, requiredUnit = 'un', qualityOperator = 'gte') {
   const target = normalizeStockName(materialName);
   const targetUnit = normalizeCargoUnit(requiredUnit || 'un');
   return (Array.isArray(stockEntries) ? stockEntries : []).reduce((total, entry) => {
     if (normalizeStockName(entry?.ore_name) !== target) return total;
-    if (!qualityMeetsMinimum(entry?.quality, qualityMin)) return total;
+    if (!qualityMeetsRequirement(entry?.quality, qualityMin, qualityOperator)) return total;
     const entryUnit = normalizeCargoUnit(entry?.unit || 'un');
     const compatible = isCargoUnit(targetUnit) && isCargoUnit(entryUnit)
       ? areCargoUnitsCompatible(targetUnit, entryUnit)
@@ -238,13 +257,15 @@ export function calcShoppingList(queue, stockEntries) {
   for (const bp of queue.queuedBlueprints) {
     for (const ing of bp.ingredients || []) {
       const qualityMin = getIngredientQualityMin(ing);
-      const key = materialKey(ing.material_name, qualityMin);
+      const qualityOperator = getIngredientQualityOperator(ing);
+      const key = materialKey(ing.material_name, qualityMin, qualityOperator);
       if (!map[key]) {
-                map[key] = {
+        map[key] = {
           key,
           material_name: ing.material_name,
           needed_base:   0,
           quality_min:   qualityMin,
+          quality_operator: qualityOperator,
           unit:          normalizeCargoUnit(ing.unit || 'un'),
           usedBy: [],
           is_manual:     false,
@@ -255,20 +276,22 @@ export function calcShoppingList(queue, stockEntries) {
       // Para unidades de carga, a soma ocorre em cSCU mesmo quando as blueprints
       // misturam SCU, cSCU, mSCU ou μSCU.
       if (!isCargoUnit(map[key].unit) && isCargoUnit(ing.unit)) map[key].unit = normalizeCargoUnit(ing.unit);
-      map[key].usedBy.push({ bpName: bp.bpName, qty: Number(ing.quantity) * (Number(bp.quantity)||1), quality_min: qualityMin });
+      map[key].usedBy.push({ bpName: bp.bpName, qty: Number(ing.quantity) * (Number(bp.quantity)||1), quality_min: qualityMin, quality_operator: qualityOperator });
     }
   }
 
   // Incluir materiais manuais na lista, também separados por qualidade mínima.
   for (const m of (queue.manualMaterials || [])) {
     const qualityMin = normalizeQualityMin(m.quality_min);
-    const key = materialKey(m.material_name, qualityMin);
+    const qualityOperator = getQualityOperator(m.quality_operator, qualityMin);
+    const key = materialKey(m.material_name, qualityMin, qualityOperator);
     if (!map[key]) {
-        map[key] = {
+      map[key] = {
           key,
           material_name: m.material_name,
           needed_base:   0,
           quality_min:   qualityMin,
+          quality_operator: qualityOperator,
           unit:          normalizeCargoUnit(m.unit || 'un'),
           usedBy:        [],
           is_manual:     true,
@@ -281,8 +304,8 @@ export function calcShoppingList(queue, stockEntries) {
 
   return Object.values(map).map(item => {
     const collectedBase = Array.isArray(stockEntries)
-      ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit)
-      : getCollectedAmount(queue, item.material_name, item.quality_min);
+      ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit, item.quality_operator)
+      : getCollectedAmount(queue, item.material_name, item.quality_min, item.quality_operator);
     const neededBase    = roundCargo(item.needed_base);
     const needed        = fromBase(neededBase, item.unit);
     const collected    = fromBase(Math.min(collectedBase, neededBase), item.unit);

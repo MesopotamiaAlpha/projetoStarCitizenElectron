@@ -1,4 +1,4 @@
-# Companheiro Emoto 3.0.0 — Servidor Mobile
+# Companheiro Emoto 3.0.1 — Servidor Mobile
 
 ## Arquivos para substituir
 
@@ -33,4 +33,4 @@ Abra **Sistema → Diretório de Dados → Servidor Mobile**, escolha a porta e 
 
 ## Escopo mobile desta primeira entrega
 
-A interface mobile v3.0.0 oferece Resumo, Inventário e Armaduras em modo de consulta e pesquisa. O computador continua responsável pelo banco, arquivos, Game.log, tokens UEX e operações privilegiadas. O servidor é local e não deve ser publicado na internet.
+A interface mobile v3.0.1 oferece Resumo, Inventário e Armaduras em modo de consulta e pesquisa. O computador continua responsável pelo banco, arquivos, Game.log, tokens UEX e operações privilegiadas. O servidor é local e não deve ser publicado na internet.

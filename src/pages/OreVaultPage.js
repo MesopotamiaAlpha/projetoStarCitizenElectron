@@ -4,9 +4,9 @@ import {
   MapPin, Star, CheckCircle2, Package, FlaskConical,
   ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Archive,
   Gem, Minus, ArrowLeft, Camera, Download, Copy,
-  Diamond, Sprout
+  Diamond, Sprout, History
 } from 'lucide-react';
-import { loadVault, saveVault, addOreEntry, removeOreEntry, deductOreEntry, transferOreEntry, wipeVault, loadOreVaultPreferences, saveOreVaultDefaultDestination, clearOreVaultDefaultDestination, ORE_VAULT_PREFERENCES_UPDATED_EVENT } from '../data/oreVault';
+import { loadVault, addOreEntry, removeOreEntry, adjustOreEntryQuantity, transferOreEntry, wipeVault, loadVaultHistory, clearVaultHistory, loadOreVaultPreferences, saveOreVaultDefaultDestination, clearOreVaultDefaultDestination, ORE_VAULT_PREFERENCES_UPDATED_EVENT, ORE_VAULT_HISTORY_UPDATED_EVENT } from '../data/oreVault';
 import TransferModal from '../components/TransferModal';
 import { buildManagedLocationOptions, LOCATIONS_UPDATED_EVENT } from '../data/locations';
 import { getOreColor as getSharedOreColor } from '../data/oreColors';
@@ -698,6 +698,36 @@ function ImageExportModal({ dataUrl, onClose }) {
   );
 }
 
+const HISTORY_LABELS = { entry:'Entrada', update:'Edição', consume:'Saída/consumo', deduct:'Consumo no Tracking', transfer:'Transferência', remove:'Remoção', wipe:'Wipe total', adjust:'Ajuste manual' };
+
+function OreHistoryModal({ history, onClose, onClear }) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.82)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:20}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-normal)',borderRadius:12,padding:20,maxWidth:920,width:'100%',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.7)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,marginBottom:12}}>
+          <div>
+            <div style={{fontFamily:'Michroma,sans-serif',fontSize:13,fontWeight:700,color:'var(--accent-gold)',display:'flex',alignItems:'center',gap:7}}><History size={15}/> HISTÓRICO DO BAÚ</div>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4}}>Registros de entrada, saída, consumo, transferência e ajuste de quantidade.</div>
+          </div>
+          <div style={{display:'flex',gap:7}}>
+            <button onClick={onClear} disabled={!history.length} style={{padding:'6px 9px',border:'1px solid rgba(251,113,133,.3)',borderRadius:5,background:'rgba(251,113,133,.08)',color:'var(--accent-red)',cursor:history.length?'pointer':'not-allowed',opacity:history.length?1:.5,fontSize:10,fontWeight:700}}>Limpar histórico</button>
+            <button onClick={onClose} style={{background:'none',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',padding:'4px 8px'}}><X size={13}/></button>
+          </div>
+        </div>
+        <div style={{overflowY:'auto',border:'1px solid var(--border-subtle)',borderRadius:8}}>
+          {!history.length ? <div style={{padding:35,textAlign:'center',color:'var(--text-muted)',fontSize:12}}>Nenhuma movimentação registrada.</div> : history.map(record => (
+            <div key={record.id} style={{padding:'10px 12px',borderBottom:'1px solid var(--border-subtle)',fontSize:11}}>
+              <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><strong style={{color:'var(--accent-primary)'}}>{HISTORY_LABELS[record.action] || record.action}</strong><span style={{color:'var(--text-muted)',fontFamily:'Share Tech Mono,monospace'}}>{new Date(record.timestamp).toLocaleString('pt-BR')}</span></div>
+              <div style={{color:'var(--text-muted)',fontSize:10,margin:'3px 0 7px'}}>Origem: {record.source}{record.note ? ` · ${record.note}` : ''}{record.requested_quantity !== null ? ` · solicitado: ${record.requested_quantity} ${record.requested_unit}` : ''}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:3}}>{(record.changes || []).map((change, index) => <div key={`${record.id}-${index}`} style={{display:'grid',gridTemplateColumns:'minmax(120px,1fr) minmax(150px,auto) minmax(150px,auto)',gap:8,color:'var(--text-secondary)',fontFamily:'Share Tech Mono,monospace',fontSize:10}}><span>{change.ore_name || 'Minério'} · Q{change.quality || '—'}</span><span>antes: {change.quantity_before} {change.unit_before}</span><span>depois: {change.quantity_after} {change.unit_after}{change.location_after ? ` · ${change.location_after}` : ''}</span></div>)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function OreVaultPage() {
   const [vault,       setVault]       = useState(() => loadVault());
@@ -714,6 +744,8 @@ export default function OreVaultPage() {
   // Exportar imagem
   const [exportDataUrl, setExportDataUrl] = useState(null);
   const [generatingImg, setGeneratingImg] = useState(false);
+  const [history, setHistory] = useState(() => loadVaultHistory());
+  const [showHistory, setShowHistory] = useState(false);
   const [locationsVersion, setLocationsVersion] = useState(0);
   const [oreVaultDefaultDestination, setOreVaultDefaultDestination] = useState(() => loadOreVaultPreferences().defaultDestination);
   const [showOreVaultDefault, setShowOreVaultDefault] = useState(false);
@@ -731,12 +763,28 @@ export default function OreVaultPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshHistory = () => setHistory(loadVaultHistory());
+    window.addEventListener(ORE_VAULT_HISTORY_UPDATED_EVENT, refreshHistory);
+    window.addEventListener('storage', refreshHistory);
+    return () => {
+      window.removeEventListener(ORE_VAULT_HISTORY_UPDATED_EVENT, refreshHistory);
+      window.removeEventListener('storage', refreshHistory);
+    };
+  }, []);
+
   const transferDestinations = useMemo(
     () => buildManagedLocationOptions(),
     [locationsVersion]
   );
 
   function refresh() { setVault(loadVault()); }
+
+  function handleClearHistory() {
+    if (!history.length || !window.confirm('Limpar todo o histórico do Baú de Minério? O estoque atual não será alterado.')) return;
+    clearVaultHistory();
+    setHistory(loadVaultHistory());
+  }
 
   function handleOreVaultDefaultChange(key) {
     const selected = transferDestinations.find(option => option.key === key) || null;
@@ -757,14 +805,7 @@ export default function OreVaultPage() {
 
   // ── Ajuste de quantidade inline (sem reabrir form) ──
   function handleAdjustQty(id, newQty) {
-    const v = loadVault();
-    v.entries = v.entries.map(e => {
-      if (e.id !== id) return e;
-      const unit = normalizeCargoUnit(e.unit || 'un');
-      const quantity = isCargoUnit(unit) ? roundCargo(newQty) : Number(newQty) || 0;
-      return { ...e, unit, quantity, updated_at:new Date().toISOString() };
-    }).filter(e => Number(e.quantity) > 0);
-    saveVault(v);
+    adjustOreEntryQuantity(id, newQty);
     refresh();
   }
 
@@ -916,6 +957,8 @@ export default function OreVaultPage() {
       {/* Modal de imagem exportada */}
       {exportDataUrl && <ImageExportModal dataUrl={exportDataUrl} onClose={()=>setExportDataUrl(null)}/>}
 
+      {showHistory && <OreHistoryModal history={history} onClose={()=>setShowHistory(false)} onClear={handleClearHistory}/>}
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -927,6 +970,9 @@ export default function OreVaultPage() {
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>setShowHistory(true)} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 12px',background:'rgba(167,139,250,0.08)',border:'1px solid rgba(167,139,250,0.3)',borderRadius:7,color:'#c4b5fd',fontFamily:'"Exo 2",sans-serif',fontSize:11,fontWeight:700,textTransform:'uppercase',cursor:'pointer'}}>
+            <History size={14}/> Histórico{history.length ? ` (${history.length})` : ''}
+          </button>
           <button onClick={handleGenerateImage} disabled={totalEntries===0||generatingImg} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 16px',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.3)',borderRadius:7,color:'var(--accent-primary)',fontFamily:'"Exo 2",sans-serif',fontSize:12,fontWeight:700,textTransform:'uppercase',cursor:totalEntries===0?'not-allowed':'pointer',opacity:totalEntries===0?0.5:1}}>
             {generatingImg ? <><RefreshCw size={14} style={{animation:'spin 1s linear infinite'}}/> Gerando...</> : <><Camera size={14}/> Gerar Imagem</>}
           </button>

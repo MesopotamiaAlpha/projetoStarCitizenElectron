@@ -7,6 +7,11 @@ import { UEX_ACTIVE_NEGOTIATION_EVENT, getActiveNegotiationHash } from '../data/
 const POLL_INTERVAL_MS = 90 * 1000; // 90s para negociações
 const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
 
+// true  = toca o som mesmo quando a mensagem chega na negociação que está aberta
+//         (a mensagem continua sem aparecer na lista do sino).
+// false = negociação aberta fica totalmente silenciosa (sem som e sem item).
+const PLAY_SOUND_FOR_ACTIVE_NEGOTIATION = true;
+
 function dedupeNotificationItems(list) {
   const messages = list.filter(item => item.kind === 'message');
   const seen = new Set();
@@ -18,10 +23,59 @@ function dedupeNotificationItems(list) {
   });
 }
 
-// Toca um "ding" de duas notas sintetizado — não depende de nenhum arquivo de áudio.
-function playNotificationSound() {
+// Item pertence à negociação que está aberta na tela?
+function matchesNegotiation(item, hash) {
+  const activeHash = String(hash || '').trim();
+  if (!activeHash || !item) return false;
+  if (item.kind === 'message') return String(item.negotiationHash || '').trim() === activeHash;
+  const references = [item.negotiationHash, item.hash, item.redir, item.url, item.link].map(value => String(value || ''));
+  return references.some(value => value.includes(activeHash));
+}
+
+// ---------------------------------------------------------------------------
+// Som de notificação (Web Audio, sintetizado — não depende de arquivo externo)
+// ---------------------------------------------------------------------------
+// O Chromium só deixa o AudioContext "running" depois de uma interação do
+// usuário. Por isso reutilizamos um único contexto e tentamos destravá-lo a
+// CADA interação (não só na primeira) até ele estar rodando. Assim, se o
+// contexto ficar suspenso por qualquer motivo, o próximo clique/tecla o recupera.
+let notificationAudioContext = null;
+
+function getNotificationAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!notificationAudioContext || notificationAudioContext.state === 'closed') {
+    notificationAudioContext = new AudioContextClass();
+  }
+  return notificationAudioContext;
+}
+
+function unlockNotificationAudio() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getNotificationAudioContext();
+    if (!ctx) return false;
+    if (ctx.state !== 'running') {
+      const result = ctx.resume();
+      if (result?.catch) result.catch(() => {});
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Em contexto bloqueado o resume() pode ficar pendente para sempre; sem timeout
+// a função travava aqui e o som nunca tocava, sem nenhum erro.
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms))]);
+}
+
+async function playNotificationSound() {
+  try {
+    const ctx = getNotificationAudioContext();
+    if (!ctx) return;
+    if (ctx.state !== 'running') await withTimeout(ctx.resume(), 500);
+    if (ctx.state !== 'running') return;
     const now = ctx.currentTime;
     const tone = (freq, start, dur, peak = 0.16) => {
       const osc = ctx.createOscillator();
@@ -32,59 +86,72 @@ function playNotificationSound() {
       gain.gain.linearRampToValueAtTime(peak, now + start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
       osc.connect(gain).connect(ctx.destination);
+      osc.onended = () => { try { osc.disconnect(); gain.disconnect(); } catch { /* já desconectado */ } };
       osc.start(now + start);
       osc.stop(now + start + dur + 0.03);
     };
     tone(880, 0, 0.12);
     tone(1318.5, 0.1, 0.2);
-    setTimeout(() => ctx.close(), 600);
   } catch { /* ambiente sem suporte a Web Audio — ignora silenciosamente */ }
+}
+
+function rememberKeys(set, items) {
+  items.forEach(item => set.add(item.key));
+  if (set.size > 500) {
+    const recent = Array.from(set).slice(-300);
+    set.clear();
+    recent.forEach(key => set.add(key));
+  }
 }
 
 export default function UexNotificationBell({ onNavigate }) {
   const [open, setOpen]       = useState(false);
-  const [items, setItems]     = useState([]); // { kind:'message'|'notif', ... }
+  const [items, setItems]     = useState([]); // { kind:'message'|'notif'|'market-alert', ... }
   const [checking, setChecking] = useState(false);
   const [error, setError]     = useState('');
   const [hasToken, setHasToken] = useState(!!loadToken());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
-  const [activeNegotiationHash, setActiveNegotiationHash] = useState(() => getActiveNegotiationHash());
   const wrapRef = useRef(null);
   const checkingRef = useRef(false);
   const marketCheckingRef = useRef(false);
   const initialMarketSettings = loadMarketAlertSettings();
   const marketNextCheckRef = useRef(initialMarketSettings.nextCheckAt);
 
+  // Refs espelham valores que o polling precisa ler SEM recriar o runCheck.
+  // Antes, mudar "muted" ou a negociação ativa recriava o runCheck, o que
+  // reiniciava o intervalo e disparava uma checagem extra imediata.
+  const itemsRef = useRef([]);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const activeHashRef = useRef(String(getActiveNegotiationHash() || '').trim());
+  const notifiedKeysRef = useRef(new Set());
+
+  // Única porta de escrita da lista: atualiza ref + state de forma síncrona e
+  // pura, para o som poder ser decidido FORA do updater do setState.
+  const commitItems = useCallback(updater => {
+    const next = typeof updater === 'function' ? updater(itemsRef.current) : updater;
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
+
   useEffect(() => {
     const handleActiveNegotiation = event => {
       const activeHash = String(event?.detail?.hash || '').trim();
-      setActiveNegotiationHash(activeHash);
-      if (activeHash) {
-        setItems(previous => previous.filter(item => {
-          if (item.kind === 'message') return String(item.negotiationHash || '').trim() !== activeHash;
-          const references = [item.negotiationHash, item.hash, item.redir, item.url, item.link].map(value => String(value || ''));
-          return !references.some(value => value.includes(activeHash));
-        }));
-      }
+      activeHashRef.current = activeHash;
+      if (activeHash) commitItems(previous => previous.filter(item => !matchesNegotiation(item, activeHash)));
     };
     window.addEventListener(UEX_ACTIVE_NEGOTIATION_EVENT, handleActiveNegotiation);
     return () => window.removeEventListener(UEX_ACTIVE_NEGOTIATION_EVENT, handleActiveNegotiation);
-  }, []);
-
-  function isItemFromActiveNegotiation(item) {
-    const activeHash = String(activeNegotiationHash || '').trim();
-    if (!activeHash || !item) return false;
-    if (item.kind === 'message') return String(item.negotiationHash || '').trim() === activeHash;
-    const references = [item.negotiationHash, item.hash, item.redir, item.url, item.link].map(value => String(value || ''));
-    return references.some(value => value.includes(activeHash));
-  }
+  }, [commitItems]);
 
   function toggleMuted() {
-    setMuted(prev => {
-      const next = !prev;
-      try { localStorage.setItem(SOUND_MUTED_KEY, next ? '1' : '0'); } catch {}
-      return next;
-    });
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    setMuted(next);
+    try { localStorage.setItem(SOUND_MUTED_KEY, next ? '1' : '0'); } catch {}
+    // O clique é um gesto do usuário: destrava o áudio e, ao reativar, toca
+    // um "ding" de teste.
+    if (!next) { unlockNotificationAudio(); playNotificationSound(); }
   }
 
   const runCheck = useCallback(async (silent = true) => {
@@ -95,26 +162,41 @@ export default function UexNotificationBell({ onNavigate }) {
     setChecking(true);
     if (!silent) setError('');
     try {
-      const { newMessages, newNotifications } = await checkForUpdates();
-      const mapped = [
-        ...newMessages.map(m => ({ kind: 'message', key: m.key || messageIdentity(m, m.negotiationHash), ...m })),
-        ...newNotifications.map(n => ({ kind: 'notif', key: n.key || notificationIdentity(n), ...n })),
-      ].filter(item => !isItemFromActiveNegotiation(item));
-      setItems(prev => {
-        const visiblePrevious = prev.filter(item => !isItemFromActiveNegotiation(item));
-        const existingKeys = new Set(visiblePrevious.map(i => i.key));
-        const freshOnes = mapped.filter(i => !existingKeys.has(i.key));
-        if (freshOnes.length && !muted) playNotificationSound();
-        const merged = dedupeNotificationItems([...freshOnes, ...visiblePrevious]);
-        return merged.sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 50);
+      const { newMessages = [], newNotifications = [] } = await checkForUpdates();
+      // "...m" vem primeiro para que kind/key/dateAdded calculados aqui sempre
+      // prevaleçam (antes, um campo "key"/"kind" vindo do objeto sobrescrevia).
+      const incoming = [
+        ...newMessages.map(m => ({ ...m, kind: 'message', key: m.key || messageIdentity(m, m.negotiationHash), dateAdded: m.dateAdded || Date.now() })),
+        ...newNotifications.map(n => ({ ...n, kind: 'notif', key: n.key || notificationIdentity(n), dateAdded: n.dateAdded || Date.now() })),
+      ];
+
+      const knownKeys = new Set(itemsRef.current.map(i => i.key));
+      const fresh = incoming.filter(i => !knownKeys.has(i.key) && !notifiedKeysRef.current.has(i.key));
+      rememberKeys(notifiedKeysRef.current, fresh);
+
+      const activeHash = activeHashRef.current;
+      const visibleFresh = fresh.filter(i => !matchesNegotiation(i, activeHash));
+      const soundCandidates = PLAY_SOUND_FOR_ACTIVE_NEGOTIATION ? fresh : visibleFresh;
+
+      // Não toca por um "notif" que só duplica uma mensagem já conhecida.
+      const messagePool = [...fresh, ...itemsRef.current].filter(i => i.kind === 'message');
+      const shouldPlay = soundCandidates.some(i => i.kind !== 'notif' || !messagePool.some(m => isCrossFeedDuplicate(m, i)));
+
+      commitItems(prev => {
+        const visiblePrevious = prev.filter(i => !matchesNegotiation(i, activeHash));
+        return dedupeNotificationItems([...visibleFresh, ...visiblePrevious])
+          .sort((a, b) => b.dateAdded - a.dateAdded)
+          .slice(0, 50);
       });
+
+      if (shouldPlay && !mutedRef.current) playNotificationSound();
     } catch (e) {
       if (!silent) setError(e.message);
     } finally {
       checkingRef.current = false;
       setChecking(false);
     }
-  }, [muted, activeNegotiationHash]);
+  }, [commitItems]);
 
   const runMarketCheck = useCallback(async (silent = true) => {
     if (marketCheckingRef.current) return;
@@ -122,18 +204,18 @@ export default function UexNotificationBell({ onNavigate }) {
     try {
       const result = await checkMarketAlerts({ silent, automatic: true });
       const mapped = (result?.newEvents || []).map(event => ({
+        ...event,
         kind: 'market-alert',
         key: event.key,
         dateAdded: event.dateAdded || Date.now(),
-        ...event,
       }));
       if (mapped.length) {
-        setItems(prev => {
-          const existingKeys = new Set(prev.map(item => item.key));
-          const freshOnes = mapped.filter(item => !existingKeys.has(item.key));
-          if (freshOnes.length && !muted) playNotificationSound();
-          return dedupeNotificationItems([...freshOnes, ...prev]).sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 80);
-        });
+        const knownKeys = new Set(itemsRef.current.map(item => item.key));
+        const fresh = mapped.filter(item => !knownKeys.has(item.key));
+        if (fresh.length) {
+          commitItems(prev => dedupeNotificationItems([...fresh, ...prev]).sort((a, b) => b.dateAdded - a.dateAdded).slice(0, 80));
+          if (!mutedRef.current) playNotificationSound();
+        }
       }
     } catch (e) {
       if (!silent) setError(e.message || 'Não foi possível verificar os alertas de compra.');
@@ -141,7 +223,21 @@ export default function UexNotificationBell({ onNavigate }) {
       marketCheckingRef.current = false;
       marketNextCheckRef.current = loadMarketAlertSettings().nextCheckAt;
     }
-  }, [muted]);
+  }, [commitItems]);
+
+  useEffect(() => {
+    // Destrava o áudio a cada interação enquanto o contexto não estiver
+    // rodando (políticas de autoplay do Chromium/Electron no Linux). É barato:
+    // se já está "running", não faz nada.
+    const unlock = () => unlockNotificationAudio();
+    unlock(); // funciona de cara se o usuário já interagiu com a página antes
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   useEffect(() => {
     runCheck(true);
@@ -181,11 +277,11 @@ export default function UexNotificationBell({ onNavigate }) {
   const count = items.length;
 
   function handleDismissOne(key) {
-    setItems(prev => prev.filter(i => i.key !== key));
+    commitItems(prev => prev.filter(i => i.key !== key));
   }
 
   function handleDismissAll() {
-    setItems([]);
+    commitItems([]);
   }
 
   function handleOpenNegotiation(item) {
@@ -195,7 +291,7 @@ export default function UexNotificationBell({ onNavigate }) {
       setOpen(false);
       return;
     }
-    setItems(previous => previous.filter(current => current.key !== item.key));
+    commitItems(previous => previous.filter(current => current.key !== item.key));
     setOpen(false);
     onNavigate && onNavigate('uexnegotiations', { negotiationHash: hash });
   }

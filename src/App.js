@@ -659,12 +659,12 @@ export default function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 3.0.0" aria-label={`Efeitos visuais: ${visualMode}`}>
+          <button className="visual-mode-toggle" type="button" onClick={cycleVisualMode} title="Alternar efeitos visuais da versão 3.0.1" aria-label={`Efeitos visuais: ${visualMode}`}>
             <span className="visual-mode-dot" />
             <span>{visualMode === 'off' ? 'Efeitos desligados' : visualMode === 'economic' ? 'Efeitos econômicos' : 'Efeitos imersivos'}</span>
           </button>
           {ENABLE_FX_DIAGNOSTICS && <VisualEffectsDiagnostics mode={visualMode} activePage={activePage} />}
-          <span className="version-badge">v3.0.0</span>
+          <span className="version-badge">v3.0.1</span>
         </div>
       </aside>
 

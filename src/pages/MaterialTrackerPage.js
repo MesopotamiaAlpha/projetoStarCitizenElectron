@@ -7,7 +7,7 @@ import {
 import {
   loadQueue, calcShoppingList, loadMaterialOrder, saveMaterialOrder,
   dequeueBlueprint, updateQueuedQty, clearCompleted, removeManualMaterial,
-  materialKey, normalizeQualityMin, getIngredientQualityMin, toBase, fromBase,
+  materialKey, normalizeQualityMin, getIngredientQualityMin, getIngredientQualityOperator, qualityRequirementLabel, toBase, fromBase,
 } from '../data/materialQueue';
 import { loadVault, deductOreEntries, findExactVaultMatches } from '../data/oreVault';
 import { normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber, cargoEquivalentTotal } from '../data/cargoUnits';
@@ -21,7 +21,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
     return shoppingList
       .filter(item => item.remaining > 0)
       .map(item => {
-        const vaultEntries = findExactVaultMatches(item.material_name, item.quality_min).filter(e => {
+        const vaultEntries = findExactVaultMatches(item.material_name, item.quality_min, item.quality_operator).filter(e => {
           if (!item.unit) return true;
           const entryUnit = normalizeCargoUnit(e.unit || 'un');
           const requiredUnit = normalizeCargoUnit(item.unit || 'un');
@@ -67,7 +67,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
                 color:'var(--text-primary)',fontFamily:'Share Tech Mono,monospace',
               }}>
                 <strong style={{color:materialColor}}>{m.material_name}</strong>
-                {m.quality_min > 0 && <span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>Q≥{m.quality_min}</span>}
+                {<span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>{qualityRequirementLabel(m.quality_min, m.quality_operator)}</span>}
                 : <span style={{color:materialColor,fontWeight:700}}>{formatCargoNumber(m.vaultTotal, isCargoUnit(m.vaultUnit||m.unit) ? 9 : 3)} {m.vaultUnit||m.unit||'un'}</span>
                 {m.remaining > 0 && <span style={{color:'var(--text-muted)'}}> / {fmtSCU(m.remaining, m.unit).primary} necessário</span>}
               </span>
@@ -84,7 +84,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
 
 // ── Vault Use Panel ───────────────────────────────────────────────────────────
 // Painel dentro do MaterialRow para usar minério do baú
-function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onVaultChanged }) {
+function VaultUsePanel({ materialName, qualityMin = 0, qualityOperator = 'gte', needed, unit = 'un', onVaultChanged }) {
   const [vault, setVault] = useState(() => loadVault());
 
   function refresh() {
@@ -92,13 +92,13 @@ function VaultUsePanel({ materialName, qualityMin = 0, needed, unit = 'un', onVa
     onVaultChanged?.();
   }
 
-  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin).filter(entry => {
+  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin, qualityOperator).filter(entry => {
     const requiredUnit = normalizeCargoUnit(unit || 'un');
     const entryUnit = normalizeCargoUnit(entry.unit || 'un');
     return isCargoUnit(requiredUnit) && isCargoUnit(entryUnit)
       ? areCargoUnitsCompatible(requiredUnit, entryUnit)
       : entryUnit === requiredUnit;
-  }), [vault, materialName, qualityMin, unit]);
+  }), [vault, materialName, qualityMin, qualityOperator, unit]);
 
   const quality = getQualityAccent(qualityMin);
   const requiredBase = isCargoUnit(unit) ? toCargoBase(needed, unit) : Number(needed) || 0;
@@ -287,7 +287,7 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
               {item.material_name}
             </span>
             {isDone && <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-green)',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',padding:'1px 6px',borderRadius:3 }}>✓ COMPLETO</span>}
-            {item.quality_min > 0 && <span className="material-quality-badge material-quality-badge-prominent" style={{ fontSize:10,color:quality.color,background:quality.soft,border:`1px solid ${quality.border}`,padding:'2px 7px',borderRadius:4 }}><Star size={9} fill="currentColor"/> Q≥{item.quality_min}</span>}
+            <span className="material-quality-badge material-quality-badge-prominent" style={{ fontSize:10,color:quality.color,background:quality.soft,border:`1px solid ${quality.border}`,padding:'2px 7px',borderRadius:4 }}><Star size={9} fill="currentColor"/> {qualityRequirementLabel(item.quality_min, item.quality_operator)}</span>
             {isManual && <span style={{ fontSize:9,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.2)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>MANUAL</span>}
           </div>
           {/* Progresso bar */}
@@ -333,7 +333,7 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
               </div>
               {item.usedBy.map((u,i) => {
                 const requiredQuality = normalizeQualityMin(u.quality_min);
-                const requirement = requiredQuality > 0 ? `Q≥${requiredQuality}` : 'Qualidade livre';
+                const requirement = qualityRequirementLabel(requiredQuality, getIngredientQualityOperator(u));
                 const requirementQuality = getQualityAccent(requiredQuality);
                 return (
                   <div key={`${u.bpName}-${i}`} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11 }}>
@@ -352,6 +352,7 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
             <VaultUsePanel
               materialName={item.material_name}
               qualityMin={item.quality_min}
+              qualityOperator={item.quality_operator}
               needed={item.remaining}
               unit={item.unit}
               onVaultChanged={onVaultChanged}
@@ -370,9 +371,10 @@ function buildBlueprintRequirements(bp) {
   for (const ing of bp.ingredients || []) {
     const qualityMin = getIngredientQualityMin(ing);
     const unit = ing.unit || 'un';
-    const key = materialKey(ing.material_name, qualityMin);
+    const qualityOperator = getIngredientQualityOperator(ing);
+    const key = materialKey(ing.material_name, qualityMin, qualityOperator);
     if (!map[key]) {
-      map[key] = { key, material_name: ing.material_name, quality_min: qualityMin, unit, quantity: 0 };
+      map[key] = { key, material_name: ing.material_name, quality_min: qualityMin, quality_operator: qualityOperator, unit, quantity: 0 };
     }
     map[key].quantity += (Number(ing.quantity) || 0) * (Number(bp.quantity) || 1);
   }
@@ -389,11 +391,11 @@ function planBlueprintConsumption(bp) {
 
   // Qualidades mais altas são reservadas primeiro, evitando que um minério Q≥800
   // seja consumido antes de atender uma exigência mais específica.
-  requirements.sort((a, b) => b.quality_min - a.quality_min);
+  requirements.sort((a, b) => b.quality_min - a.quality_min || a.quality_operator.localeCompare(b.quality_operator));
 
   for (const req of requirements) {
     let remainingBase = toBase(req.quantity, req.unit);
-    const matches = findExactVaultMatches(req.material_name, req.quality_min)
+    const matches = findExactVaultMatches(req.material_name, req.quality_min, req.quality_operator)
       .filter(entry => {
         if (!req.unit) return true;
         return isCargoUnit(req.unit) && isCargoUnit(entry.unit)
@@ -428,7 +430,7 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
   const bpMaterials = bp.ingredients || [];
   const totalMats   = bpMaterials.length;
   const doneMats    = bpMaterials.filter(ing => {
-    const sl = shoppingList.find(s => s.key === materialKey(ing.material_name, getIngredientQualityMin(ing)));
+    const sl = shoppingList.find(s => s.key === materialKey(ing.material_name, getIngredientQualityMin(ing), getIngredientQualityOperator(ing)));
     return sl && sl.remaining === 0;
   }).length;
   const isComplete  = totalMats > 0 && doneMats === totalMats;
@@ -626,7 +628,7 @@ export default function MaterialTrackerPage() {
     try {
       const plan = planBlueprintConsumption(bp);
       if (!plan.success) {
-        const details = plan.missing.map(m => `${m.material_name}${m.quality_min > 0 ? ` Q≥${m.quality_min}` : ''}: faltam ${m.missing} ${m.unit}`).join(' · ');
+        const details = plan.missing.map(m => `${m.material_name} ${qualityRequirementLabel(m.quality_min, m.quality_operator)}: faltam ${m.missing} ${m.unit}`).join(' · ');
         setActionMessage({ type:'error', text: details ? `Estoque elegível insuficiente. ${details}` : 'Nenhum material elegível encontrado no Baú.' });
         return;
       }

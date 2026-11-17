@@ -20,5 +20,14 @@ export function buildBulkImportEntries(queue = [], catalog = [], importedAt = ne
 export function mergeBulkImportCatalog(catalog = [], queue = [], importedAt) {
   const current = Array.isArray(catalog) ? catalog : [];
   const entries = buildBulkImportEntries(queue, current, importedAt);
-  return { entries, catalog: [...current, ...entries] };
+  // O ID é a única identidade inequívoca para um anúncio. Título/localização
+  // podem ser iguais em anúncios legítimos simultâneos; não mesclar por nome.
+  const catalogById = new Set(current.map(item => String(item?.id ?? '')).filter(Boolean));
+  const uniqueEntries = entries.filter(entry => {
+    const id = String(entry?.id ?? '');
+    if (!id || catalogById.has(id)) return false;
+    catalogById.add(id);
+    return true;
+  });
+  return { entries: uniqueEntries, catalog: [...current, ...uniqueEntries] };
 }

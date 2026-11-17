@@ -27,7 +27,7 @@ export const SELECTIVE_CLEANUP_CATEGORIES = [
     label: 'Baú de Minério',
     description: 'Remove todas as entradas de minério. A preferência de local padrão permanece intacta para evitar reconfiguração acidental.',
     tone: 'gold',
-    localStorageKeys: ['sc_ore_vault_v1'],
+    localStorageKeys: ['sc_ore_vault_v1', 'sc_ore_vault_history_v1'],
   },
   {
     id: 'missions',

@@ -1,7 +1,7 @@
 {
   "name": "companheiro-emoto",
-  "version": "3.0.0",
-  "description": "Companheiro Emoto 3.0.0 — Star Citizen Companion App com acesso mobile local",
+  "version": "3.0.2",
+  "description": "Companheiro Emoto 3.0.2 — Star Citizen Companion App com acesso mobile local",
   "author": "Companheiro Emoto",
   "main": "electron/main.js",
   "scripts": {
@@ -66,9 +66,11 @@
       "!**/*.map"
     ],
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "electron-icons"
     },
     "linux": {
+      "icon": "electron-icons/icon.png",
       "target": [
         "AppImage",
         "deb",

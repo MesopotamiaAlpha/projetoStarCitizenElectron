@@ -6,7 +6,7 @@
 
 ## Sobre o projeto
 
-O **Companheiro Emoto 3.0.0** é uma ferramenta pessoal para jogadores de *Star Citizen* que precisam acompanhar muitos itens, armaduras, missões, recursos e operações de comércio sem depender de várias planilhas ou anotações separadas.
+O **Companheiro Emoto 3.0.1** é uma ferramenta pessoal para jogadores de *Star Citizen* que precisam acompanhar muitos itens, armaduras, missões, recursos e operações de comércio sem depender de várias planilhas ou anotações separadas.
 
 A aplicação combina uma interface React com Electron, armazenamento local e integração com a UEX. O objetivo é transformar informações espalhadas em uma visão operacional simples: saber o que você possui, onde está guardado, o que falta para um craft, quais missões estão ativas e quais anúncios precisam de atenção.
 
@@ -80,7 +80,7 @@ O projeto possui atualizações seletivas na Minha Coleção e índices reutiliz
 
 ## Acesso mobile local
 
-A versão 3.0.0 permite ligar um servidor HTTP local em **Sistema → Diretório de Dados → Servidor Mobile**. O computador mostra o endereço de acesso e um token temporário para abrir uma interface responsiva no navegador do celular. O celular e o computador precisam estar na mesma rede Wi-Fi.
+A versão 3.0.1 permite ligar um servidor HTTP local em **Sistema → Diretório de Dados → Servidor Mobile**. O computador mostra o endereço de acesso e um token temporário para abrir uma interface responsiva no navegador do celular. O celular e o computador precisam estar na mesma rede Wi-Fi.
 
 O acesso mobile inclui Dashboard, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, UEX, Negociações e Alertas. O banco, os arquivos, o monitor Game.log e os tokens da UEX continuam protegidos no computador. Desligar o servidor ou renovar o token revoga o acesso anterior.
 
@@ -149,7 +149,7 @@ O comando executa os testes React, os testes Electron, o build de produção e a
 
 ## Estado do projeto
 
-A versão atual é **3.0.0**. O projeto está em evolução contínua e prioriza organização de dados, desempenho em bases grandes, clareza visual e segurança da persistência local.
+A versão atual é **3.0.1**. O projeto está em evolução contínua e prioriza organização de dados, desempenho em bases grandes, clareza visual e segurança da persistência local.
 
 Sugestões, correções e melhorias podem ser registradas no [repositório do GitHub](https://github.com/MesopotamiaAlpha/projetoStarCitizenElectron).
 
@@ -162,7 +162,7 @@ Sugestões, correções e melhorias podem ser registradas no [repositório do Gi
 
 ### Escopo mobile expandido
 
-O portal mobile da versão 3.0.0 agora inclui Resumo, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, UEX, Negociações e Alertas. O Inventário permite aumentar ou reduzir quantidades; missões podem ter o status alterado; alertas podem ser dispensados; o progresso de itens Wikelo pode ser atualizado; e Negociações pode consultar conversas e mensagens por proxy do renderer. As alterações são delegadas ao Electron, que permanece responsável pelo SQLite, localStorage e validações.
+O portal mobile da versão 3.0.1 agora inclui Resumo, Inventário, Armaduras, Blueprints, Tracking de Materiais, Mineração, Mineração em Grupo, Baú de Minério, Hangar, Cofre do Clã, Notas, Wikelo, Missões, UEX, Negociações e Alertas. O Inventário permite aumentar ou reduzir quantidades; missões podem ter o status alterado; alertas podem ser dispensados; o progresso de itens Wikelo pode ser atualizado; e Negociações pode consultar conversas e mensagens por proxy do renderer. As alterações são delegadas ao Electron, que permanece responsável pelo SQLite, localStorage e validações.
 
 A interface usa Server-Sent Events em `/api/mobile/events` para atualizar o celular quando o desktop sincroniza dados ou quando uma operação mobile é concluída. O cliente não recebe tokens UEX, secret-keys, caminhos arbitrários do sistema ou acesso direto ao banco.
 
