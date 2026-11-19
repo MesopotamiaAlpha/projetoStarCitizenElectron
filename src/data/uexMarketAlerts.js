@@ -331,6 +331,82 @@ async function remoteCommodityMatches(name) {
   return rows.filter(row => exactName(row.name || row.commodity_name || row.item_name) === normalized);
 }
 
+// ── Resolução do item pelo NOME ─────────────────────────────────────────────
+// A API de anúncios (marketplace_listings) NÃO tem busca por texto: o "?search=" é só do
+// site. Sem id_item ela devolve no máximo 100 anúncios do marketplace inteiro, e o id_item
+// só vale com ids do catálogo de ITENS (não os da lista de commodities). Por isso um alerta
+// manual precisa descobrir o(s) id_item pelo nome nas médias do marketplace, que trazem
+// id_item + item_name, e só então consultar os anúncios daquele item (até 1.000).
+const MAX_ITEM_FETCHES = 8; // protege a cota da API (120 req/min)
+const MARKETPLACE_CATALOG_TTL_MS = 30 * 60 * 1000;
+let marketplaceCatalogCache = null;
+
+// Só para testes (e para forçar uma nova leitura do catálogo).
+export function resetMarketAlertSearchCaches() {
+  remoteCommodityRowsPromise = null;
+  marketplaceCatalogCache = null;
+}
+
+function marketplaceItemCatalog() {
+  const now = Date.now();
+  if (!marketplaceCatalogCache || now - marketplaceCatalogCache.at > MARKETPLACE_CATALOG_TTL_MS) {
+    const entry = { at: now, promise: null };
+    entry.promise = uexInsightFetch('marketplace_prices_averages_all')
+      .then(payload => unwrapRows(payload))
+      .catch(error => {
+        if (marketplaceCatalogCache === entry) marketplaceCatalogCache = null;
+        throw error;
+      });
+    marketplaceCatalogCache = entry;
+  }
+  return marketplaceCatalogCache.promise;
+}
+
+/**
+ * Descobre os itens do marketplace cujo nome corresponde ao texto digitado.
+ * 1) consulta filtrada por nome (barata); 2) se nada vier, usa o catálogo completo em cache
+ *    com a mesma tolerância da busca manual (caixa, pontuação, ordem e 1 letra de diferença).
+ * Erros são anotados em `errors` e nunca interrompem a busca.
+ */
+async function resolveMarketplaceItems(itemName, errors = []) {
+  const found = new Map();
+  const collect = rows => (Array.isArray(rows) ? rows : []).forEach(row => {
+    const id = String(row?.id_item ?? '').trim();
+    const name = String(row?.item_name || '').trim();
+    if (!id || !name || !containsNormalizedPhrase(name, itemName)) return;
+    const previous = found.get(id);
+    const listings = (previous?.listings || 0) + (Number(row.listings_count) || 0);
+    found.set(id, { id, name, listings, exact: exactName(name) === exactName(itemName) });
+  });
+
+  try {
+    collect(unwrapRows(await uexInsightFetch('marketplace_prices_averages', { item_name: itemName })));
+  } catch (error) {
+    errors.push(error);
+  }
+  if (!found.size) {
+    try {
+      collect(await marketplaceItemCatalog());
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return [...found.values()]
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || b.listings - a.listings)
+    .slice(0, MAX_ITEM_FETCHES);
+}
+
+// Janela dos anúncios mais recentes (limite de 100 da API). Compartilhada entre os alertas
+// de uma mesma verificação: serve para anúncios SEM id de item e para a busca ampla (descrição).
+function fetchRecentSellWindow(context) {
+  if (!context.recentWindow) {
+    context.recentWindow = uexInsightFetch('marketplace_listings', { operation: 'sell' })
+      .then(data => ({ rows: unwrapRows(data), error: null }))
+      .catch(error => ({ rows: [], error }));
+  }
+  return context.recentWindow;
+}
+
 export function resolveMarketAlertItemIds(alert = {}) {
   const ids = new Set();
   if (alert.itemId) ids.add(String(alert.itemId).trim());
@@ -646,53 +722,84 @@ export function selectMarketAlertMatches(alert, listings = [], dismissedKeys = n
   return sortMarketAlertListings(alert, eligible).slice(0, clampMaxResults(alert?.maxResults));
 }
 
-export async function fetchMarketListingsForAlert(alert) {
+export async function fetchMarketListingsForAlert(alert, context = {}) {
   const itemName = String(alert?.itemName || '').trim();
-  const itemIds = resolveMarketAlertItemIds(alert);
-  if (itemName) {
-    const remoteRows = await remoteCommodityMatches(itemName);
-    remoteRows.flatMap(rowIds).forEach(id => {
-      if (!itemIds.includes(id)) itemIds.push(id);
-    });
+  const manual = alert?.itemMode === 'manual';
+  const errors = [];
+
+  // Alerta manual: o id do item vem do NOME, nunca de uma lista de commodities (outro espaço de ids).
+  let itemIds = [];
+  if (manual && itemName) {
+    itemIds = (await resolveMarketplaceItems(itemName, errors)).map(item => item.id);
+  }
+  // Catálogo (ou manual sem nenhum item encontrado): comportamento anterior.
+  if (!itemIds.length) {
+    itemIds = resolveMarketAlertItemIds(alert);
+    if (itemName) {
+      const remoteRows = await remoteCommodityMatches(itemName);
+      remoteRows.flatMap(rowIds).forEach(id => {
+        if (!itemIds.includes(id)) itemIds.push(id);
+      });
+    }
   }
   if (!itemIds.length && !itemName) throw new Error('Selecione um item do catálogo ou informe o nome manualmente.');
+
   const rowsByKey = new Map();
-  async function fetchRows(params) {
-    const data = await uexInsightFetch('marketplace_listings', params);
-    unwrapRows(data).forEach(row => rowsByKey.set(listingKey(row), row));
-  }
+  const addRows = rows => unwrapRows(rows).forEach(row => rowsByKey.set(listingKey(row), row));
+  let itemFetches = 0;
+  let itemFetchSuccesses = 0;
+  let firstItemError = null;
 
   // A combinação id_item + operation=sell libera o limite documentado de até
-  // 1.000 anúncios, evitando que a API devolva apenas o primeiro resultado.
-  for (const id of itemIds) await fetchRows({ id_item: id, operation: 'sell' });
+  // 1.000 anúncios, evitando que a API devolva apenas os 100 primeiros.
+  async function fetchItem(id) {
+    itemFetches += 1;
+    try {
+      addRows(await uexInsightFetch('marketplace_listings', { id_item: id, operation: 'sell' }));
+      itemFetchSuccesses += 1;
+    } catch (error) {
+      // Busca manual tolera a falha de um item (os outros continuam valendo); catálogo mantém o erro.
+      if (!manual) throw error;
+      firstItemError = firstItemError || error;
+    }
+  }
+  for (const id of itemIds.slice(0, MAX_ITEM_FETCHES)) await fetchItem(id);
 
-  // O fallback cobre commodities que foram salvas no catálogo por nome, mas
-  // ainda não têm o mesmo id local. O retorno sem id é filtrado novamente pelo
-  // título, nunca pela descrição, no modo específico.
-  if (!itemIds.length || localMiningMatches(itemName).length > 0) {
-    await fetchRows({ operation: 'sell' });
+  const needsRecentWindow = manual || !itemIds.length || localMiningMatches(itemName).length > 0;
+  let windowError = null;
+  if (needsRecentWindow) {
+    // Anúncios sem id de item e descrições (modo amplo) só aparecem nesta janela de 100.
+    const recent = await fetchRecentSellWindow(context);
+    if (recent.error && !manual) throw recent.error;
+    windowError = recent.error;
+    addRows(recent.rows);
   }
 
-  // Busca manual: o endpoint sem id pode devolver apenas uma janela global de
-  // anúncios. Use um anúncio que já corresponda ao nome para descobrir o
-  // id_item e então consulte a coleção completa desse item.
-  if (itemName && alert?.itemMode === 'manual') {
+  // Busca manual: um anúncio da janela que já corresponda ao nome revela o id_item dele;
+  // então consulta a coleção completa desse item.
+  if (itemName && manual) {
     const discoveredIds = new Set();
     Array.from(rowsByKey.values())
       .filter(listing => listingManualMatchReason(alert, listing))
       .forEach(listing => listingItemIds(listing).forEach(id => discoveredIds.add(id)));
     for (const id of discoveredIds) {
-      if (!itemIds.includes(id)) {
-        itemIds.push(id);
-        await fetchRows({ id_item: id, operation: 'sell' });
-      }
+      if (itemIds.includes(id) || itemFetches >= MAX_ITEM_FETCHES) continue;
+      itemIds.push(id);
+      await fetchItem(id);
     }
   }
 
   const rows = Array.from(rowsByKey.values()).filter(listing => {
-    if (alert?.itemMode === 'manual') return Boolean(listingManualMatchReason(alert, listing));
+    if (manual) return Boolean(listingManualMatchReason(alert, listing));
     return listingBelongsToAlert(alert, listing, itemIds);
   });
+
+  // Nunca transformar falha em "0 resultados" silencioso: se a consulta principal (os itens
+  // encontrados) falhou por completo e nada correspondeu, o erro precisa chegar ao usuário.
+  if (!rows.length) {
+    if (itemFetches > 0 && itemFetchSuccesses === 0 && firstItemError) throw firstItemError;
+    if (!itemFetches && windowError) throw windowError;
+  }
   return rows;
 }
 
@@ -722,15 +829,19 @@ export async function checkMarketAlerts({ silent = true, automatic = false } = {
   const newEvents = [];
   const checkedAt = new Date(checkTimestamp).toISOString();
   const nextAlerts = loadMarketAlerts().map(row => ({ ...row }));
+  // Cache desta verificação: a janela dos 100 anúncios mais recentes é consultada uma só vez para todos os alertas.
+  const searchContext = {};
 
   for (const alert of alerts) {
     try {
-      const listings = await fetchMarketListingsForAlert(alert);
+      const listings = await fetchMarketListingsForAlert(alert, searchContext);
       const matches = listings.filter(listing => listingMatchesAlert(alert, listing));
       const bestMatches = selectMarketAlertMatches(alert, matches, dismissedKeys);
       const target = nextAlerts.find(row => row.id === alert.id);
       if (target) {
         target.lastCheckedAt = checkedAt;
+        // A verificação funcionou: o erro de uma tentativa anterior não vale mais.
+        target.lastError = '';
         target.lastMatchCount = bestMatches.length;
         if (bestMatches.length) target.lastMatchAt = checkedAt;
         target.seenKeys = Array.isArray(target.seenKeys) ? target.seenKeys : [];
