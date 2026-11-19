@@ -1,5 +1,5 @@
 // ── UEX Marketplace Negotiations / Notifications ────────────────────────────
-import { isNegotiationClosed } from './uexNegotiationStatus';
+import { getNegotiationClosedAt } from './uexNegotiationStatus';
 
 // Consulta as negociações do Marketplace UEX e as mensagens de cada uma,
 // mantendo localmente o controle do que já foi visto para gerar o badge
@@ -213,13 +213,22 @@ export async function checkForUpdates() {
   const myUsername = loadUsername().trim().toLowerCase();
   const firstRun = state.lastCheck === 0;
 
+  // Falha ao LISTAR negociações não pode virar "lista vazia" em silêncio: antes,
+  // um erro da API (token, limite, rede) parecia "nenhuma mensagem nova" e ainda
+  // avançava o lastCheck, escondendo mensagens reais. Agora o erro é devolvido
+  // ao sino e o lastCheck só avança quando a consulta deu certo.
+  let negotiationsError = null;
   const [negotiations, notifications] = await Promise.all([
-    fetchNegotiations().catch(() => []),
+    fetchNegotiations().catch(error => { negotiationsError = error; return []; }),
     fetchUserNotifications().catch(() => []),
   ]);
 
   // Só vasculha mensagens de negociações com atividade recente (evita 1 chamada por deal).
-  const activeNegotiations = negotiations.filter(n => !isNegotiationClosed(n));
+  // Para o sino, SOMENTE uma data de fechamento encerra o acompanhamento (como na
+  // versão que funcionava, com date_closed). As heurísticas de status/deal_value
+  // de isNegotiationClosed tratavam negociações abertas como fechadas e
+  // silenciavam o sino inteiro.
+  const activeNegotiations = negotiations.filter(n => getNegotiationClosedAt(n) === null);
   const recentlyActive = firstRun
     ? activeNegotiations
     : activeNegotiations.filter(n => (n.date_modified || 0) * 1000 >= state.lastCheck - 5 * 60 * 1000);
@@ -228,9 +237,10 @@ export async function checkForUpdates() {
   const seenNotifIds = new Set((state.seenNotifIds || []).filter(id => id !== null && id !== undefined && id !== '').map(String));
   const newMessages = [];
   const emittedMessageIds = new Set();
+  let messageFetchErrors = 0;
   for (const neg of recentlyActive) {
     let msgs = [];
-    try { msgs = await fetchNegotiationMessages(neg.hash); } catch { continue; }
+    try { msgs = await fetchNegotiationMessages(neg.hash); } catch { messageFetchErrors += 1; continue; }
     for (const m of msgs) {
       if (!m.message) continue; // ignora eventos internos sem texto
       const isMine = isOwnNegotiationMessage(m, myUsername, neg);
@@ -282,7 +292,7 @@ export async function checkForUpdates() {
   // Mantém as listas de "já visto" de um tamanho razoável.
   state.seenMessageIds = Array.from(seenMessageIds).slice(-500);
   state.seenNotifIds = Array.from(seenNotifIds).slice(-500);
-  state.lastCheck = Date.now();
+  if (!negotiationsError) state.lastCheck = Date.now();
   saveState(state);
 
   newMessages.sort((a, b) => b.dateAdded - a.dateAdded);
@@ -300,6 +310,15 @@ export async function checkForUpdates() {
     newNotifications: filteredNotifications,
     totalUnread: newMessages.length + filteredNotifications.length,
     negotiations,
+    // Usado pelo sino para mostrar "última verificação" e erros reais da API.
+    diagnostics: {
+      firstRun,
+      total: negotiations.length,
+      active: activeNegotiations.length,
+      scanned: recentlyActive.length,
+      messageFetchErrors,
+      error: negotiationsError ? String(negotiationsError.message || negotiationsError) : '',
+    },
   };
 }
 

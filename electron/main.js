@@ -5,6 +5,7 @@ const { applySchemaMigrations, CURRENT_SCHEMA_VERSION } = require('./dbMigration
 const { createMobileServer, DEFAULT_PORT: MOBILE_DEFAULT_PORT } = require('./mobileServer');
 const { fileSignature, saveDatabaseSnapshot } = require('./dbPersistence.cjs');
 const { MAX_UEX_ENDPOINT_LENGTH, normalizeUexEndpoint } = require('./uexEndpoint.cjs');
+const { parseInventoryImageDataUrl, safeInventoryImageName } = require('./inventoryImage.cjs');
 const fs   = require('fs');
 const SCMDB_CATALOG = require('./scmdbBlueprintCatalog.json');
 const isDev = process.env.NODE_ENV === 'development';
@@ -2599,6 +2600,57 @@ ipcMain.handle('notes-download-attachment', async (event, payload = {}) => {
     if (result.canceled || !result.filePath) return { success: false, canceled: true };
     fs.copyFileSync(filePath, result.filePath);
     return { success: true, path: result.filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Imagens do inventário: salvar em disco e abrir no visualizador do sistema.
+// O renderer não consegue fazer isso sozinho com data URL grande (limite do
+// Chromium) nem com window.open (barrado pelo setWindowOpenHandler).
+ipcMain.handle('inventory-image-save', async (event, payload = {}) => {
+  try {
+    assertTrustedRenderer(event);
+    const { extension, buffer } = parseInventoryImageDataUrl(payload.dataUrl);
+    const defaultName = safeInventoryImageName(payload.name, extension);
+    const options = {
+      title: 'Salvar imagem do item',
+      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      filters: [
+        { name: 'Imagem', extensions: [path.extname(defaultName).slice(1) || extension] },
+        { name: 'Todos os arquivos', extensions: ['*'] },
+      ],
+    };
+    const parentWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = parentWindow ? await dialog.showSaveDialog(parentWindow, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+    await fs.promises.writeFile(result.filePath, buffer);
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('inventory-image-open', async (event, payload = {}) => {
+  try {
+    assertTrustedRenderer(event);
+    const { extension, buffer } = parseInventoryImageDataUrl(payload.dataUrl);
+    const dir = path.join(app.getPath('temp'), `${APP_DIR_NAME}-imagens`);
+    await fs.promises.mkdir(dir, { recursive: true });
+    // Limpeza best-effort: remove cópias temporárias com mais de 1 dia.
+    try {
+      const limit = Date.now() - 24 * 60 * 60 * 1000;
+      for (const name of await fs.promises.readdir(dir)) {
+        const file = path.join(dir, name);
+        const stat = await fs.promises.stat(file);
+        if (stat.isFile() && stat.mtimeMs < limit) await fs.promises.unlink(file);
+      }
+    } catch (_) { /* limpeza opcional */ }
+    const filePath = path.join(dir, `${Date.now()}-${safeInventoryImageName(payload.name, extension)}`);
+    await fs.promises.writeFile(filePath, buffer);
+    const openError = await shell.openPath(filePath);
+    if (openError) return { success: false, error: openError };
+    return { success: true, path: filePath };
   } catch (error) {
     return { success: false, error: error.message };
   }

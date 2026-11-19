@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   inventoryUpdate:    (item)       => ipcRenderer.invoke('inventory-update', item),
   inventoryDelete:    (id)         => ipcRenderer.invoke('inventory-delete', id),
   inventoryGetStats:  ()           => ipcRenderer.invoke('inventory-get-stats'),
+  inventorySaveImage: (payload)    => ipcRenderer.invoke('inventory-image-save', payload),
+  inventoryOpenImage: (payload)    => ipcRenderer.invoke('inventory-image-open', payload),
   uexTestToken:       (token)      => ipcRenderer.invoke('uex-test-token', token),
   uexFetch:           (data)       => ipcRenderer.invoke('uex-fetch', data),
   uexImage:           (url)        => ipcRenderer.invoke('uex-image', url),

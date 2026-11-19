@@ -49,6 +49,12 @@ function hashMaterialName(value) {
   return [...String(value || '').toLowerCase()].reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 7);
 }
 
+// Nomes conhecidos, em ordem alfabética, para sugestões em formulários.
+export function listKnownMaterialNames() {
+  return [...new Set(KNOWN_MATERIALS.map(name => name.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
 export function normalizeMaterialName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }

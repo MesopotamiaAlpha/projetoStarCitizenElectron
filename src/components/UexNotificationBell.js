@@ -3,14 +3,11 @@ import { Bell, MessageSquare, X, CheckCheck, AlertCircle, Volume2, VolumeX, Arro
 import { loadToken, checkForUpdates, messageIdentity, notificationIdentity, isCrossFeedDuplicate } from '../data/uexNegotiations';
 import { checkMarketAlerts, focusMarketAlert, loadMarketAlertSettings, MARKET_ALERT_SETTINGS_UPDATED_EVENT } from '../data/uexMarketAlerts';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, getActiveNegotiationHash } from '../data/uexUiEvents';
+import { claimNotificationSound } from '../data/notificationSoundGate';
+import { markHeard, wasMessageHeard, listHeardMessages } from '../data/uexHeardMessages';
 
 const POLL_INTERVAL_MS = 90 * 1000; // 90s para negociações
 const SOUND_MUTED_KEY = 'sc_uex_notif_sound_muted_v1';
-
-// true  = toca o som mesmo quando a mensagem chega na negociação que está aberta
-//         (a mensagem continua sem aparecer na lista do sino).
-// false = negociação aberta fica totalmente silenciosa (sem som e sem item).
-const PLAY_SOUND_FOR_ACTIVE_NEGOTIATION = true;
 
 function dedupeNotificationItems(list) {
   const messages = list.filter(item => item.kind === 'message');
@@ -70,12 +67,32 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms))]);
 }
 
-async function playNotificationSound() {
+async function getRunningAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  const shared = getNotificationAudioContext();
+  if (shared && shared.state !== 'running') await withTimeout(shared.resume(), 500);
+  if (shared && shared.state === 'running') return shared;
   try {
-    const ctx = getNotificationAudioContext();
+    const fresh = new AudioContextClass();
+    if (fresh.state !== 'running') await withTimeout(fresh.resume(), 500);
+    if (fresh.state === 'running') {
+      const old = notificationAudioContext;
+      notificationAudioContext = fresh;
+      if (old && old !== fresh) Promise.resolve(old.close?.()).catch(() => {});
+      return fresh;
+    }
+    Promise.resolve(fresh.close?.()).catch(() => {});
+  } catch { /* sem suporte a áudio */ }
+  return null;
+}
+
+async function playNotificationSound() {
+  // Um som por vez no app todo (o chat de negociações pede a vez na mesma trava).
+  if (!claimNotificationSound()) return;
+  try {
+    const ctx = await getRunningAudioContext();
     if (!ctx) return;
-    if (ctx.state !== 'running') await withTimeout(ctx.resume(), 500);
-    if (ctx.state !== 'running') return;
     const now = ctx.currentTime;
     const tone = (freq, start, dur, peak = 0.16) => {
       const osc = ctx.createOscillator();
@@ -109,6 +126,7 @@ export default function UexNotificationBell({ onNavigate }) {
   const [items, setItems]     = useState([]); // { kind:'message'|'notif'|'market-alert', ... }
   const [checking, setChecking] = useState(false);
   const [error, setError]     = useState('');
+  const [lastCheck, setLastCheck] = useState(null);
   const [hasToken, setHasToken] = useState(!!loadToken());
   const [muted, setMuted] = useState(() => { try { return localStorage.getItem(SOUND_MUTED_KEY) === '1'; } catch { return false; } });
   const wrapRef = useRef(null);
@@ -160,9 +178,10 @@ export default function UexNotificationBell({ onNavigate }) {
     checkingRef.current = true;
     setHasToken(true);
     setChecking(true);
-    if (!silent) setError('');
     try {
-      const { newMessages = [], newNotifications = [] } = await checkForUpdates();
+      const { newMessages = [], newNotifications = [], diagnostics = null } = await checkForUpdates();
+      setLastCheck({ at: Date.now(), ...(diagnostics || {}) });
+      setError(diagnostics?.error || '');
       // "...m" vem primeiro para que kind/key/dateAdded calculados aqui sempre
       // prevaleçam (antes, um campo "key"/"kind" vindo do objeto sobrescrevia).
       const incoming = [
@@ -174,13 +193,20 @@ export default function UexNotificationBell({ onNavigate }) {
       const fresh = incoming.filter(i => !knownKeys.has(i.key) && !notifiedKeysRef.current.has(i.key));
       rememberKeys(notifiedKeysRef.current, fresh);
 
-      const activeHash = activeHashRef.current;
-      const visibleFresh = fresh.filter(i => !matchesNegotiation(i, activeHash));
-      const soundCandidates = PLAY_SOUND_FOR_ACTIVE_NEGOTIATION ? fresh : visibleFresh;
+      // Mensagens que o chat já exibiu (ou que o próprio sino já avisou) não geram novo aviso.
+      // Uma notificação geral que repete uma mensagem já conhecida também é descartada, mesmo
+      // que o item dela já tenha saído da lista do sino (o usuário já ficou sabendo).
+      const knownMessages = [...fresh, ...itemsRef.current, ...listHeardMessages()].filter(i => i.kind === 'message');
+      const novel = fresh.filter(i => (i.kind === 'message'
+        ? !wasMessageHeard(i.key)
+        : !knownMessages.some(message => isCrossFeedDuplicate(message, i))));
 
-      // Não toca por um "notif" que só duplica uma mensagem já conhecida.
-      const messagePool = [...fresh, ...itemsRef.current].filter(i => i.kind === 'message');
-      const shouldPlay = soundCandidates.some(i => i.kind !== 'notif' || !messagePool.some(m => isCrossFeedDuplicate(m, i)));
+      // Mensagem da negociação aberta é avisada pelo próprio chat (som + prévia): o sino
+      // fica em silêncio para ela, senão o mesmo aviso tocava duas vezes.
+      const activeHash = activeHashRef.current;
+      const visibleFresh = novel.filter(i => !matchesNegotiation(i, activeHash));
+      markHeard(visibleFresh.filter(i => i.kind === 'message'));
+      const shouldPlay = visibleFresh.length > 0;
 
       commitItems(prev => {
         const visiblePrevious = prev.filter(i => !matchesNegotiation(i, activeHash));
@@ -191,7 +217,7 @@ export default function UexNotificationBell({ onNavigate }) {
 
       if (shouldPlay && !mutedRef.current) playNotificationSound();
     } catch (e) {
-      if (!silent) setError(e.message);
+      setError(e?.message || 'Não foi possível verificar as negociações.');
     } finally {
       checkingRef.current = false;
       setChecking(false);
@@ -433,6 +459,12 @@ export default function UexNotificationBell({ onNavigate }) {
           </div>
 
           <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+            {lastCheck && (
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6, textAlign: 'center', fontFamily: 'Share Tech Mono,monospace' }}>
+                Última verificação {new Date(lastCheck.at).toLocaleTimeString('pt-BR')}
+                {typeof lastCheck.total === 'number' ? ` · ${lastCheck.active}/${lastCheck.total} negociações ativas` : ''}
+              </div>
+            )}
             <button
               className="uex-notification-refresh"
               onClick={() => Promise.all([runCheck(false), runMarketCheck(false)])}

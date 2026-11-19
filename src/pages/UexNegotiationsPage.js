@@ -10,6 +10,8 @@ import {
 } from '../data/uexSales';
 import { buildUexListingUrl } from '../data/uexNegotiations';
 import { UEX_ACTIVE_NEGOTIATION_EVENT, UEX_TEXTS_UPDATED_EVENT, dispatchUexUiEvent } from '../data/uexUiEvents';
+import { claimNotificationSound } from '../data/notificationSoundGate';
+import { markMessagesHeard } from '../data/uexHeardMessages';
 import { getNegotiationClosedAt, isNegotiationClosed } from '../data/uexNegotiationStatus';
 import { formatRelativeMessageTime } from '../data/uexMessageTime';
 import { loadUexChatReadState, isUexChatUnread, markUexChatRead, markAllUexChatsRead, UEX_CHAT_READ_STATE_UPDATED_EVENT } from '../data/uexChatReadState';
@@ -56,6 +58,8 @@ function loadQuickUexTexts() {
 }
 
 function playChatNotificationSound() {
+  // Um som por vez no app todo (o sino também pede a vez nesta trava).
+  if (!claimNotificationSound()) return;
   try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
@@ -265,6 +269,8 @@ function NegotiationThread({ negotiation, onBack, onConsumeArmorStock, onConsume
     try {
       const data = await fetchNegotiationMessages(negotiation.hash);
       const sorted = (Array.isArray(data) ? data : []).filter(m => m.message).sort((a, b) => (a.date_added || 0) - (b.date_added || 0));
+      // Tudo o que o chat exibe já foi "ouvido": o sino não deve avisar essas mensagens de novo.
+      markMessagesHeard(sorted, negotiation.hash);
       if (firstLoadRef.current) {
         firstLoadRef.current = false;
       } else {

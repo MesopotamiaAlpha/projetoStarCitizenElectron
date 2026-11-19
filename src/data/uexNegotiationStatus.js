@@ -70,9 +70,14 @@ function hasClosedStatus(negotiation) {
 function hasFinalDealValue(negotiation) {
   // A `deal_value` não é o preço inicial: a documentação da UEX informa que
   // este campo é preenchido pelo lado pagador no fechamento bem-sucedido.
-  return negotiation?.deal_value !== null
-    && negotiation?.deal_value !== undefined
-    && String(negotiation.deal_value).trim() !== '';
+  // Valor vazio ou ZERO é o padrão de uma negociação ainda aberta, então não
+  // conta como fechamento (antes, "0" marcava toda negociação como fechada).
+  const raw = negotiation?.deal_value;
+  if (raw === null || raw === undefined) return false;
+  const text = String(raw).trim();
+  if (!text) return false;
+  const numeric = Number(text.replace(/,/g, ''));
+  return Number.isFinite(numeric) ? numeric > 0 : true;
 }
 
 export function isNegotiationClosed(negotiation) {

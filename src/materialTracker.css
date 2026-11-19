@@ -1,0 +1,543 @@
+/* ==========================================================================
+   TRACKING DE MATERIAIS — modos de visualização, minério manual e craft parcial
+   Prefixo mt- para não colidir com os estilos existentes.
+   ========================================================================== */
+
+/* ── Botões e chips ── */
+.mt-add-btn,
+.mt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+}
+
+.mt-add-btn {
+  border-color: rgba(56,189,248,0.35);
+  background: rgba(56,189,248,0.08);
+  color: var(--accent-primary);
+}
+
+.mt-add-btn:hover,
+.mt-btn:hover:not(:disabled) {
+  border-color: var(--border-normal);
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.07);
+}
+
+.mt-add-btn:hover { background: rgba(56,189,248,0.16); color: var(--accent-primary); }
+
+.mt-btn:disabled { cursor: not-allowed; opacity: .45; }
+.mt-btn.is-small { padding: 4px 8px; font-size: 10px; }
+.mt-btn.is-primary { border-color: rgba(56,189,248,0.5); background: rgba(56,189,248,0.16); color: var(--accent-primary); }
+.mt-btn.is-gold    { border-color: rgba(251,191,36,0.5); background: rgba(251,191,36,0.13); color: var(--accent-gold); }
+.mt-btn.is-green   { border-color: rgba(52,211,153,0.5); background: rgba(52,211,153,0.14); color: var(--accent-green); }
+.mt-btn.is-danger  { border-color: rgba(251,113,133,0.45); background: rgba(251,113,133,0.1); color: var(--accent-red); }
+.mt-btn.is-primary:hover:not(:disabled) { background: rgba(56,189,248,0.26); color: var(--accent-primary); }
+.mt-btn.is-gold:hover:not(:disabled)    { background: rgba(251,191,36,0.22); color: var(--accent-gold); }
+.mt-btn.is-green:hover:not(:disabled)   { background: rgba(52,211,153,0.24); color: var(--accent-green); }
+.mt-btn.is-danger:hover:not(:disabled)  { background: rgba(251,113,133,0.2); color: var(--accent-red); }
+
+.mt-icon-btn {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.mt-icon-btn:hover { color: var(--text-primary); border-color: var(--border-normal); }
+
+.mt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.mt-chip.is-blue { border-color: rgba(56,189,248,0.3); background: rgba(56,189,248,0.08); color: var(--accent-primary); }
+.mt-chip.is-gold { border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.1); color: var(--accent-gold); }
+
+/* ── Seletor de modo de visualização ── */
+.mt-view-switch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+}
+
+.mt-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mt-view-switch button + button { border-left: 1px solid var(--border-subtle); }
+.mt-view-switch button:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.mt-view-switch button.active { background: rgba(56,189,248,0.15); color: var(--accent-primary); }
+
+/* ── Modo Cards: quadrados que ocupam toda a área visível ── */
+.mt-tiles-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.mt-tiles-stage[data-fits="true"] { align-items: center; overflow: hidden; }
+
+.mt-tiles-grid {
+  display: grid;
+  gap: 10px;
+  justify-content: center;
+}
+
+.mt-tile {
+  position: relative;
+  display: flex;
+  width: var(--tile);
+  height: var(--tile);
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  padding: calc(var(--tile) * 0.07) calc(var(--tile) * 0.06);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--tile-color) 32%, transparent);
+  border-top: 3px solid var(--tile-color);
+  border-radius: 11px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tile-color) 9%, var(--bg-card)), var(--bg-card) 62%);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.mt-tile:hover,
+.mt-tile:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--tile-color);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35), 0 0 18px color-mix(in srgb, var(--tile-color) 22%, transparent);
+  outline: none;
+}
+
+.mt-tile.is-done { background: linear-gradient(160deg, rgba(52,211,153,0.12), var(--bg-card) 66%); }
+
+.mt-tile-top {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--tile) * 0.02);
+}
+
+.mt-tile-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: 'Exo 2', sans-serif;
+  font-size: clamp(10px, calc(var(--tile) * 0.1), 16px);
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-tile-quality {
+  max-width: 100%;
+  padding: 1px 5px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(8px, calc(var(--tile) * 0.062), 11px);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-tile-foot {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.mt-tile-foot strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(9px, calc(var(--tile) * 0.077), 13px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-tile-foot small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(8px, calc(var(--tile) * 0.058), 10px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-tile-missing { color: var(--accent-red); }
+.mt-tile-ok { color: var(--accent-green); }
+
+.mt-tile-flag {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(56,189,248,0.16);
+  color: var(--accent-primary);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.mt-tile-flag.is-applied { top: auto; bottom: 5px; background: rgba(251,191,36,0.16); color: var(--accent-gold); }
+
+/* ── Modo Tabela ── */
+.mt-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--bg-card);
+}
+
+.mt-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.mt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-card) 88%, #000);
+  text-align: left;
+}
+
+.mt-table thead th.is-numeric { text-align: right; }
+
+.mt-table thead th button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.mt-table thead th.is-numeric button { justify-content: flex-end; }
+.mt-table thead th button:hover { color: var(--text-primary); }
+
+.mt-table tbody tr {
+  cursor: pointer;
+  box-shadow: inset 3px 0 0 var(--row-color, transparent);
+  transition: background .12s ease;
+}
+
+.mt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.018); }
+.mt-table tbody tr:hover,
+.mt-table tbody tr:focus-visible { background: rgba(56,189,248,0.08); outline: none; }
+.mt-table tbody tr.is-done { background: rgba(52,211,153,0.045); }
+
+.mt-table td {
+  height: 34px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.045);
+  color: var(--text-secondary);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.mt-table td.is-numeric { font-family: 'Share Tech Mono', monospace; text-align: right; }
+.mt-cell-index { width: 34px; color: var(--text-muted); font-family: 'Share Tech Mono', monospace; }
+/* O flex fica num div interno: display:flex direto no <td> quebra o layout de tabela. */
+.mt-cell-flex { display: flex; align-items: center; gap: 7px; }
+.mt-cell-name { font-family: 'Exo 2', sans-serif; font-size: 12px; font-weight: 700; }
+.mt-cell-progress { min-width: 130px; gap: 8px; }
+.mt-bar { display: block; height: 5px; flex: 1; overflow: hidden; border-radius: 3px; background: var(--border-subtle); }
+.mt-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--row-color, var(--accent-primary)); }
+.mt-bar-pct { min-width: 30px; color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; text-align: right; }
+
+/* ── Janelas modais ── */
+.mt-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(2,6,14,0.78);
+  backdrop-filter: blur(3px);
+}
+
+.mt-modal {
+  display: flex;
+  width: min(var(--mt-modal-w, 720px), 100%);
+  max-height: calc(100vh - 40px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(56,189,248,0.25);
+  border-radius: 13px;
+  background: linear-gradient(160deg, #141c2e, #0b111d);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.6);
+}
+
+.mt-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mt-modal-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(56,189,248,0.25);
+  border-radius: 9px;
+  background: rgba(56,189,248,0.1);
+  color: var(--accent-primary);
+}
+
+.mt-modal-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-modal-subtitle { margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+.mt-modal-body { min-height: 0; flex: 1; padding: 16px; overflow-y: auto; }
+
+.mt-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(0,0,0,0.18);
+}
+
+.mt-detail-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+
+/* ── Formulários ── */
+.mt-form { display: flex; flex-direction: column; gap: 13px; }
+.mt-form-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.mt-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.mt-label { color: var(--text-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
+.mt-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: rgba(0,0,0,0.25);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.mt-input:focus { border-color: var(--accent-primary); outline: none; box-shadow: 0 0 0 2px rgba(56,189,248,0.15); }
+.mt-input:disabled { opacity: .45; }
+
+.mt-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid rgba(56,189,248,0.2);
+  border-radius: 8px;
+  background: rgba(56,189,248,0.06);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mt-note.is-gold { border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.07); color: var(--accent-gold); }
+.mt-hint { color: var(--text-muted); font-size: 10.5px; line-height: 1.55; }
+
+.mt-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid rgba(251,113,133,0.4);
+  border-radius: 8px;
+  background: rgba(251,113,133,0.09);
+  color: var(--accent-red);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ── Criar item da fila (craft parcial) ── */
+.bp-queue-card .mt-craft-btn {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(251,191,36,0.4);
+  border-radius: 8px;
+  background: rgba(251,191,36,0.09);
+  color: var(--accent-gold);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.bp-queue-card .mt-craft-btn:hover { background: rgba(251,191,36,0.18); box-shadow: 0 0 14px rgba(251,191,36,0.14); }
+
+.mt-craft-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.25fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.mt-craft-head {
+  padding: 0 10px 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.mt-craft-row {
+  margin-bottom: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.mt-craft-material { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.mt-num { font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: 700; }
+.mt-craft-input { display: flex; align-items: center; gap: 6px; }
+.mt-craft-input .mt-input { padding: 6px 8px; font-family: 'Share Tech Mono', monospace; text-align: right; }
+.mt-unit { color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 10px; }
+
+.mt-confirm {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(251,113,133,0.45);
+  border-radius: 10px;
+  background: rgba(251,113,133,0.08);
+}
+
+.mt-confirm-title { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: var(--accent-red); font-size: 12px; font-weight: 800; }
+.mt-confirm ul { margin: 8px 0 12px 18px; padding: 0; color: var(--text-primary); font-size: 11px; line-height: 1.7; }
+
+@media (max-width: 760px) {
+  .mt-craft-head { display: none; }
+  .mt-craft-grid { grid-template-columns: 1fr 1fr; }
+  .mt-craft-grid > span:first-child { grid-column: 1 / -1; }
+  .mt-craft-row > span[data-label]:not(:first-child)::before {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-muted);
+    content: attr(data-label);
+    font-family: inherit;
+    font-size: 8px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .mt-detail-hero { flex-direction: column; align-items: stretch; }
+  .mt-modal-overlay { padding: 8px; }
+}
+
+/* Faixa compacta do Baú nos modos Cards/Tabela */
+.mt-vault-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 6px 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,200,0,0.3);
+  border-radius: 8px;
+  background: rgba(255,200,0,0.06);
+  color: var(--accent-gold);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mt-vault-strip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
