@@ -10,6 +10,7 @@ import {
 } from './cargoUnits';
 import { readJson, writeJson } from '../utils/storage';
 import { qualityMeetsRequirement, normalizeQualityOperator } from './oreVault';
+import { inventoryStockEntries, inventoryBlockedByQuality } from './inventoryStock';
 
 const KEY = 'sc_material_queue_v1';
 const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
@@ -54,7 +55,10 @@ export function qualityRequirementLabel(qualityMin = 0, qualityOperator = 'gte')
   const value = normalizeQualityMin(qualityMin);
   const operator = getQualityOperator(qualityOperator, value);
   if (operator === 'any') return 'Qualidade livre';
-  return `Q${operator === 'lte' ? '≤' : operator === 'eq' ? '=' : '≥'}${value}`;
+  // O operador normalizado é '>=', '=' ou '<='; 'lte'/'eq' ficam por compatibilidade.
+  // Antes só 'lte'/'eq' eram reconhecidos, então Q≤ e Q= apareciam como Q≥.
+  const symbol = operator === '<=' || operator === 'lte' ? '≤' : operator === '=' || operator === 'eq' ? '=' : '≥';
+  return `Q${symbol}${value}`;
 }
 
 // Uma chave diferente para Iron Q≥800, Iron Q≤800 e Iron sem exigência.
@@ -197,24 +201,62 @@ export function uncollectMaterial(materialName, amount, unit = 'un', qualityMin 
   return q;
 }
 
-// Adicionar material manual à lista extra (não vem de blueprint)
+// Adicionar material manual à lista extra (não vem de blueprint).
+// É uma NECESSIDADE a coletar: o que já existe no Baú continua sendo contado
+// automaticamente como "Já tenho". Entradas iguais (mesmo material, mesma
+// exigência de qualidade e mesma unidade) são somadas.
 export function addManualMaterial(materialName, amount, unit = 'un', qualityMin = 0, qualityOperator = 'gte') {
+  const name = String(materialName || '').trim().replace(/\s+/g, ' ');
+  const quantity = Number(amount);
   const q = loadQueue();
-  if (!q.manualMaterials) q.manualMaterials = [];
-    const existing = q.manualMaterials.findIndex(m => materialKey(m.material_name, m.quality_min, m.quality_operator) === materialKey(materialName, qualityMin, qualityOperator) && m.unit === unit);
+  if (!name || !Number.isFinite(quantity) || quantity <= 0) return q;
+
+  const normalizedUnit = normalizeCargoUnit(unit || 'un') || 'un';
+  const minimum = normalizeQualityMin(qualityMin);
+  const operator = getQualityOperator(qualityOperator, minimum);
+  const key = materialKey(name, minimum, operator);
+  const list = Array.isArray(q.manualMaterials) ? q.manualMaterials : [];
+  const existing = list.findIndex(m =>
+    materialKey(m.material_name, m.quality_min, m.quality_operator) === key
+    && normalizeCargoUnit(m.unit || 'un') === normalizedUnit
+  );
+
   if (existing >= 0) {
-    q.manualMaterials[existing].quantity += Number(amount) || 0;
+    const sum = (Number(list[existing].quantity) || 0) + quantity;
+    list[existing] = { ...list[existing], quantity: isCargoUnit(normalizedUnit) ? roundCargo(sum) : sum, unit: normalizedUnit };
   } else {
-    q.manualMaterials.push({ material_name: materialName, quantity: Number(amount) || 0, unit, quality_min: normalizeQualityMin(qualityMin), quality_operator: getQualityOperator(qualityOperator, qualityMin), addedAt: new Date().toISOString() });
+    list.push({
+      material_name: name,
+      quantity: isCargoUnit(normalizedUnit) ? roundCargo(quantity) : quantity,
+      unit: normalizedUnit,
+      quality_min: minimum,
+      quality_operator: operator,
+      addedAt: new Date().toISOString(),
+    });
   }
+  q.manualMaterials = list;
   saveQueue(q);
   return q;
 }
 
-// Remover material manual
-export function removeManualMaterial(materialName) {
+// Remover material manual.
+// - Só com o nome (uso antigo): remove todas as entradas com esse nome.
+// - Com qualidade: remove apenas a entrada daquela exigência (Iron Q≥800 não
+//   leva junto o Iron sem exigência). `unit` restringe a uma unidade específica.
+export function removeManualMaterial(materialName, qualityMin, qualityOperator = 'gte', unit) {
   const q = loadQueue();
-  q.manualMaterials = (q.manualMaterials || []).filter(m => m.material_name.toLowerCase() !== materialName.toLowerCase());
+  const target = String(materialName || '').trim().toLowerCase();
+  const byQuality = qualityMin !== undefined && qualityMin !== null;
+  const minimum = normalizeQualityMin(qualityMin);
+  const key = byQuality ? materialKey(materialName, minimum, getQualityOperator(qualityOperator, minimum)) : '';
+  const wantedUnit = unit ? normalizeCargoUnit(unit) : '';
+
+  q.manualMaterials = (q.manualMaterials || []).filter(m => {
+    if (!byQuality) return String(m.material_name || '').trim().toLowerCase() !== target;
+    if (materialKey(m.material_name, m.quality_min, m.quality_operator) !== key) return true;
+    if (wantedUnit && normalizeCargoUnit(m.unit || 'un') !== wantedUnit) return true;
+    return false;
+  });
   saveQueue(q);
   return q;
 }
@@ -252,27 +294,43 @@ function getVaultCollectedBase(stockEntries, materialName, qualityMin, requiredU
 // The old collectedMaterials map remains only as a compatibility fallback for
 // callers that do not yet provide the vault entries.
 // Returns: [{ material_name, needed_total, quality_min, collected, remaining, locations }]
-export function calcShoppingList(queue, stockEntries) {
+// `inventoryItems` (opcional): linhas do Inventário de Itens. Contam como estoque junto com o Baú,
+// respeitando reservas e unidade (ver inventoryStock.js). Sem a lista, só o Baú é considerado.
+export function calcShoppingList(queue, stockEntries, inventoryItems = null) {
   const map = {};
+  const EPS = 1e-9;
+  const newItem = (key, name, qualityMin, qualityOperator, unit, isManual) => ({
+    key,
+    material_name: name,
+    needed_base:   0,
+    applied_base:  0, // já consumido do Baú em crafts parciais (não conta mais como necessidade)
+    manual_base:   0,
+    manual_entries: [],
+    has_manual:    false,
+    quality_min:   qualityMin,
+    quality_operator: qualityOperator,
+    unit:          normalizeCargoUnit(unit || 'un'),
+    usedBy: [],
+    is_manual:     isManual,
+  });
+
   for (const bp of queue.queuedBlueprints) {
+    // Quantidade já aplicada (consumida do Baú) a este item, por material, em unidade-base.
+    const appliedLeft = bp.applied && typeof bp.applied === 'object' ? { ...bp.applied } : {};
     for (const ing of bp.ingredients || []) {
       const qualityMin = getIngredientQualityMin(ing);
       const qualityOperator = getIngredientQualityOperator(ing);
       const key = materialKey(ing.material_name, qualityMin, qualityOperator);
-      if (!map[key]) {
-        map[key] = {
-          key,
-          material_name: ing.material_name,
-          needed_base:   0,
-          quality_min:   qualityMin,
-          quality_operator: qualityOperator,
-          unit:          normalizeCargoUnit(ing.unit || 'un'),
-          usedBy: [],
-          is_manual:     false,
-        };
-      }
+      if (!map[key]) map[key] = newItem(key, ing.material_name, qualityMin, qualityOperator, ing.unit, false);
       const ingredientQuantity = (Number(ing.quantity) || 0) * (Number(bp.quantity) || 1);
-      map[key].needed_base += toBase(ingredientQuantity, ing.unit || 'un');
+      let lineBase = toBase(ingredientQuantity, ing.unit || 'un');
+      const takeApplied = Math.min(Math.max(0, Number(appliedLeft[key]) || 0), lineBase);
+      if (takeApplied > 0) {
+        appliedLeft[key] -= takeApplied;
+        lineBase -= takeApplied;
+        map[key].applied_base += takeApplied;
+      }
+      map[key].needed_base += lineBase;
       // Para unidades de carga, a soma ocorre em cSCU mesmo quando as blueprints
       // misturam SCU, cSCU, mSCU ou μSCU.
       if (!isCargoUnit(map[key].unit) && isCargoUnit(ing.unit)) map[key].unit = normalizeCargoUnit(ing.unit);
@@ -285,38 +343,52 @@ export function calcShoppingList(queue, stockEntries) {
     const qualityMin = normalizeQualityMin(m.quality_min);
     const qualityOperator = getQualityOperator(m.quality_operator, qualityMin);
     const key = materialKey(m.material_name, qualityMin, qualityOperator);
-    if (!map[key]) {
-      map[key] = {
-          key,
-          material_name: m.material_name,
-          needed_base:   0,
-          quality_min:   qualityMin,
-          quality_operator: qualityOperator,
-          unit:          normalizeCargoUnit(m.unit || 'un'),
-          usedBy:        [],
-          is_manual:     true,
-        };
-    }
-    map[key].needed_base += toBase(Number(m.quantity) || 0, m.unit || 'un');
-    map[key].is_manual = map[key].is_manual && true;
+    if (!map[key]) map[key] = newItem(key, m.material_name, qualityMin, qualityOperator, m.unit, true);
+    const manualBase = toBase(Number(m.quantity) || 0, m.unit || 'un');
+    map[key].needed_base += manualBase;
+    map[key].manual_base += manualBase;
+    map[key].has_manual = true;
+    map[key].manual_entries.push({ unit: normalizeCargoUnit(m.unit || 'un'), quantity: Number(m.quantity) || 0 });
     if (!isCargoUnit(map[key].unit) && isCargoUnit(m.unit)) map[key].unit = normalizeCargoUnit(m.unit);
   }
 
-  return Object.values(map).map(item => {
-    const collectedBase = Array.isArray(stockEntries)
-      ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit, item.quality_operator)
-      : getCollectedAmount(queue, item.material_name, item.quality_min, item.quality_operator);
-    const neededBase    = roundCargo(item.needed_base);
-    const needed        = fromBase(neededBase, item.unit);
-    const collected    = fromBase(Math.min(collectedBase, neededBase), item.unit);
-    const remaining    = Math.max(0, needed - collected);
-    return {
-      ...item,
-      needed_total: parseFloat(Number(needed).toFixed(9)),
-      collected: parseFloat(Number(collected).toFixed(9)),
-      remaining: parseFloat(Number(remaining).toFixed(9)),
-    };
-  }).sort((a,b) => b.remaining - a.remaining);
+  return Object.values(map)
+    // Material 100% aplicado em crafts parciais não tem mais o que coletar: sai da lista.
+    .filter(item => !(item.applied_base > EPS && item.needed_base <= EPS))
+    .map(item => {
+      const vaultBase = Array.isArray(stockEntries)
+        ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit, item.quality_operator)
+        : getCollectedAmount(queue, item.material_name, item.quality_min, item.quality_operator);
+      const inventoryEntries = Array.isArray(inventoryItems) ? inventoryStockEntries(inventoryItems, item) : [];
+      const inventoryBase = roundCargo(inventoryEntries.reduce((total, entry) => total + entry.availableBase, 0));
+      const collectedBase = vaultBase + inventoryBase;
+      const neededBase    = roundCargo(item.needed_base);
+      const needed        = fromBase(neededBase, item.unit);
+      const collected    = fromBase(Math.min(collectedBase, neededBase), item.unit);
+      const remaining    = Math.max(0, needed - collected);
+      // Origem do que foi contado (o Baú é usado primeiro, depois o Inventário — a mesma ordem da baixa).
+      const fromVaultBase = Math.min(vaultBase, neededBase);
+      const fromInventoryBase = Math.min(inventoryBase, Math.max(0, neededBase - fromVaultBase));
+      const unitValue = value => parseFloat(Number(fromBase(roundCargo(value), item.unit)).toFixed(9));
+      return {
+        ...item,
+        needed_total: parseFloat(Number(needed).toFixed(9)),
+        collected: parseFloat(Number(collected).toFixed(9)),
+        remaining: parseFloat(Number(remaining).toFixed(9)),
+        vault_total: unitValue(vaultBase),
+        inventory_total: unitValue(inventoryBase),
+        from_vault: unitValue(fromVaultBase),
+        from_inventory: unitValue(fromInventoryBase),
+        inventory_blocked_by_quality: Array.isArray(inventoryItems) && inventoryBlockedByQuality(inventoryItems, item),
+        inventory_entries: inventoryEntries.map(entry => ({
+          id: entry.id, name: entry.name, location_name: entry.location_name, container: entry.container, system: entry.system,
+          quantity: entry.quantity, reserved: entry.reserved, available: entry.available, unit: entry.unit,
+          availableInUnit: parseFloat(Number(entry.availableInRequirementUnit).toFixed(9)),
+        })),
+        applied_total: parseFloat(Number(fromBase(roundCargo(item.applied_base), item.unit)).toFixed(9)),
+        manual_total: parseFloat(Number(fromBase(roundCargo(item.manual_base), item.unit)).toFixed(9)),
+      };
+    }).sort((a,b) => b.remaining - a.remaining);
 }
 
 // Check if a blueprint is in the queue

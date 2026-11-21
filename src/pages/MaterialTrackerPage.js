@@ -1,42 +1,57 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FlaskConical, CheckCircle2, Trash2, Plus,
   Minus, RefreshCw, MapPin, ChevronDown,
-  ChevronUp, ShoppingCart, AlertTriangle, Star, X, Archive
+  ChevronUp, ShoppingCart, AlertTriangle, Star, X, Archive,
+  List, LayoutGrid, Table2, Hammer, PackagePlus, ArrowUp, ArrowDown, Package
 } from 'lucide-react';
 import {
   loadQueue, calcShoppingList, loadMaterialOrder, saveMaterialOrder,
-  dequeueBlueprint, updateQueuedQty, clearCompleted, removeManualMaterial,
-  materialKey, normalizeQualityMin, getIngredientQualityMin, getIngredientQualityOperator, qualityRequirementLabel, toBase, fromBase,
+  dequeueBlueprint, updateQueuedQty, clearCompleted, removeManualMaterial, addManualMaterial,
+  materialKey, normalizeQualityMin, getIngredientQualityMin, getIngredientQualityOperator, qualityRequirementLabel, toBase,
 } from '../data/materialQueue';
-import { loadVault, deductOreEntries, findExactVaultMatches } from '../data/oreVault';
-import { normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber, cargoEquivalentTotal } from '../data/cargoUnits';
-import { getOreColor as getSharedOreColor, getOreColorSoft } from '../data/oreColors';
+import { loadVault, findExactVaultMatches } from '../data/oreVault';
+import { applyBlueprintCraft, planBlueprintCraft } from '../data/materialCraft';
+import { loadInventoryStock, normalizeInventoryStockItems, inventoryLocationLabel } from '../data/inventoryStock';
+import { INVENTORY_UPDATED_EVENT } from '../data/inventoryEvents';
+import { computeTileLayout, tileDensity, TILE_MIN_SIZE } from '../data/materialTrackerLayout';
+import { normalizeCargoUnit, areCargoUnitsCompatible, isCargoUnit, toCargoBase, fromCargoBase, parseCargoInput, formatCargoNumber, roundCargo } from '../data/cargoUnits';
+import { getOreColor as getSharedOreColor, getOreColorSoft, listKnownMaterialNames } from '../data/oreColors';
+import { readJson, writeJson } from '../utils/storage';
+import '../materialTracker.css';
 
 
-// ── Vault Match Banner ────────────────────────────────────────────────────────
-// Mostrado no topo quando há minérios no baú que batem com a lista de materiais
-function VaultMatchBanner({ shoppingList, onNavigateVault }) {
-  const matches = useMemo(() => {
-    return shoppingList
-      .filter(item => item.remaining > 0)
-      .map(item => {
-        const vaultEntries = findExactVaultMatches(item.material_name, item.quality_min, item.quality_operator).filter(e => {
-          if (!item.unit) return true;
-          const entryUnit = normalizeCargoUnit(e.unit || 'un');
-          const requiredUnit = normalizeCargoUnit(item.unit || 'un');
-          return isCargoUnit(requiredUnit) && isCargoUnit(entryUnit)
-            ? areCargoUnitsCompatible(requiredUnit, entryUnit)
-            : entryUnit === requiredUnit;
-        });
-        const vaultTotalData = cargoEquivalentTotal(vaultEntries, item.unit || 'un');
-        const vaultTotal = vaultTotalData.total;
-        return vaultTotal > 0 ? { ...item, vaultTotal, vaultUnit: vaultTotalData.unit, vaultEntries } : null;
-      })
-      .filter(Boolean);
-  }, [shoppingList]);
+// ── Banner de estoque disponível (Baú de Minério + Inventário de Itens) ───────
+// Mostrado no topo quando há estoque (no Baú ou no Inventário) que bate com a lista de materiais.
+function VaultMatchBanner({ shoppingList, compact = false }) {
+  const matches = useMemo(
+    () => shoppingList.filter(item => item.remaining > 0 && (item.vault_total > 0 || item.inventory_total > 0)),
+    [shoppingList],
+  );
 
   if (matches.length === 0) return null;
+
+  const anyVault = matches.some(item => item.vault_total > 0);
+  const anyInventory = matches.some(item => item.inventory_total > 0);
+  const sourceLabel = anyVault && anyInventory ? 'Baú de Minério e Inventário' : anyInventory ? 'Inventário de Itens' : 'Baú de Minério';
+  const plural = matches.length !== 1;
+  const qtyText = (value, unit) => `${formatCargoNumber(value, isCargoUnit(unit) ? 9 : 3)} ${unit || 'un'}`;
+
+  // Nos modos Cards e Tabela cada material já mostra o que há em estoque: uma faixa de
+  // uma linha basta e devolve espaço vertical para os cards caberem na tela.
+  if (compact) {
+    const tooltip = matches.map(m => {
+      const parts = [m.vault_total > 0 ? `Baú ${qtyText(m.vault_total, m.unit)}` : '', m.inventory_total > 0 ? `Inventário ${qtyText(m.inventory_total, m.unit)}` : ''].filter(Boolean).join(' + ');
+      return `${m.material_name} ${qualityRequirementLabel(m.quality_min, m.quality_operator)}: ${parts}`;
+    }).join('\n');
+    return (
+      <div className="mt-vault-strip" title={tooltip}>
+        <Archive size={13} style={{flexShrink:0}}/>
+        <span><strong>{sourceLabel}</strong> — {matches.length} material{plural?'is':''} disponíve{plural?'is':'l'} para a fila · abra um item para ver a origem do estoque</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -53,7 +68,7 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
       <Archive size={16} style={{color:'var(--accent-gold)',flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:12,fontWeight:700,color:'var(--accent-gold)',marginBottom:3,fontFamily:'"Exo 2",sans-serif',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-          🎁 Baú de Minério — {matches.length} material{matches.length!==1?'is':''} disponíveis!
+          🎁 {sourceLabel} — {matches.length} material{plural?'is':''} disponíve{plural?'is':'l'}!
         </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
           {matches.map(m => {
@@ -68,23 +83,25 @@ function VaultMatchBanner({ shoppingList, onNavigateVault }) {
               }}>
                 <strong style={{color:materialColor}}>{m.material_name}</strong>
                 {<span className="material-quality-badge material-quality-badge-inline" style={{color:quality.color,background:quality.soft,borderColor:quality.border}}>{qualityRequirementLabel(m.quality_min, m.quality_operator)}</span>}
-                : <span style={{color:materialColor,fontWeight:700}}>{formatCargoNumber(m.vaultTotal, isCargoUnit(m.vaultUnit||m.unit) ? 9 : 3)} {m.vaultUnit||m.unit||'un'}</span>
-                {m.remaining > 0 && <span style={{color:'var(--text-muted)'}}> / {fmtSCU(m.remaining, m.unit).primary} necessário</span>}
+                : {m.vault_total > 0 && <span className="mt-src is-vault"><Archive size={9}/> Baú {qtyText(m.vault_total, m.unit)}</span>}
+                {m.inventory_total > 0 && <span className="mt-src is-inventory"><Package size={9}/> Inventário {qtyText(m.inventory_total, m.unit)}</span>}
+                <span style={{color:'var(--text-muted)'}}> · faltam {fmtSCU(m.remaining, m.unit).primary}</span>
               </span>
             );
           })}
         </div>
       </div>
       <div style={{fontSize:11,color:'var(--text-muted)',flexShrink:0}}>
-        Expanda um material abaixo para usar do baú.
+        Expanda um material abaixo para ver de onde vem o estoque.
       </div>
     </div>
   );
 }
 
-// ── Vault Use Panel ───────────────────────────────────────────────────────────
-// Painel dentro do MaterialRow para usar minério do baú
-function VaultUsePanel({ materialName, qualityMin = 0, qualityOperator = 'gte', needed, unit = 'un', onVaultChanged }) {
+// ── Painel de conferência do estoque (Baú + Inventário) ───────────────────────
+// Antes recebia `needed={item.remaining}` e subtraía o estoque do Baú DE NOVO, mostrando
+// "Falta 70" quando o correto era 115. Agora usa os números já calculados pelo Tracking.
+function StockCheckPanel({ item, onVaultChanged }) {
   const [vault, setVault] = useState(() => loadVault());
 
   function refresh() {
@@ -92,30 +109,31 @@ function VaultUsePanel({ materialName, qualityMin = 0, qualityOperator = 'gte', 
     onVaultChanged?.();
   }
 
-  const matches = useMemo(() => findExactVaultMatches(materialName, qualityMin, qualityOperator).filter(entry => {
-    const requiredUnit = normalizeCargoUnit(unit || 'un');
+  const unit = item.unit || 'un';
+  const vaultMatches = useMemo(() => findExactVaultMatches(item.material_name, item.quality_min, item.quality_operator).filter(entry => {
+    const requiredUnit = normalizeCargoUnit(unit);
     const entryUnit = normalizeCargoUnit(entry.unit || 'un');
     return isCargoUnit(requiredUnit) && isCargoUnit(entryUnit)
       ? areCargoUnitsCompatible(requiredUnit, entryUnit)
       : entryUnit === requiredUnit;
-  }), [vault, materialName, qualityMin, qualityOperator, unit]);
+  }), [vault, item.material_name, item.quality_min, item.quality_operator, unit]);
+  const inventoryEntries = item.inventory_entries || [];
 
-  const quality = getQualityAccent(qualityMin);
-  const requiredBase = isCargoUnit(unit) ? toCargoBase(needed, unit) : Number(needed) || 0;
-  const availableBase = matches.reduce((total, entry) => {
-    const entryUnit = normalizeCargoUnit(entry.unit || 'un');
-    return total + (isCargoUnit(unit) && isCargoUnit(entryUnit)
-      ? toCargoBase(Number(entry.quantity) || 0, entryUnit)
-      : Number(entry.quantity) || 0);
-  }, 0);
-  const available = isCargoUnit(unit) ? fromCargoBase(availableBase, unit) : availableBase;
-  const missingBase = Math.max(0, requiredBase - availableBase);
-  const missing = isCargoUnit(unit) ? fromCargoBase(missingBase, unit) : missingBase;
-  const surplusBase = Math.max(0, availableBase - requiredBase);
-  const surplus = isCargoUnit(unit) ? fromCargoBase(surplusBase, unit) : surplusBase;
-  const complete = missingBase <= 1e-9;
+  if (vaultMatches.length === 0 && inventoryEntries.length === 0 && !item.inventory_blocked_by_quality) return null;
 
-  if (matches.length === 0) return null;
+  const digits = isCargoUnit(unit) ? 9 : 3;
+  const qty = value => `${formatCargoNumber(value, digits)} ${unit}`;
+  const missing = item.remaining;
+  const complete = missing <= 1e-9;
+  const surplus = Math.max(0, roundCargo((item.vault_total || 0) + (item.inventory_total || 0) - item.needed_total));
+  const showVault = vaultMatches.length > 0 || inventoryEntries.length === 0;
+  const stats = [
+    ['Necessário', item.needed_total, 'var(--text-primary)'],
+    ...(showVault ? [['No Baú', item.vault_total || 0, 'var(--accent-green)']] : []),
+    ...(inventoryEntries.length ? [['No Inventário', item.inventory_total || 0, '#2dd4bf']] : []),
+    [complete ? 'Completo' : 'Falta', complete ? surplus : missing, complete ? 'var(--accent-green)' : 'var(--accent-red)'],
+  ];
+  const whereToRegister = isCargoUnit(unit) ? 'no Baú de Minério ou no Inventário de Itens' : 'no Inventário de Itens';
 
   return (
     <div style={{
@@ -128,40 +146,44 @@ function VaultUsePanel({ materialName, qualityMin = 0, qualityOperator = 'gte', 
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}}>
         <div>
           <div style={{fontSize:10,fontWeight:800,color:complete?'var(--accent-green)':'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',display:'flex',alignItems:'center',gap:5}}>
-            <Archive size={11}/> Conferência automática do Baú
+            <Archive size={11}/> Conferência automática do estoque
           </div>
           <div style={{fontSize:10,color:'var(--text-muted)',marginTop:4,lineHeight:1.4}}>
-            O Tracking já considera automaticamente todo estoque compatível. Esta tela não desconta minério.
+            O Tracking já considera automaticamente todo estoque compatível, do Baú de Minério e do Inventário de Itens. Esta tela não desconta nada.
           </div>
         </div>
-        <button onClick={refresh} title="Atualizar leitura do Baú" aria-label="Atualizar leitura do Baú" style={{display:'flex',alignItems:'center',gap:4,padding:'5px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>
+        <button onClick={refresh} title="Atualizar leitura do estoque" aria-label="Atualizar leitura do estoque" style={{display:'flex',alignItems:'center',gap:4,padding:'5px 7px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:5,color:'var(--text-secondary)',cursor:'pointer',fontSize:10}}>
           <RefreshCw size={11}/> Atualizar
         </button>
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:7,marginBottom:10}}>
-        {[
-          ['Necessário', needed, 'var(--text-primary)'],
-          ['No Baú', available, 'var(--accent-green)'],
-          [complete ? 'Completo' : 'Falta', complete ? surplus : missing, complete ? 'var(--accent-green)' : 'var(--accent-red)'],
-        ].map(([label, value, color]) => (
+      <div style={{display:'grid',gridTemplateColumns:`repeat(${stats.length},minmax(0,1fr))`,gap:7,marginBottom:10}}>
+        {stats.map(([label, value, color]) => (
           <div key={label} style={{padding:'7px 8px',background:'rgba(0,0,0,0.12)',border:'1px solid var(--border-subtle)',borderRadius:6,minWidth:0}}>
             <div style={{fontSize:8,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>{label}</div>
-            <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:800,color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{formatCargoNumber(value, isCargoUnit(unit) ? 9 : 3)} {unit}</div>
+            <div style={{fontFamily:'Share Tech Mono,monospace',fontSize:12,fontWeight:800,color,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{qty(value)}</div>
           </div>
         ))}
       </div>
 
       <div style={{fontSize:10,color:complete?'var(--accent-green)':'var(--text-secondary)',padding:'7px 8px',background:complete?'rgba(52,211,153,0.08)':'rgba(56,189,248,0.06)',border:`1px solid ${complete?'rgba(52,211,153,0.22)':'rgba(56,189,248,0.18)'}`,borderRadius:6,marginBottom:9}}>
         {complete
-          ? `Material completo. ${formatCargoNumber(surplus, isCargoUnit(unit) ? 9 : 3)} ${unit} excedente permanecerá no Baú quando o craft for concluído.`
-          : `Ainda faltam ${formatCargoNumber(missing, isCargoUnit(unit) ? 9 : 3)} ${unit}. Cadastre essa quantidade no Baú e o Tracking atualizará este painel automaticamente.`}
+          ? `Material completo. ${qty(surplus)} excedente permanecerá no estoque quando o craft for concluído.`
+          : `Ainda faltam ${qty(missing)}. Cadastre essa quantidade ${whereToRegister} e o Tracking atualizará este painel automaticamente.`}
       </div>
 
+      {item.inventory_blocked_by_quality && (
+        <div className="mt-note" style={{marginBottom:9}}>
+          <Package size={12} style={{flexShrink:0,marginTop:1}}/>
+          <span>Há <strong>{item.material_name}</strong> no Inventário de Itens, mas ele <strong>não conta</strong> para esta exigência ({qualityRequirementLabel(item.quality_min, item.quality_operator)}): o inventário não registra a qualidade. Para valer, cadastre esse minério no Baú de Minério com a qualidade real.</span>
+        </div>
+      )}
+
       <div style={{display:'flex',flexDirection:'column',gap:5}}>
-        {matches.map(entry => (
-          <div key={entry.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'7px 9px',background:'rgba(255,255,255,0.035)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
+        {vaultMatches.map(entry => (
+          <div key={`vault-${entry.id}`} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'7px 9px',background:'rgba(255,255,255,0.035)',border:'1px solid var(--border-subtle)',borderRadius:6}}>
             <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0,flexWrap:'wrap'}}>
+              <span className="mt-src is-vault"><Archive size={9}/> BAÚ</span>
               <span style={{fontSize:11,fontWeight:700,color:getMaterialColor(entry.ore_name)}}>{entry.ore_name}</span>
               {entry.refined && <span style={{fontSize:8,padding:'2px 5px',borderRadius:3,background:'rgba(52,211,153,0.12)',color:'var(--accent-green)',border:'1px solid rgba(52,211,153,0.3)',fontWeight:800}}>REFINADO ✓</span>}
               {entry.quality && (() => { const entryQuality = getQualityAccent(entry.quality); return <span className="material-quality-badge" style={{fontSize:8,padding:'1px 5px',borderRadius:3,background:entryQuality.soft,color:entryQuality.color,border:`1px solid ${entryQuality.border}`,fontWeight:700}}>★ {entry.quality}</span>; })()}
@@ -170,10 +192,21 @@ function VaultUsePanel({ materialName, qualityMin = 0, qualityOperator = 'gte', 
             <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--accent-gold)',fontWeight:800,whiteSpace:'nowrap'}}>{formatCargoNumber(entry.quantity, isCargoUnit(entry.unit) ? 9 : 3)} {entry.unit}</span>
           </div>
         ))}
+        {inventoryEntries.map(entry => (
+          <div key={`inventory-${entry.id}`} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'7px 9px',background:'rgba(45,212,191,0.045)',border:'1px solid rgba(45,212,191,0.22)',borderRadius:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0,flexWrap:'wrap'}}>
+              <span className="mt-src is-inventory"><Package size={9}/> INVENTÁRIO</span>
+              <span style={{fontSize:11,fontWeight:700,color:getMaterialColor(entry.name)}}>{entry.name}</span>
+              {inventoryLocationLabel(entry) && <span style={{fontSize:9,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:2}}><MapPin size={8}/>{inventoryLocationLabel(entry)}</span>}
+              {entry.reserved > 0 && <span className="mt-chip is-gold" title="Itens reservados para negociação não contam como disponíveis">{entry.reserved} reservado(s)</span>}
+            </div>
+            <span style={{fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'#2dd4bf',fontWeight:800,whiteSpace:'nowrap'}}>{formatCargoNumber(entry.availableInUnit, digits)} {unit}</span>
+          </div>
+        ))}
       </div>
 
       <div style={{fontSize:9,color:'var(--text-muted)',marginTop:9,lineHeight:1.4}}>
-        Para consumir o material, use <strong style={{color:'var(--text-secondary)'}}>Concluir blueprint</strong> no card da blueprint. O consumo é feito de uma só vez somente quando todos os materiais estiverem disponíveis.
+        Ao <strong style={{color:'var(--text-secondary)'}}>concluir</strong> a blueprint ou <strong style={{color:'var(--text-secondary)'}}>salvar um craft parcial</strong>, o material sai primeiro do Baú e depois do Inventário.
       </div>
     </div>
   );
@@ -254,7 +287,7 @@ function ProgressoRing({ pct, size=48, stroke=5, color='var(--accent-green)' }) 
 }
 
 // ── Material row ──────────────────────────────────────────────────────────────
-function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotice, isManual, onRemoveManual, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
+function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotice, isManual, onRemoveManual, onRemoveManualEntry, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
   const color    = getMaterialColor(item.material_name);
   const pct      = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : 0;
   const isDone   = item.remaining === 0;
@@ -289,6 +322,9 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
             {isDone && <span style={{ fontSize:10,fontWeight:700,color:'var(--accent-green)',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',padding:'1px 6px',borderRadius:3 }}>✓ COMPLETO</span>}
             <span className="material-quality-badge material-quality-badge-prominent" style={{ fontSize:10,color:quality.color,background:quality.soft,border:`1px solid ${quality.border}`,padding:'2px 7px',borderRadius:4 }}><Star size={9} fill="currentColor"/> {qualityRequirementLabel(item.quality_min, item.quality_operator)}</span>
             {isManual && <span style={{ fontSize:9,color:'var(--accent-primary)',background:'rgba(56,189,248,0.08)',border:'1px solid rgba(56,189,248,0.2)',padding:'1px 6px',borderRadius:3,fontWeight:700 }}>MANUAL</span>}
+            {item.has_manual && !isManual && <span className="mt-chip is-blue" title="Inclui quantidade adicionada manualmente">+MANUAL</span>}
+            {item.applied_total > 0 && <span className="mt-chip is-gold" title="Parte já aplicada em crafts parciais">⚒ {fmtQty(item.applied_total, item.unit)} aplicado</span>}
+            {item.from_inventory > 0 && <span className="mt-chip is-teal" title="Quantidade contada a partir do Inventário de Itens"><Package size={9}/> {fmtQty(item.from_inventory, item.unit)} do inventário</span>}
           </div>
           {/* Progresso bar */}
           <div style={{ height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden',marginBottom:5 }}>
@@ -309,132 +345,49 @@ function MaterialRow({ item, onToggleExpandir, expanded, onVaultChanged, onNotic
             </div>
           </div>
         </div>
-        {!isDone && (
-          <span className="material-vault-source-badge" title="A quantidade Já tenho é calculada diretamente no Baú de Minério">
-            <Archive size={11}/> Fonte: Baú
-          </span>
-        )}
+        {!isDone && (() => {
+          // De onde vem o "Já tenho": mostra as origens com estoque; sem estoque, as que podem fornecê-lo.
+          const useVault = item.vault_total > 0;
+          const useInventory = item.inventory_total > 0;
+          const cargo = isCargoUnit(item.unit);
+          const label = useVault && useInventory ? 'Baú + Inventário' : useInventory ? 'Inventário' : useVault ? 'Baú' : cargo ? 'Baú · Inventário' : 'Inventário';
+          return (
+            <span className="material-vault-source-badge" title="A quantidade Já tenho é calculada diretamente no Baú de Minério e no Inventário de Itens">
+              {useInventory && !useVault ? <Package size={11}/> : <Archive size={11}/>} Fonte: {label}
+            </span>
+          );
+        })()}
         {isManual && onRemoveManual && (
-          <button draggable={false} onClick={e=>{e.stopPropagation();onRemoveManual(item.material_name);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
+          <button draggable={false} onClick={e=>{e.stopPropagation();onRemoveManual(item);}} title="Remover da lista manual" style={{ padding:'5px 8px',background:'rgba(251,113,133,0.08)',border:'1px solid rgba(251,113,133,0.2)',borderRadius:5,color:'var(--accent-red)',cursor:'pointer',fontSize:11,flexShrink:0 }}>
             <Trash2 size={11}/>
           </button>
         )}
         {expanded ? <ChevronUp size={14} style={{ color:'var(--text-muted)',flexShrink:0 }}/> : <ChevronDown size={14} style={{ color:'var(--text-muted)',flexShrink:0 }}/>}
       </div>
 
-      {/* Expandido: uso em blueprints e dados do Baú */}
+      {/* Expandido: uso em blueprints, entradas manuais e dados do Baú */}
       {expanded && (
         <div style={{ padding:'0 14px 14px 14px',borderTop:'1px solid var(--border-subtle)',background:'rgba(0,0,0,0.1)' }}>
-          <div className="material-expanded-grid" style={{ display:'grid',gridTemplateColumns:'1fr',gap:12,paddingTop:12 }}>
-            {/* Used by blueprints */}
-            <div>
-              <div style={{ fontSize:10,fontWeight:700,color:'var(--accent-primary)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8,display:'flex',alignItems:'center',gap:5 }}>
-                <FlaskConical size={11}/> Usado por · qualidade exigida
-              </div>
-              {item.usedBy.map((u,i) => {
-                const requiredQuality = normalizeQualityMin(u.quality_min);
-                const requirement = qualityRequirementLabel(requiredQuality, getIngredientQualityOperator(u));
-                const requirementQuality = getQualityAccent(requiredQuality);
-                return (
-                  <div key={`${u.bpName}-${i}`} style={{ display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--border-subtle)',fontSize:11 }}>
-                    <span style={{ color:'var(--text-secondary)',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{u.bpName}</span>
-                    <span style={{ display:'inline-flex',alignItems:'center',gap:7,flexShrink:0 }}>
-                      <span className="material-quality-badge" style={{ fontSize:9,color:requirementQuality.color,background:requirementQuality.soft,border:`1px solid ${requirementQuality.border}`,padding:'2px 6px',borderRadius:4,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>{requirement}</span>
-                      <span style={{ color:color,fontFamily:'Share Tech Mono,monospace',fontWeight:700 }}>×{u.qty}</span>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {/* Vault use panel */}
-          {!isDone && (
-            <VaultUsePanel
-              materialName={item.material_name}
-              qualityMin={item.quality_min}
-              qualityOperator={item.quality_operator}
-              needed={item.remaining}
-              unit={item.unit}
-              onVaultChanged={onVaultChanged}
-              onNotice={onNotice}
-            />
-          )}
+          <MaterialDetails item={item} color={color} onVaultChanged={onVaultChanged} onNotice={onNotice} onRemoveManualEntry={onRemoveManualEntry}/>
         </div>
       )}
     </div>
   );
 }
 
-// ── Planejamento de consumo de uma blueprint a partir do Baú ──────────────────
-function buildBlueprintRequirements(bp) {
-  const map = {};
-  for (const ing of bp.ingredients || []) {
-    const qualityMin = getIngredientQualityMin(ing);
-    const unit = ing.unit || 'un';
-    const qualityOperator = getIngredientQualityOperator(ing);
-    const key = materialKey(ing.material_name, qualityMin, qualityOperator);
-    if (!map[key]) {
-      map[key] = { key, material_name: ing.material_name, quality_min: qualityMin, quality_operator: qualityOperator, unit, quantity: 0 };
-    }
-    map[key].quantity += (Number(ing.quantity) || 0) * (Number(bp.quantity) || 1);
-  }
-
-  return Object.values(map);
-}
-
-function planBlueprintConsumption(bp) {
-  const requirements = buildBlueprintRequirements(bp);
-  const reserved = new Map();
-  const usages = [];
-  const collectedByKey = new Map();
-  const missing = [];
-
-  // Qualidades mais altas são reservadas primeiro, evitando que um minério Q≥800
-  // seja consumido antes de atender uma exigência mais específica.
-  requirements.sort((a, b) => b.quality_min - a.quality_min || a.quality_operator.localeCompare(b.quality_operator));
-
-  for (const req of requirements) {
-    let remainingBase = toBase(req.quantity, req.unit);
-    const matches = findExactVaultMatches(req.material_name, req.quality_min, req.quality_operator)
-      .filter(entry => {
-        if (!req.unit) return true;
-        return isCargoUnit(req.unit) && isCargoUnit(entry.unit)
-          ? areCargoUnitsCompatible(req.unit, entry.unit)
-          : entry.unit === req.unit;
-      });
-
-    for (const entry of matches) {
-      if (remainingBase <= 0) break;
-      const availableBase = Math.max(0, toBase(Number(entry.quantity) || 0, entry.unit) - (reserved.get(entry.id) || 0));
-      const takeBase = Math.min(availableBase, remainingBase);
-      if (takeBase <= 0) continue;
-      reserved.set(entry.id, (reserved.get(entry.id) || 0) + takeBase);
-      const taken = fromBase(takeBase, entry.unit);
-      const collectedInRequirementUnit = fromBase(takeBase, req.unit);
-      usages.push({ id: entry.id, amount: taken });
-      collectedByKey.set(req.key, (collectedByKey.get(req.key) || 0) + collectedInRequirementUnit);
-      remainingBase -= takeBase;
-    }
-
-    if (remainingBase > 0) {
-      missing.push({ ...req, missing: fromBase(remainingBase, req.unit) });
-    }
-  }
-
-  return { requirements, usages, collectedByKey, missing, success: missing.length === 0 && usages.length > 0 };
-}
-
 // ── Blueprint queue card com indicador de progresso ──────────────────────────
-function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consuming }) {
+function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, onCraft, consuming }) {
   // Verificar se todos os ingredientes deste BP estão coletados
   const bpMaterials = bp.ingredients || [];
   const totalMats   = bpMaterials.length;
   const doneMats    = bpMaterials.filter(ing => {
     const sl = shoppingList.find(s => s.key === materialKey(ing.material_name, getIngredientQualityMin(ing), getIngredientQualityOperator(ing)));
-    return sl && sl.remaining === 0;
+    // Material 100% aplicado em crafts parciais sai da lista de compras: conta como pronto.
+    return sl ? sl.remaining === 0 : true;
   }).length;
   const isComplete  = totalMats > 0 && doneMats === totalMats;
   const pct         = totalMats > 0 ? Math.round(doneMats / totalMats * 100) : 0;
+  const hasApplied  = !!bp.applied && Object.values(bp.applied).some(value => Number(value) > 0);
 
   return (
     <article className={`bp-queue-card ${isComplete ? 'is-complete' : ''}`} style={{
@@ -452,6 +405,7 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
           <div className="bp-queue-title-line">
             <strong className="bp-queue-name" title={bp.bpName}>{bp.bpName}</strong>
             {isComplete && <span className="bp-queue-ready-badge">✓ PRONTO</span>}
+            {hasApplied && <span className="mt-chip is-gold" title="Parte dos materiais já foi retirada do Baú em um craft parcial">⚒ PARCIAL</span>}
           </div>
           <div className="bp-queue-meta-line">
             <span>{bp.category || 'Blueprint'}</span>
@@ -487,12 +441,23 @@ function BpQueueCard({ bp, shoppingList, onQtyChange, onRemove, onConsume, consu
           {consuming ? <RefreshCw size={14} className="bp-queue-spinner"/> : <Archive size={14}/>} 
         </button>
       </div>
+
+      {!isComplete && (
+        <button
+          type="button"
+          className="mt-craft-btn"
+          onClick={() => onCraft(bp)}
+          title="Criar este item agora, mesmo sem todos os materiais: salve um progresso parcial (continua na fila) ou conclua cancelando o que falta"
+        >
+          <Hammer size={13}/> Criar item · parcial ou concluir
+        </button>
+      )}
     </article>
   );
 }
 
 // ── Queue panel ───────────────────────────────────────────────────────────────
-function QueuePanel({ queue, onAtualizar, shoppingList, onConsumeBlueprint, consumingBpId }) {
+function QueuePanel({ queue, onAtualizar, shoppingList, onConsumeBlueprint, onCraftBlueprint, consumingBpId }) {
   function handleQtyChange(bpId, qty) {
     updateQueuedQty(bpId, qty);
     onAtualizar();
@@ -515,10 +480,595 @@ function QueuePanel({ queue, onAtualizar, shoppingList, onConsumeBlueprint, cons
   return (
     <div style={{ display:'flex',flexDirection:'column',gap:7 }}>
       {queue.queuedBlueprints.map(bp => (
-        <BpQueueCard key={bp.bpId} bp={bp} shoppingList={shoppingList} onQtyChange={handleQtyChange} onRemove={handleRemove} onConsume={onConsumeBlueprint} consuming={consumingBpId === bp.bpId}/>
+        <BpQueueCard key={bp.bpId} bp={bp} shoppingList={shoppingList} onQtyChange={handleQtyChange} onRemove={handleRemove} onConsume={onConsumeBlueprint} onCraft={onCraftBlueprint} consuming={consumingBpId === bp.bpId}/>
 
       ))}
     </div>
+  );
+}
+
+// ── Modos de visualização ─────────────────────────────────────────────────────
+const VIEW_MODE_KEY = 'sc_material_tracker_view_v1';
+const VIEW_MODES = [
+  { id:'list',  label:'Lista',  Icon:List,       hint:'Lista detalhada, com arraste para definir a prioridade' },
+  { id:'tiles', label:'Cards',  Icon:LayoutGrid, hint:'Cards quadrados: tudo cabe na tela; clique para ver os detalhes' },
+  { id:'table', label:'Tabela', Icon:Table2,     hint:'Tabela compacta e ordenável por qualquer coluna' },
+];
+
+function loadViewMode() {
+  const saved = readJson(VIEW_MODE_KEY, 'list');
+  return VIEW_MODES.some(mode => mode.id === saved) ? saved : 'list';
+}
+
+function fmtQty(qty, unit) {
+  const normalized = normalizeCargoUnit(unit || 'un') || 'un';
+  return `${formatCargoNumber(qty, isCargoUnit(normalized) ? 4 : 2)} ${normalized}`;
+}
+
+function ViewModeSwitch({ value, onChange }) {
+  return (
+    <div className="mt-view-switch" role="group" aria-label="Modo de visualização">
+      {VIEW_MODES.map(({ id, label, Icon, hint }) => (
+        <button key={id} type="button" className={value === id ? 'active' : ''} aria-pressed={value === id} title={hint} onClick={() => onChange(id)}>
+          <Icon size={13}/> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Janela modal base ─────────────────────────────────────────────────────────
+function ModalShell({ title, subtitle, icon, width = 760, onClose, children, footer }) {
+  useEffect(() => {
+    const handleKeyDown = event => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="mt-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="mt-modal" role="dialog" aria-modal="true" aria-label={title} style={{ '--mt-modal-w': `${width}px` }}>
+        <div className="mt-modal-head">
+          {icon && <span className="mt-modal-icon">{icon}</span>}
+          <div style={{ minWidth:0, flex:1 }}>
+            <div className="mt-modal-title">{title}</div>
+            {subtitle && <div className="mt-modal-subtitle">{subtitle}</div>}
+          </div>
+          <button type="button" className="mt-icon-btn" onClick={onClose} aria-label="Fechar" title="Fechar (Esc)"><X size={15}/></button>
+        </div>
+        <div className="mt-modal-body">{children}</div>
+        {footer && <div className="mt-modal-foot">{footer}</div>}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Detalhes de um material (lista expandida e janela de detalhes) ────────────
+function MaterialDetails({ item, color, onVaultChanged, onNotice, onRemoveManualEntry }) {
+    return (
+    <>
+      <div className="material-expanded-grid" style={{ display:'grid', gridTemplateColumns:'1fr', gap:12, paddingTop:12 }}>
+        {item.usedBy.length > 0 && (
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+              <FlaskConical size={11}/> Usado por · qualidade exigida
+            </div>
+            {item.usedBy.map((u, i) => {
+              const requiredQuality = normalizeQualityMin(u.quality_min);
+              const requirement = qualityRequirementLabel(requiredQuality, getIngredientQualityOperator(u));
+              const requirementQuality = getQualityAccent(requiredQuality);
+              return (
+                <div key={`${u.bpName}-${i}`} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, padding:'4px 0', borderBottom:'1px solid var(--border-subtle)', fontSize:11 }}>
+                  <span style={{ color:'var(--text-secondary)', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.bpName}</span>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:7, flexShrink:0 }}>
+                    <span className="material-quality-badge" style={{ fontSize:9, color:requirementQuality.color, background:requirementQuality.soft, border:`1px solid ${requirementQuality.border}`, padding:'2px 6px', borderRadius:4, fontFamily:'Share Tech Mono,monospace', fontWeight:700 }}>{requirement}</span>
+                    <span style={{ color, fontFamily:'Share Tech Mono,monospace', fontWeight:700 }}>×{u.qty}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {item.has_manual && (
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+              <PackagePlus size={11}/> Adicionado manualmente
+            </div>
+            {item.manual_entries.map(entry => (
+              <div key={entry.unit} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, padding:'4px 0', borderBottom:'1px solid var(--border-subtle)', fontSize:11 }}>
+                <span style={{ color:'var(--text-secondary)', fontFamily:'Share Tech Mono,monospace', fontWeight:700 }}>{fmtQty(entry.quantity, entry.unit)}</span>
+                {onRemoveManualEntry && (
+                  <button type="button" className="mt-btn is-danger is-small" onClick={() => onRemoveManualEntry(item, entry.unit)} title="Remover esta quantidade manual">
+                    <Trash2 size={11}/> Remover
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {item.applied_total > 0 && (
+          <div className="mt-note is-gold">
+            <Hammer size={12}/> <span><strong>{fmtQty(item.applied_total, item.unit)}</strong> deste material já foram retirados do estoque em crafts parciais e não contam mais como necessidade.</span>
+          </div>
+        )}
+      </div>
+
+      <StockCheckPanel item={item} onVaultChanged={onVaultChanged}/>
+    </>
+  );
+}
+
+// ── Janela de detalhes (usada nos modos Cards e Tabela) ───────────────────────
+function MaterialDetailModal({ item, onClose, onVaultChanged, onNotice, onRemoveManual, onRemoveManualEntry }) {
+  const color = getMaterialColor(item.material_name);
+  const quality = getQualityAccent(item.quality_min);
+  const isDone = item.remaining === 0;
+  const pct = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : (isDone ? 100 : 0);
+
+  return (
+    <ModalShell
+      title={item.material_name}
+      subtitle={<span className="material-quality-badge" style={{ color:quality.color, background:quality.soft, border:`1px solid ${quality.border}`, padding:'2px 7px', borderRadius:4, fontSize:10 }}>{qualityRequirementLabel(item.quality_min, item.quality_operator)}</span>}
+      icon={<FlaskConical size={16} style={{ color }}/>}
+      width={720}
+      onClose={onClose}
+      footer={(
+        <>
+          {item.is_manual && (
+            <button type="button" className="mt-btn is-danger" onClick={() => onRemoveManual(item)}><Trash2 size={13}/> Remover da lista manual</button>
+          )}
+          <button type="button" className="mt-btn" onClick={onClose} style={{ marginLeft:'auto' }}>Fechar</button>
+        </>
+      )}
+    >
+      <div className="mt-detail-hero">
+        <ProgressoRing pct={pct} size={84} stroke={8} color={isDone ? 'var(--accent-green)' : color}/>
+        <div className="material-row-metrics" style={{ flex:1, marginTop:0 }}>
+          <div className="material-metric material-metric-needed">
+            <span className="material-metric-label">Necessário</span>
+            <QtyDisplay qty={item.needed_total} unit={item.unit} color="var(--text-primary)" size={13}/>
+          </div>
+          <div className="material-metric material-metric-collected">
+            <span className="material-metric-label">Já tenho</span>
+            <QtyDisplay qty={item.collected} unit={item.unit} color="var(--accent-green)" size={13}/>
+          </div>
+          <div className={`material-metric ${isDone ? 'material-metric-complete' : 'material-metric-missing'}`}>
+            <span className="material-metric-label">Falta</span>
+            <QtyDisplay qty={item.remaining} unit={item.unit} color={isDone ? 'var(--accent-green)' : 'var(--accent-red)'} size={13}/>
+          </div>
+        </div>
+      </div>
+      <MaterialDetails item={item} color={color} onVaultChanged={onVaultChanged} onNotice={onNotice} onRemoveManualEntry={onRemoveManualEntry}/>
+    </ModalShell>
+  );
+}
+
+// ── Modo Cards: quadrados que ocupam toda a área visível ──────────────────────
+function MaterialTile({ item, size, density, onOpen }) {
+  const color = getMaterialColor(item.material_name);
+  const isDone = item.remaining === 0;
+  const pct = item.needed_total > 0 ? (item.collected / item.needed_total) * 100 : (isDone ? 100 : 0);
+  const quality = getQualityAccent(item.quality_min);
+  const ring = Math.round(size * (density === 'compact' ? 0.4 : 0.44));
+  const accent = isDone ? 'var(--accent-green)' : color;
+
+  return (
+    <button
+      type="button"
+      className={`mt-tile is-${density} ${isDone ? 'is-done' : ''}`}
+      style={{ '--tile-color': accent }}
+      onClick={() => onOpen(item)}
+      title={`${item.material_name} · ${qualityRequirementLabel(item.quality_min, item.quality_operator)} — clique para ver os detalhes`}
+      aria-label={`${item.material_name}, ${isDone ? 'completo' : `falta ${fmtQty(item.remaining, item.unit)}`}. Abrir detalhes`}
+    >
+      <span className="mt-tile-top">
+        <span className="mt-tile-name" style={{ color: accent }}>{item.material_name}</span>
+        <span className="material-quality-badge mt-tile-quality" style={{ color:quality.color, background:quality.soft, borderColor:quality.border }}>{qualityRequirementLabel(item.quality_min, item.quality_operator)}</span>
+      </span>
+      <ProgressoRing pct={pct} size={ring} stroke={Math.max(3, Math.round(ring / 11))} color={accent}/>
+      <span className="mt-tile-foot">
+        {isDone
+          ? <strong className="mt-tile-ok">✓ Completo</strong>
+          : <strong className="mt-tile-missing">Falta {fmtQty(item.remaining, item.unit)}</strong>}
+        {density !== 'compact' && <small>{fmtQty(item.collected, item.unit)} / {fmtQty(item.needed_total, item.unit)}</small>}
+      </span>
+      {item.has_manual && <span className="mt-tile-flag" title="Inclui quantidade adicionada manualmente">M</span>}
+      {item.applied_total > 0 && <span className="mt-tile-flag is-applied" title="Parte já aplicada em crafts parciais">⚒</span>}
+      {item.from_inventory > 0 && <span className="mt-tile-flag is-inventory" title="Parte contada a partir do Inventário de Itens">I</span>}
+    </button>
+  );
+}
+
+function MaterialTiles({ items, onOpen }) {
+  const stageRef = useRef(null);
+  const [layout, setLayout] = useState({ columns:1, size:TILE_MIN_SIZE, fits:true });
+
+  useEffect(() => {
+    const element = stageRef.current;
+    if (!element) return undefined;
+    const measure = () => {
+      // 8px de folga para o hover/sombra dos cards não serem cortados.
+      const next = computeTileLayout({ width: element.clientWidth - 8, height: element.clientHeight - 8, count: items.length });
+      setLayout(prev => (prev.columns === next.columns && prev.size === next.size && prev.fits === next.fits ? prev : next));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [items.length]);
+
+  const density = tileDensity(layout.size);
+  return (
+    <div ref={stageRef} className="mt-tiles-stage" data-fits={layout.fits ? 'true' : 'false'}>
+      <div className="mt-tiles-grid" style={{ gridTemplateColumns:`repeat(${layout.columns}, ${layout.size}px)`, gridAutoRows:`${layout.size}px`, '--tile':`${layout.size}px` }}>
+        {items.map(item => <MaterialTile key={item.key} item={item} size={layout.size} density={density} onOpen={onOpen}/>)}
+      </div>
+    </div>
+  );
+}
+
+// ── Modo Tabela: compacta e ordenável ─────────────────────────────────────────
+const TABLE_COLUMNS = [
+  { id:'priority',  label:'#' },
+  { id:'name',      label:'Material' },
+  { id:'quality',   label:'Qualidade' },
+  { id:'needed',    label:'Necessário', numeric:true },
+  { id:'collected', label:'Já tenho',   numeric:true },
+  { id:'remaining', label:'Falta',      numeric:true },
+  { id:'progress',  label:'Progresso' },
+  { id:'used',      label:'Usado em',   numeric:true },
+];
+
+function MaterialTable({ items, sort, onSort, onOpen }) {
+  const rows = useMemo(() => {
+    const valueOf = ({ item, index }) => {
+      switch (sort.id) {
+        case 'name':      return item.material_name.toLowerCase();
+        case 'quality':   return item.quality_min;
+        case 'needed':    return toBase(item.needed_total, item.unit);
+        case 'collected': return toBase(item.collected, item.unit);
+        case 'remaining': return toBase(item.remaining, item.unit);
+        case 'progress':  return item.needed_total > 0 ? item.collected / item.needed_total : 1;
+        case 'used':      return item.usedBy.length;
+        default:          return index;
+      }
+    };
+    const direction = sort.dir === 'desc' ? -1 : 1;
+    return items.map((item, index) => ({ item, index })).sort((a, b) => {
+      const first = valueOf(a);
+      const second = valueOf(b);
+      const compared = typeof first === 'string' ? first.localeCompare(second, 'pt-BR') : first - second;
+      return compared !== 0 ? compared * direction : a.index - b.index;
+    });
+  }, [items, sort]);
+
+  return (
+    <div className="mt-table-wrap">
+      <table className="mt-table">
+        <thead>
+          <tr>
+            {TABLE_COLUMNS.map(column => {
+              const active = sort.id === column.id;
+              return (
+                <th key={column.id} className={column.numeric ? 'is-numeric' : ''} aria-sort={active ? (sort.dir === 'desc' ? 'descending' : 'ascending') : 'none'}>
+                  <button type="button" onClick={() => onSort(column.id)} title={`Ordenar por ${column.label}`}>
+                    {column.label}
+                    {active && (sort.dir === 'desc' ? <ArrowDown size={10}/> : <ArrowUp size={10}/>)}
+                  </button>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ item, index }) => {
+            const color = getMaterialColor(item.material_name);
+            const isDone = item.remaining === 0;
+            const pct = item.needed_total > 0 ? Math.min(100, (item.collected / item.needed_total) * 100) : (isDone ? 100 : 0);
+            const quality = getQualityAccent(item.quality_min);
+            return (
+              <tr
+                key={item.key}
+                className={isDone ? 'is-done' : ''}
+                style={{ '--row-color': isDone ? 'var(--accent-green)' : color }}
+                tabIndex={0}
+                onClick={() => onOpen(item)}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(item); } }}
+                title="Clique para ver os detalhes"
+              >
+                <td className="mt-cell-index">{index + 1}</td>
+                <td>
+                  <div className="mt-cell-flex mt-cell-name">
+                    <span style={{ color: isDone ? 'var(--accent-green)' : color }}>{item.material_name}</span>
+                    {item.has_manual && <span className="mt-chip is-blue">{item.is_manual ? 'MANUAL' : '+MANUAL'}</span>}
+                    {item.applied_total > 0 && <span className="mt-chip is-gold" title="Parte já aplicada em crafts parciais">⚒ {fmtQty(item.applied_total, item.unit)}</span>}
+                    {item.from_inventory > 0 && <span className="mt-chip is-teal" title="Quantidade contada a partir do Inventário de Itens">INV {fmtQty(item.from_inventory, item.unit)}</span>}
+                  </div>
+                </td>
+                <td><span className="material-quality-badge" style={{ color:quality.color, background:quality.soft, border:`1px solid ${quality.border}`, padding:'1px 6px', borderRadius:4, fontSize:10 }}>{qualityRequirementLabel(item.quality_min, item.quality_operator)}</span></td>
+                <td className="is-numeric">{fmtQty(item.needed_total, item.unit)}</td>
+                <td className="is-numeric" style={{ color:'var(--accent-green)' }}>{fmtQty(item.collected, item.unit)}</td>
+                <td className="is-numeric" style={{ color: isDone ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight:800 }}>{isDone ? '✓' : fmtQty(item.remaining, item.unit)}</td>
+                <td>
+                  <div className="mt-cell-flex mt-cell-progress">
+                    <span className="mt-bar"><span style={{ width:`${pct}%` }}/></span>
+                    <span className="mt-bar-pct">{Math.round(pct)}%</span>
+                  </div>
+                </td>
+                <td className="is-numeric">{item.usedBy.length > 0 ? item.usedBy.length : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Adicionar minério manualmente (necessidade a coletar) ─────────────────────
+const MANUAL_UNITS = ['SCU', 'cSCU', 'mSCU', 'μSCU', 'un'];
+
+function ManualMaterialModal({ suggestions, onClose, onAdded }) {
+  const [name, setName] = useState('');
+  const [qty, setQty] = useState('');
+  const [unit, setUnit] = useState('cSCU');
+  const [operator, setOperator] = useState('any');
+  const [qualityValue, setQualityValue] = useState('800');
+  const [error, setError] = useState('');
+  const nameRef = useRef(null);
+
+  useEffect(() => { nameRef.current?.focus(); }, []);
+
+  const amount = parseCargoInput(qty, unit);
+  const qualityMin = operator === 'any' ? 0 : normalizeQualityMin(qualityValue);
+  const effectiveOperator = qualityMin > 0 ? operator : 'any';
+  const requirementLabel = qualityRequirementLabel(qualityMin, effectiveOperator === 'any' ? '>=' : effectiveOperator);
+  const secondary = amount > 0 && isCargoUnit(unit) ? fmtSCU(amount, unit).secondary : null;
+
+  function submit(keepOpen) {
+    const trimmed = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!trimmed) { setError('Informe o nome do minério.'); return; }
+    if (!(amount > 0)) { setError('Informe uma quantidade maior que zero.'); return; }
+    if (operator !== 'any' && (qualityMin <= 0 || qualityMin > 1000)) { setError('A qualidade vai de 1 a 1000 (ou escolha "Qualidade livre").'); return; }
+    const canonical = suggestions.find(option => option.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+    addManualMaterial(canonical, amount, unit, qualityMin, effectiveOperator === 'any' ? '>=' : effectiveOperator);
+    onAdded(`${canonical} · ${requirementLabel} · ${fmtQty(amount, unit)} adicionado à lista de coleta.`);
+    if (keepOpen) {
+      setName(''); setQty(''); setError('');
+      nameRef.current?.focus();
+    } else {
+      onClose();
+    }
+  }
+
+  return (
+    <ModalShell
+      title="Adicionar minério manualmente"
+      subtitle="Define uma quantidade a coletar, sem precisar de uma blueprint na fila."
+      icon={<PackagePlus size={16}/>}
+      width={560}
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" className="mt-btn" onClick={onClose}>Cancelar</button>
+          <button type="button" className="mt-btn" onClick={() => submit(true)} style={{ marginLeft:'auto' }}>Adicionar e continuar</button>
+          <button type="button" className="mt-btn is-primary" onClick={() => submit(false)}><Plus size={13}/> Adicionar</button>
+        </>
+      )}
+    >
+      <div className="mt-form" onKeyDown={event => { if (event.key === 'Enter' && event.target.tagName === 'INPUT') { event.preventDefault(); submit(false); } }}>
+        <label className="mt-field">
+          <span className="mt-label">Minério / material</span>
+          <input ref={nameRef} className="mt-input" list="mt-manual-names" value={name} onChange={event => { setName(event.target.value); setError(''); }} placeholder="Ex.: Iron, Quantainium, Copper…" autoComplete="off"/>
+          <datalist id="mt-manual-names">{suggestions.map(option => <option key={option} value={option}/>)}</datalist>
+        </label>
+
+        <div className="mt-form-row">
+          <label className="mt-field" style={{ flex:'1 1 160px' }}>
+            <span className="mt-label">Quantidade a coletar</span>
+            <input className="mt-input" inputMode="decimal" value={qty} onChange={event => { setQty(event.target.value); setError(''); }} placeholder="Ex.: 120 ou 1,5"/>
+          </label>
+          <label className="mt-field" style={{ flex:'0 0 110px' }}>
+            <span className="mt-label">Unidade</span>
+            <select className="mt-input" value={unit} onChange={event => setUnit(event.target.value)}>
+              {MANUAL_UNITS.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-form-row">
+          <label className="mt-field" style={{ flex:'1 1 200px' }}>
+            <span className="mt-label">Exigência de qualidade</span>
+            <select className="mt-input" value={operator} onChange={event => { setOperator(event.target.value); setError(''); }}>
+              <option value="any">Qualidade livre</option>
+              <option value=">=">Mínima (≥)</option>
+              <option value="<=">Máxima (≤)</option>
+              <option value="=">Exatamente (=)</option>
+            </select>
+          </label>
+          <label className="mt-field" style={{ flex:'0 0 110px' }}>
+            <span className="mt-label">Valor (1–1000)</span>
+            <input className="mt-input" inputMode="numeric" disabled={operator === 'any'} value={operator === 'any' ? '' : qualityValue} onChange={event => { setQualityValue(event.target.value.replace(/[^\d]/g, '')); setError(''); }} placeholder="800"/>
+          </label>
+        </div>
+
+        <div className="mt-note">
+          <span><strong>{name.trim() || '—'}</strong> · {requirementLabel} · {amount > 0 ? <strong>{fmtQty(amount, unit)}</strong> : 'quantidade pendente'}{secondary ? ` (${secondary})` : ''}</span>
+        </div>
+        <div className="mt-hint">Isto cria uma <strong>necessidade</strong> na lista. O que você já tem no Baú de Minério é contado automaticamente como “Já tenho”; para registrar estoque, use a página do Baú.</div>
+        {error && <div className="mt-error" role="alert"><AlertTriangle size={12}/> {error}</div>}
+      </div>
+    </ModalShell>
+  );
+}
+
+// ── Criar item da fila: parcial ou concluindo e cancelando o restante ─────────
+function formatInputNumber(value) {
+  return String(roundCargo(Number(value) || 0)).replace('.', ',');
+}
+
+function CraftBlueprintModal({ bp, inventoryItems = [], onClose, onDone }) {
+  const [vaultEntries] = useState(() => loadVault().entries);
+  const [amountText, setAmountText] = useState({});
+  const [confirmFinish, setConfirmFinish] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirmRef = useRef(null);
+
+  const maxPlan = useMemo(() => planBlueprintCraft(bp, vaultEntries, { inventoryItems }), [bp, vaultEntries, inventoryItems]);
+  const amounts = useMemo(() => {
+    const result = {};
+    for (const line of maxPlan.lines) {
+      if (amountText[line.key] !== undefined) result[line.key] = parseCargoInput(amountText[line.key], line.unit);
+    }
+    return result;
+  }, [maxPlan, amountText]);
+  const plan = useMemo(() => planBlueprintCraft(bp, vaultEntries, { amounts, inventoryItems }), [bp, vaultEntries, amounts, inventoryItems]);
+
+  const missingLines = plan.lines.filter(line => line.missing_after_base > 1e-9);
+  const hasPartialHistory = Array.isArray(bp.craftLog) && bp.craftLog.length > 0;
+  const canSave = plan.hasUsage && !busy;
+  const canFinish = (plan.hasUsage || plan.hasApplied) && !busy;
+
+  // Com muitos materiais a confirmação nasce fora da área visível: leva ela para a vista.
+  useEffect(() => {
+    if (confirmFinish) confirmRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [confirmFinish]);
+
+  function setAmount(key, value) {
+    setAmountText(previous => ({ ...previous, [key]: value }));
+    setError('');
+    setConfirmFinish(false);
+  }
+
+  function clampAmount(line, maxLine) {
+    const parsed = parseCargoInput(amountText[line.key], line.unit);
+    const clamped = Math.min(Math.max(parsed, 0), maxLine.use);
+    // Itens por contagem (Yormandi Eye, gemas…) não se retiram pela metade.
+    setAmount(line.key, formatInputNumber(isCargoUnit(line.unit) ? clamped : Math.floor(clamped + 1e-9)));
+  }
+
+  async function run(mode) {
+    setBusy(true);
+    setError('');
+    try {
+      onDone(await applyBlueprintCraft(bp.bpId, { mode, amounts }));
+    } catch (craftError) {
+      setError(craftError.message || 'Não foi possível concluir a ação.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell
+      title={`Criar item: ${bp.bpName}`}
+      subtitle={`Quantidade na fila: ${bp.quantity}${hasPartialHistory ? ` · progresso parcial salvo em ${bp.craftLog.length} etapa(s)` : ''}`}
+      icon={<Hammer size={16}/>}
+      width={860}
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" className="mt-btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="button" className="mt-btn is-gold" disabled={!canSave} onClick={() => run('partial')} style={{ marginLeft:'auto' }} title="Tira do estoque (Baú e Inventário) o que está marcado e mantém o item na fila para você continuar depois">
+            <Archive size={13}/> Salvar progresso e continuar depois
+          </button>
+          <button
+            type="button"
+            className={`mt-btn ${plan.complete ? 'is-green' : 'is-danger'}`}
+            disabled={!canFinish}
+            onClick={() => (plan.complete ? run('finish') : setConfirmFinish(true))}
+            title={plan.complete ? 'Tira o material do estoque e conclui o item' : 'Tira o disponível do estoque, conclui o item e cancela o que falta'}
+          >
+            <CheckCircle2 size={13}/> {plan.complete ? 'Concluir item' : 'Concluir e cancelar o restante'}
+          </button>
+        </>
+      )}
+    >
+      <div className="mt-hint" style={{ marginBottom:12 }}>
+        Escolha quanto material tirar do estoque agora (primeiro do Baú de Minério, depois do Inventário de Itens). <strong>Salvar progresso</strong> mantém o item na fila e abate o que foi usado da necessidade.
+        {' '}<strong>Concluir</strong> finaliza o item{plan.complete ? '.' : ' e cancela o que ainda falta.'}
+      </div>
+
+      <div className="mt-craft-grid mt-craft-head" aria-hidden="true">
+        <span>Material</span><span>Falta p/ o item</span><span>Em estoque (elegível)</span><span>Tirar do estoque agora</span><span>Continuará faltando</span>
+      </div>
+      {plan.lines.map((line, index) => {
+        const maxLine = maxPlan.lines[index];
+        const color = getMaterialColor(line.material_name);
+        const quality = getQualityAccent(line.quality_min);
+        const done = line.remaining_base <= 1e-9;
+        const value = amountText[line.key] !== undefined ? amountText[line.key] : formatInputNumber(maxLine.use);
+        return (
+          <div key={line.key} className="mt-craft-grid mt-craft-row">
+            <span className="mt-craft-material" data-label="Material">
+              <strong style={{ color }}>{line.material_name}</strong>
+              <span className="material-quality-badge" style={{ color:quality.color, background:quality.soft, border:`1px solid ${quality.border}`, padding:'1px 6px', borderRadius:4, fontSize:9 }}>{qualityRequirementLabel(line.quality_min, line.quality_operator)}</span>
+              {line.applied_base > 1e-9 && <span className="mt-chip is-gold" title="Já retirado do Baú em crafts parciais">⚒ {fmtQty(line.applied, line.unit)} aplicado</span>}
+            </span>
+            <span data-label="Falta p/ o item" className="mt-num">{done ? '✓ completo' : fmtQty(line.remaining, line.unit)}</span>
+            <span data-label="Em estoque (elegível)" className="mt-num" style={{ color: line.available_base > 1e-9 ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+              {fmtQty(line.available, line.unit)}
+              {line.vault_available_base > 1e-9 && line.inventory_available_base > 1e-9 && (
+                <small className="mt-split">Baú {fmtQty(line.vault_available, line.unit)} · Inv. {fmtQty(line.inventory_available, line.unit)}</small>
+              )}
+              {line.vault_available_base <= 1e-9 && line.inventory_available_base > 1e-9 && <small className="mt-split is-inventory">no Inventário</small>}
+            </span>
+            <span data-label="Tirar do estoque agora" className="mt-craft-input">
+              {maxLine.use > 0 ? (
+                <>
+                  <span className="mt-craft-input-row"><input className="mt-input" inputMode="decimal" value={value} onChange={event => setAmount(line.key, event.target.value)} onBlur={() => clampAmount(line, maxLine)} aria-label={`Quantidade de ${line.material_name} a tirar do estoque`}/>
+                  <span className="mt-unit">{line.unit}</span></span>
+                  {line.use_inventory_base > 1e-9 && (
+                    <small className="mt-split">{line.use_vault_base > 1e-9 ? `Baú ${fmtQty(line.use_vault, line.unit)} + ` : ''}Inv. {fmtQty(line.use_inventory, line.unit)}</small>
+                  )}
+                </>
+              ) : <span className="mt-num" style={{ color:'var(--text-muted)' }}>—</span>}
+            </span>
+            <span data-label="Continuará faltando" className="mt-num" style={{ color: line.missing_after_base > 1e-9 ? 'var(--accent-red)' : 'var(--accent-green)' }}>
+              {line.missing_after_base > 1e-9 ? fmtQty(line.missing_after, line.unit) : '✓ nada'}
+            </span>
+          </div>
+        );
+      })}
+
+      {!plan.hasUsage && !plan.hasApplied && (
+        <div className="mt-note" style={{ marginTop:12 }}><AlertTriangle size={12}/> <span>Não há material elegível no Baú nem no Inventário para este item agora. Cadastre o material (minério no Baú; itens no Inventário), ou use o botão de remover na fila para descartar o item.</span></div>
+      )}
+      {!plan.hasUsage && plan.hasApplied && (
+        <div className="mt-note" style={{ marginTop:12 }}><Hammer size={12}/> <span>Não há material novo em estoque, mas o item já tem progresso aplicado. Você pode concluí-lo e cancelar o que falta.</span></div>
+      )}
+
+      {confirmFinish && !plan.complete && (
+        <div ref={confirmRef} className="mt-confirm" role="alertdialog" aria-label="Confirmar conclusão com material faltando">
+          <div className="mt-confirm-title"><AlertTriangle size={14}/> Concluir sem todo o material?</div>
+          <div style={{ fontSize:11, lineHeight:1.5, color:'var(--text-secondary)' }}>
+            O item sairá da fila e o que falta será <strong>cancelado</strong> (não ficará pendente no Tracking):
+          </div>
+          <ul>
+            {missingLines.map(line => (
+              <li key={line.key}><strong>{line.material_name}</strong> {qualityRequirementLabel(line.quality_min, line.quality_operator)}: {fmtQty(line.missing_after, line.unit)}</li>
+            ))}
+          </ul>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <button type="button" className="mt-btn is-danger" disabled={busy} onClick={() => run('finish')}>Confirmar: concluir e cancelar o restante</button>
+            <button type="button" className="mt-btn" disabled={busy} onClick={() => setConfirmFinish(false)}>Voltar</button>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="mt-error" role="alert" style={{ marginTop:12 }}><AlertTriangle size={12}/> {error}</div>}
+    </ModalShell>
   );
 }
 
@@ -526,6 +1076,7 @@ function QueuePanel({ queue, onAtualizar, shoppingList, onConsumeBlueprint, cons
 export default function MaterialTrackerPage() {
   const [queue,        setQueueState] = useState(loadQueue);
   const [vault,        setVaultState] = useState(loadVault);
+  const [inventory,    setInventory]  = useState({ rows: [], items: [], available: false });
   const [materialOrder, setMaterialOrder] = useState(loadMaterialOrder);
   const [expandedMat,  setExpandiredMat]= useState(null);
   const [showDone,     setShowDone]   = useState(false);
@@ -533,12 +1084,42 @@ export default function MaterialTrackerPage() {
   const [actionMessage, setActionMessage] = useState(null);
   const [draggedMaterialKey, setDraggedMaterialKey] = useState(null);
   const [dragOverMaterialKey, setDragOverMaterialKey] = useState(null);
+  const [viewMode, setViewModeState] = useState(loadViewMode);
+  const [tableSort, setTableSort] = useState({ id:'priority', dir:'asc' });
+  const [detailKey, setDetailKey] = useState(null);
+  const [showManual, setShowManual] = useState(false);
+  const [craftBpId, setCraftBpId] = useState(null);
 
   const refresh = useCallback(() => {
     setQueueState(loadQueue());
     setVaultState(loadVault());
     setMaterialOrder(loadMaterialOrder());
   }, []);
+
+  // O Inventário de Itens fica no banco (IPC): é lido de forma assíncrona.
+  const inventoryAliveRef = useRef(true);
+  const reloadInventory = useCallback(async () => {
+    const result = await loadInventoryStock();
+    if (inventoryAliveRef.current) setInventory(result);
+  }, []);
+
+  useEffect(() => {
+    inventoryAliveRef.current = true;
+    reloadInventory();
+    // Quem mexe no inventário (tela do Inventário, vendas, crafts) avisa por este evento.
+    const handleInventoryUpdated = event => {
+      const items = event?.detail?.items;
+      if (Array.isArray(items)) setInventory({ rows: items, items: normalizeInventoryStockItems(items), available: true });
+      else reloadInventory();
+    };
+    window.addEventListener(INVENTORY_UPDATED_EVENT, handleInventoryUpdated);
+    window.addEventListener('focus', reloadInventory);
+    return () => {
+      inventoryAliveRef.current = false;
+      window.removeEventListener(INVENTORY_UPDATED_EVENT, handleInventoryUpdated);
+      window.removeEventListener('focus', reloadInventory);
+    };
+  }, [reloadInventory]);
 
   // Atualizar on storage events (from BlueprintPage)
   useEffect(() => {
@@ -547,7 +1128,7 @@ export default function MaterialTrackerPage() {
     return () => window.removeEventListener('storage', handler);
   }, [refresh]);
 
-  const shoppingList = useMemo(() => calcShoppingList(queue, vault.entries), [queue, vault]);
+  const shoppingList = useMemo(() => calcShoppingList(queue, vault.entries, inventory.items), [queue, vault, inventory]);
   const orderedShoppingList = useMemo(() => {
     const byKey = new Map(shoppingList.map(item => [String(item.key), item]));
     const used = new Set();
@@ -573,9 +1154,49 @@ export default function MaterialTrackerPage() {
   const doneMats  = done.length;
   const overallPct= totalMats > 0 ? Math.round((doneMats/totalMats)*100) : 0;
   const priorityMaterial = pending[0] || null;
+  const detailItem = useMemo(() => shoppingList.find(item => item.key === detailKey) || null, [shoppingList, detailKey]);
+  const craftBp = craftBpId ? queue.queuedBlueprints.find(item => item.bpId === craftBpId) || null : null;
+  const materialSuggestions = useMemo(() => {
+    const names = new Map();
+    [...listKnownMaterialNames(), ...vault.entries.map(entry => entry.ore_name), ...shoppingList.map(item => item.material_name)].forEach(value => {
+      const text = String(value || '').trim();
+      if (text && !names.has(text.toLowerCase())) names.set(text.toLowerCase(), text);
+    });
+    return [...names.values()].sort((first, second) => first.localeCompare(second, 'pt-BR'));
+  }, [vault, shoppingList]);
+
+  // Se o material aberto sair da lista (ex.: foi concluído/aplicado), fecha a janela de detalhes.
+  useEffect(() => {
+    if (detailKey && !detailItem) setDetailKey(null);
+  }, [detailKey, detailItem]);
+
+  function setViewMode(mode) {
+    setViewModeState(mode);
+    writeJson(VIEW_MODE_KEY, mode);
+  }
+
+  function handleTableSort(columnId) {
+    setTableSort(previous => {
+      if (previous.id === columnId) return { id:columnId, dir: previous.dir === 'asc' ? 'desc' : 'asc' };
+      return { id:columnId, dir: ['priority', 'name', 'quality'].includes(columnId) ? 'asc' : 'desc' };
+    });
+  }
+
+  function handleRemoveManual(item) {
+    removeManualMaterial(item.material_name, item.quality_min, item.quality_operator);
+    refresh();
+    setDetailKey(null);
+    setActionMessage({ type:'success', text:`"${item.material_name}" removido da lista manual.` });
+  }
+
+  function handleRemoveManualEntry(item, unit) {
+    removeManualMaterial(item.material_name, item.quality_min, item.quality_operator, unit);
+    refresh();
+  }
 
   function handleVaultChanged() {
     setVaultState(loadVault());
+    reloadInventory();
     setActionMessage({ type:'success', text:'Baú atualizado. O progresso do Tracking foi recalculado usando o estoque real.' });
   }
   function handleLimparConcluída() {
@@ -622,28 +1243,63 @@ export default function MaterialTrackerPage() {
     setDragOverMaterialKey(null);
   }
 
-  function handleConsumeBlueprint(bp) {
+  async function handleConsumeBlueprint(bp) {
     setConsumingBpId(bp.bpId);
     setActionMessage(null);
     try {
-      const plan = planBlueprintConsumption(bp);
-      if (!plan.success) {
-        const details = plan.missing.map(m => `${m.material_name} ${qualityRequirementLabel(m.quality_min, m.quality_operator)}: faltam ${m.missing} ${m.unit}`).join(' · ');
-        setActionMessage({ type:'error', text: details ? `Estoque elegível insuficiente. ${details}` : 'Nenhum material elegível encontrado no Baú.' });
+      // Lê o inventário agora: o que a tela mostra pode estar desatualizado.
+      const currentInventory = await loadInventoryStock();
+      const plan = planBlueprintCraft(bp, loadVault().entries, { inventoryItems: currentInventory.items });
+      if (!plan.complete) {
+        const details = plan.lines
+          .filter(line => line.missing_after_base > 1e-9)
+          .map(line => `${line.material_name} ${qualityRequirementLabel(line.quality_min, line.quality_operator)}: faltam ${fmtQty(line.missing_after, line.unit)}`)
+          .join(' · ');
+        setActionMessage({ type:'error', text: `Estoque elegível insuficiente. ${details}. Use “Criar item” para craftar parcialmente ou concluir cancelando o que falta.` });
+        return;
+      }
+      if (!plan.hasUsage && !plan.hasApplied) {
+        setActionMessage({ type:'error', text:'Nenhum material elegível encontrado no Baú nem no Inventário.' });
         return;
       }
 
       // Só deduz depois que todos os requisitos passam na validação.
       // O Baú é a fonte única: não gravar a mesma coleta em collectedMaterials.
-      deductOreEntries(plan.usages);
-      dequeueBlueprint(bp.bpId);
+      const result = await applyBlueprintCraft(bp.bpId, { mode:'finish' });
       refresh();
-      setActionMessage({ type:'success', text:`Blueprint "${bp.bpName}" concluída. ${plan.usages.length} entrada(s) do Baú foram atualizadas e a blueprint saiu da fila.` });
+      reloadInventory();
+      const vaultCount = result.plan.usages.length;
+      const inventoryCount = result.plan.inventoryUsages.length;
+      const sources = [vaultCount ? `${vaultCount} entrada(s) do Baú` : '', inventoryCount ? `${inventoryCount} item(ns) do Inventário` : ''].filter(Boolean).join(' e ');
+      setActionMessage({ type:'success', text:`Blueprint "${bp.bpName}" concluída.${sources ? ` ${sources} foram atualizados` : ''} e a blueprint saiu da fila.` });
     } catch (e) {
       console.error(e);
       setActionMessage({ type:'error', text:`Não foi possível concluir a blueprint: ${e.message}` });
     } finally {
       setConsumingBpId(null);
+    }
+  }
+
+  function describeCraftItems(list) {
+    return list.map(entry => {
+      const origin = entry.fromInventory > 0
+        ? ` (${entry.fromVault > 0 ? `Baú ${fmtQty(entry.fromVault, entry.unit)} + ` : ''}Inventário ${fmtQty(entry.fromInventory, entry.unit)})`
+        : '';
+      return `${entry.material_name} ${qualityRequirementLabel(entry.quality_min, entry.quality_operator)} ${fmtQty(entry.amount, entry.unit)}${origin}`;
+    }).join(' · ');
+  }
+
+  function handleCraftDone(result) {
+    setCraftBpId(null);
+    refresh();
+    reloadInventory();
+    const used = result.used.length ? ` Retirado do estoque: ${describeCraftItems(result.used)}.` : '';
+    if (result.mode === 'partial') {
+      setActionMessage({ type:'success', text:`Progresso de "${result.bpName}" salvo.${used} O item continua na fila para você terminar depois.` });
+    } else if (result.discarded.length) {
+      setActionMessage({ type:'success', text:`"${result.bpName}" concluída.${used} Restante cancelado: ${describeCraftItems(result.discarded)}.` });
+    } else {
+      setActionMessage({ type:'success', text:`"${result.bpName}" concluída.${used} O item saiu da fila.` });
     }
   }
 
@@ -701,7 +1357,7 @@ export default function MaterialTrackerPage() {
           <div className="material-tracker-section-heading" style={{ fontFamily:'Michroma,sans-serif',fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:10,display:'flex',alignItems:'center',gap:7 }}>
             <ShoppingCart size={12}/> Fila de Craft ({queue.queuedBlueprints.length})
           </div>
-          <QueuePanel queue={queue} onAtualizar={refresh} shoppingList={shoppingList} onConsumeBlueprint={handleConsumeBlueprint} consumingBpId={consumingBpId}/>
+          <QueuePanel queue={queue} onAtualizar={refresh} shoppingList={shoppingList} onConsumeBlueprint={handleConsumeBlueprint} onCraftBlueprint={bp => { setActionMessage(null); setCraftBpId(bp.bpId); }} consumingBpId={consumingBpId}/>
 
           {/* Overall progress */}
           {totalMats > 0 && (
@@ -729,32 +1385,40 @@ export default function MaterialTrackerPage() {
               1. Vá para <strong>Blueprints</strong> e clique em <strong>🛒 Quero Craftar</strong><br/>
               2. Os materiais aparecem aqui consolidados<br/>
               3. Ajuste a <strong>quantidade</strong> de blueprints na fila<br/>
-              4. Cadastre o minério uma única vez no <strong>Baú de Minério</strong>, com qualidade e local corretos<br/>
-              5. Expanda o material e use somente as entradas elegíveis do Baú; ao completar, a blueprint deduz o estoque automaticamente
+              4. Cadastre o minério uma única vez no <strong>Baú de Minério</strong> (com qualidade e local) e gemas ou partes de criatura no <strong>Inventário de Itens</strong><br/>
+              5. Expanda o material para ver de onde vem o estoque; ao completar, a blueprint deduz o estoque automaticamente (Baú primeiro, depois Inventário)
             </div>
           </div>
         </div>
 
         {/* ── RIGHT: Material shopping list ── */}
-        <div className="materials-list-panel" style={{ overflowY:'auto',padding:'14px 18px',minWidth:0 }}>
+        <div className="materials-list-panel" style={{ overflowY: viewMode === 'tiles' ? 'hidden' : 'auto', display: viewMode === 'tiles' ? 'flex' : 'block', flexDirection:'column',padding:'14px 18px',minWidth:0 }}>
           {/* Vault match banner */}
-          <VaultMatchBanner shoppingList={shoppingList}/>
+          <div style={{ flexShrink:0 }}><VaultMatchBanner shoppingList={shoppingList} compact={viewMode !== 'list'}/></div>
 
+          {viewMode === 'list' && (
           <div className="material-tracker-source-note" style={{ marginBottom:12, padding:'9px 11px', background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:7, color:'var(--text-secondary)', fontSize:11, lineHeight:1.5 }}>
-            <strong style={{ color:'var(--accent-primary)' }}>Fonte única de estoque:</strong> cadastre cada minério no <strong>Baú de Minério</strong> uma única vez, informando a qualidade real. O Tracking apenas consulta, filtra por qualidade e deduz o Baú quando a blueprint for concluída.
+            <strong style={{ color:'var(--accent-primary)' }}>Fontes de estoque:</strong> o <strong>Baú de Minério</strong> (minério com qualidade real) e o <strong>Inventário de Itens</strong> (gemas, partes de criatura e outros itens, sem reservas). O Tracking apenas consulta e filtra por qualidade; o inventário só vale para materiais sem exigência de qualidade. Ao concluir a blueprint, o estoque é deduzido: Baú primeiro, depois Inventário.
           </div>
+          )}
 
           {/* Controls */}
-          <div className="materials-toolbar material-tracker-toolbar" style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center' }}>
+          <div className="materials-toolbar material-tracker-toolbar" style={{ display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center',flexShrink:0 }}>
             <span className="material-list-title" style={{ fontFamily:'Michroma,sans-serif',fontSize:12,fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:7 }}>
               <FlaskConical size={14} style={{ color:'var(--accent-primary)' }}/> Lista de Materiais
             </span>
+            <button type="button" className="mt-add-btn" onClick={() => setShowManual(true)} title="Adicionar manualmente uma quantidade de minério a coletar">
+              <PackagePlus size={13}/> Minério manual
+            </button>
             <button className={`filter-chip ${showDone?'active':''}`} onClick={()=>setShowDone(!showDone)}>
               ✓ Mostrar Concluídos ({doneMats})
             </button>
-            <span className="material-order-hint" title="Arraste os materiais para definir a prioridade">
-              ⋮⋮ Arraste para ordenar
-            </span>
+            {viewMode === 'list' && (
+              <span className="material-order-hint" title="Arraste os materiais para definir a prioridade">
+                ⋮⋮ Arraste para ordenar
+              </span>
+            )}
+            <ViewModeSwitch value={viewMode} onChange={setViewMode}/>
             <span className="material-list-count" style={{ marginLeft:'auto',fontFamily:'Share Tech Mono,monospace',fontSize:11,color:'var(--text-muted)' }}>
               {pending.length} pendentes · {doneMats} coletados
             </span>
@@ -768,7 +1432,7 @@ export default function MaterialTrackerPage() {
                 Vá para a aba <strong style={{ color:'var(--accent-primary)' }}>Blueprints</strong> e clique em<br/>
                 <strong style={{ color:'var(--accent-gold)' }}>🛒 Quero Craftar</strong> nos blueprints que deseja criar.<br/>
                 Os materiais necessários aparecerão aqui automaticamente.<br/>
-                Cadastre os minérios necessários no <strong style={{ color:'var(--accent-primary)' }}>Baú de Minério</strong> para que o Tracking calcule automaticamente o que já está disponível.
+                Cadastre os minérios no <strong style={{ color:'var(--accent-primary)' }}>Baú de Minério</strong> e os itens no <strong style={{ color:'var(--accent-primary)' }}>Inventário de Itens</strong> para que o Tracking calcule automaticamente o que já está disponível.
               </div>
             </div>
           ) : display.length === 0 ? (
@@ -781,6 +1445,10 @@ export default function MaterialTrackerPage() {
                 {'Você pode craftar todos os blueprints da fila!'}
               </div>
             </div>
+          ) : viewMode === 'tiles' ? (
+            <MaterialTiles items={display} onOpen={item => setDetailKey(item.key)}/>
+          ) : viewMode === 'table' ? (
+            <MaterialTable items={display} sort={tableSort} onSort={handleTableSort} onOpen={item => setDetailKey(item.key)}/>
           ) : (
             <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
               {display.map(item => (
@@ -792,7 +1460,8 @@ export default function MaterialTrackerPage() {
                   onVaultChanged={handleVaultChanged}
                   onNotice={message => setActionMessage({ type:'success', text:message })}
                   isManual={item.is_manual}
-                  onRemoveManual={item.is_manual ? (name)=>{removeManualMaterial(name);refresh();} : undefined}
+                  onRemoveManual={item.is_manual ? handleRemoveManual : undefined}
+                  onRemoveManualEntry={handleRemoveManualEntry}
                   onDragStart={event => handleDragStart(event, item)}
                   onDragOver={event => handleDragOver(event, item)}
                   onDrop={event => handleDrop(event, item)}
@@ -805,6 +1474,25 @@ export default function MaterialTrackerPage() {
           )}
         </div>
       </div>
+
+      {detailItem && (
+        <MaterialDetailModal
+          item={detailItem}
+          onClose={() => setDetailKey(null)}
+          onVaultChanged={handleVaultChanged}
+          onNotice={message => setActionMessage({ type:'success', text:message })}
+          onRemoveManual={handleRemoveManual}
+          onRemoveManualEntry={handleRemoveManualEntry}
+        />
+      )}
+      {showManual && (
+        <ManualMaterialModal
+          suggestions={materialSuggestions}
+          onClose={() => setShowManual(false)}
+          onAdded={message => { refresh(); setActionMessage({ type:'success', text:message }); }}
+        />
+      )}
+      {craftBp && <CraftBlueprintModal bp={craftBp} inventoryItems={inventory.items} onClose={() => setCraftBpId(null)} onDone={handleCraftDone}/>}
     </div>
   );
 }

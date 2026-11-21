@@ -4,7 +4,7 @@ import {
   Plus, Search, Package, Edit3, Trash2, X, Save,
   AlertTriangle, MapPin, Box, ChevronDown, ChevronUp,
   BarChart3, Filter, RefreshCw, Coins, Minus, Star, Check, Image as ImageIcon,
-  Download, Maximize2, Camera, LockKeyhole, UserRound
+  Download, Maximize2, Camera, LockKeyhole, UserRound, ExternalLink
 } from 'lucide-react';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import TransferModal from '../components/TransferModal';
@@ -165,17 +165,127 @@ export function getInventoryImageDownloadName(image, itemName = 'item') {
   return `${safeItemName}.${extension}`;
 }
 
-export function downloadInventoryImage(image, itemName = 'item') {
+function dataUrlToBlob(dataUrl, fallbackType = 'image/png') {
+  const [header = '', payload = ''] = String(dataUrl || '').split(',');
+  const mime = (/^data:([^;,]+)/i.exec(header) || [])[1] || fallbackType;
+  const binary = /;base64/i.test(header) ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mime });
+}
+
+// Salva a imagem original em disco. No app (Electron) quem grava é o processo
+// principal, com a janela "Salvar como". Antes era <a href="data:..." download>,
+// que o Chromium recusa quando o data URL passa de ~2 MB (imagens de até 4 MB
+// em base64 passam disso) e, nesse caso, nada acontecia. Fora do Electron
+// (navegador/dev) cai para um Blob, que não tem esse limite.
+export async function downloadInventoryImage(image, itemName = 'item') {
   const normalized = normalizeItemImage(image);
-  if (!normalized?.dataUrl || typeof document === 'undefined') return false;
-  const anchor = document.createElement('a');
-  anchor.href = normalized.dataUrl;
-  anchor.download = getInventoryImageDownloadName(normalized, itemName);
-  anchor.rel = 'noopener';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  return true;
+  if (!normalized?.dataUrl || typeof document === 'undefined') return { success: false, error: 'Imagem inválida ou indisponível.' };
+  const filename = getInventoryImageDownloadName(normalized, itemName);
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : null;
+  let bridgeError = '';
+  if (bridge?.inventorySaveImage) {
+    try {
+      const result = await bridge.inventorySaveImage({ dataUrl: normalized.dataUrl, name: filename, type: normalized.type });
+      if (result?.success || result?.canceled) return result;
+      bridgeError = result?.error || '';
+    } catch (error) {
+      bridgeError = error?.message || '';
+    }
+  }
+  try {
+    const url = URL.createObjectURL(dataUrlToBlob(normalized.dataUrl, normalized.type));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: bridgeError || error?.message || 'Não foi possível salvar a imagem.' };
+  }
+}
+
+// Abre a imagem no visualizador padrão do sistema (fora do programa).
+export async function openInventoryImageExternally(image, itemName = 'item') {
+  const normalized = normalizeItemImage(image);
+  if (!normalized?.dataUrl || typeof document === 'undefined') return { success: false, error: 'Imagem inválida ou indisponível.' };
+  const filename = getInventoryImageDownloadName(normalized, itemName);
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : null;
+  if (bridge?.inventoryOpenImage) {
+    try {
+      const result = await bridge.inventoryOpenImage({ dataUrl: normalized.dataUrl, name: filename, type: normalized.type });
+      return result?.success ? result : { success: false, error: result?.error || 'Não foi possível abrir a imagem.' };
+    } catch (error) {
+      return { success: false, error: error?.message || 'Não foi possível abrir a imagem.' };
+    }
+  }
+  try {
+    const url = URL.createObjectURL(dataUrlToBlob(normalized.dataUrl, normalized.type));
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Não foi possível abrir a imagem.' };
+  }
+}
+
+async function downloadInventoryImageWithFeedback(image, itemName = 'item') {
+  const result = await downloadInventoryImage(image, itemName);
+  if (result && result.success === false && !result.canceled) window.alert(`Não foi possível salvar a imagem: ${result.error || 'erro desconhecido'}`);
+  return result;
+}
+
+// Visualizador em tela cheia, usado pela imagem principal e pelos anexos do craft.
+function InventoryImageLightbox({ image, itemName, onClose }) {
+  const [feedback, setFeedback] = useState(null); // { ok, text }
+  const [busy, setBusy] = useState(false);
+  const normalized = normalizeItemImage(image);
+
+  useEffect(() => {
+    const handleKeyDown = event => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [onClose]);
+
+  if (!normalized || typeof document === 'undefined') return null;
+  const label = normalized.name || itemName || 'Imagem do item';
+
+  async function run(action, successText) {
+    setBusy(true);
+    setFeedback(null);
+    const result = await action(normalized, itemName);
+    setBusy(false);
+    if (result?.canceled) return;
+    if (result?.success) setFeedback({ ok: true, text: result.path ? `${successText}: ${result.path}` : successText });
+    else setFeedback({ ok: false, text: result?.error || 'Não foi possível concluir a ação.' });
+  }
+
+  const actionButton = (color, background) => ({ display:'inline-flex', alignItems:'center', gap:5, padding:'6px 9px', border:0, borderRadius:4, background, color, cursor: busy ? 'wait' : 'pointer', fontSize:10, fontWeight:800, opacity: busy ? 0.6 : 1 });
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={`Imagem de ${label}`} onClick={onClose} style={{ position:'fixed', inset:0, zIndex:5000, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:24, boxSizing:'border-box', background:'rgba(0,0,0,0.92)' }}>
+      <button type="button" onClick={onClose} aria-label="Fechar visualização da imagem" title="Fechar" style={{ position:'fixed', top:18, right:18, width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.25)', borderRadius:7, background:'rgba(0,0,0,0.55)', color:'#fff', cursor:'pointer' }}><X size={18}/></button>
+      <img src={normalized.dataUrl} alt={label} onClick={event=>event.stopPropagation()} style={{ display:'block', maxWidth:'min(94vw, 1500px)', maxHeight:'78vh', width:'auto', height:'auto', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 70px rgba(0,0,0,0.65)' }}/>
+      <div onClick={event=>event.stopPropagation()} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, maxWidth:'94vw' }}>
+        <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', justifyContent:'center', gap:10, padding:'8px 11px', borderRadius:6, background:'rgba(15,23,42,0.9)', border:'1px solid rgba(255,255,255,0.16)', color:'#fff', fontSize:11 }}>
+          <span style={{ maxWidth:'min(55vw, 560px)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
+          <button type="button" disabled={busy} onClick={()=>run(downloadInventoryImage, 'Imagem salva')} style={actionButton('#86efac', 'rgba(52,211,153,0.18)')}><Download size={12}/> Baixar original</button>
+          <button type="button" disabled={busy} onClick={()=>run(openInventoryImageExternally, 'Imagem aberta no visualizador do sistema')} style={actionButton('#7dd3fc', 'rgba(56,189,248,0.18)')}><ExternalLink size={12}/> Abrir fora do programa</button>
+        </div>
+        {feedback && <div role="status" style={{ maxWidth:'min(90vw, 700px)', padding:'5px 10px', borderRadius:5, background:'rgba(15,23,42,0.9)', border:`1px solid ${feedback.ok ? 'rgba(52,211,153,0.4)' : 'rgba(251,113,133,0.45)'}`, color: feedback.ok ? '#86efac' : '#fda4af', fontSize:10, wordBreak:'break-all', textAlign:'center' }}>{feedback.text}</div>}
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 function craftImageRows(item, language) {
@@ -819,6 +929,7 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
       : { ...emptyItem(), ...(defaultLocation || {}) };
     return { ...base, item_image: normalizeItemImage(base.item_image), craft_materials: normalizeCraftMaterials(base.craft_materials), craft_status: normalizeCraftStatus(base.craft_status), craft_attachments: normalizeCraftAttachments(base.craft_attachments) };
   });
+  const [previewImage, setPreviewImage] = useState(null); // imagem aberta em tela cheia
   const [error, setError]     = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSugg, setShowSugg]       = useState(false);
@@ -1170,7 +1281,7 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
           <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleItemImageFile} style={{ display:'none' }}/>
         </label>
         {data.item_image && <div style={{ position:'relative', width:150, height:110, flexShrink:0, border:'1px solid rgba(56,189,248,0.35)', borderRadius:5, overflow:'hidden', background:'var(--bg-base)' }}>
-          <img src={data.item_image.dataUrl} alt={data.item_image.name || 'Imagem do item'} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+          <img src={data.item_image.dataUrl} alt={data.item_image.name || 'Imagem do item'} title="Clique para ampliar" onClick={()=>setPreviewImage(data.item_image)} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', cursor:'zoom-in' }}/>
           <button type="button" onClick={()=>set('item_image', null)} title="Remover imagem" style={{ position:'absolute', top:3, right:3, width:20, height:20, border:0, borderRadius:4, background:'rgba(0,0,0,0.72)', color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}><X size={11}/></button>
         </div>}
       </div>
@@ -1304,7 +1415,7 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
             <label style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'7px 11px',border:'1px solid rgba(167,139,250,0.35)',background:'rgba(167,139,250,0.08)',borderRadius:5,color:'#c4b5fd',fontSize:11,fontWeight:700,cursor:'pointer' }}><ImageIcon size={14}/> Adicionar imagem<input type="file" accept="image/*" multiple onChange={handleCraftImageFiles} style={{ display:'none' }}/></label>
             {data.craft_attachments.length > 0 && <div style={{ display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,marginTop:10 }}>
               {data.craft_attachments.map(image => <div key={image.id} style={{ position:'relative',border:'1px solid rgba(167,139,250,0.3)',borderRadius:6,overflow:'hidden',background:'var(--bg-base)' }}>
-                <img src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{ display:'block',width:'100%',height:82,objectFit:'cover',cursor:'pointer' }}/>
+                <img src={image.dataUrl} alt={image.name} title="Clique para ampliar" onClick={()=>setPreviewImage(image)} style={{ display:'block',width:'100%',height:82,objectFit:'cover',cursor:'pointer' }}/>
                 <div style={{ display:'flex',alignItems:'center',gap:5,padding:'5px 6px' }}><span style={{ flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:9,color:'var(--text-secondary)' }}>{image.name}</span><button type="button" onClick={()=>set('craft_attachments', data.craft_attachments.filter(item=>item.id!==image.id))} title="Remover imagem" style={{ border:0,background:'transparent',color:'var(--accent-red)',cursor:'pointer',padding:2 }}><Trash2 size={12}/></button></div>
               </div>)}
             </div>}
@@ -1342,6 +1453,7 @@ function ItemForm({ initial, onSave, onCancelar, taxonomy = [], defaultLocation 
           <Save size={14}/>{initial?.id?'Salvar Alterações':'Registrar Item'}
         </button>
       </div>
+      {previewImage && <InventoryImageLightbox image={previewImage} itemName={data.name} onClose={()=>setPreviewImage(null)} />}
     </div>
   );
 }
@@ -1489,7 +1601,7 @@ function ReservedPanel({ item, onSave }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScriptUpdate, allItems, transferDestinations, onTransfer, onReservationUpdate }) {
   const [showDetail, setShowDetail] = useState(false);
-  const [showImagePreview, setShowImagePreview] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // imagem aberta em tela cheia
   const [craftImageExport, setCraftImageExport] = useState(null);
   const displayName = normalizeUexItemName(item.name) || String(item.name || '').trim();
   const craftStatus = normalizeCraftStatus(item.craft_status);
@@ -1516,14 +1628,6 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
       window.alert(`Não foi possível gerar as imagens do craft: ${error.message}`);
     }
   }
-  useEffect(() => {
-    if (!showImagePreview) return undefined;
-    const handleKeyDown = event => {
-      if (event.key === 'Escape') setShowImagePreview(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showImagePreview]);
   return (
 
     <>
@@ -1543,7 +1647,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
           <div style={{ position:'relative', width:'100%', borderRadius:6, overflow:'hidden', border:`1px solid ${catColor}55`, background:'var(--bg-base)' }}>
             <button
               type="button"
-              onClick={event=>{ event.stopPropagation(); setShowImagePreview(true); }}
+              onClick={event=>{ event.stopPropagation(); setPreviewImage(itemImage); }}
               title="Abrir imagem em tela cheia"
               aria-label={`Abrir imagem de ${displayName} em tela cheia`}
               style={{ display:'block', width:'100%', padding:0, border:0, background:'transparent', cursor:'zoom-in' }}
@@ -1551,8 +1655,8 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
               <img src={itemImage.dataUrl} alt={itemImage.name || displayName} title="Abrir imagem em tela cheia" style={{ width:'100%', height:150, objectFit:'contain', display:'block' }} />
             </button>
             <div style={{ position:'absolute', right:7, bottom:7, display:'flex', gap:5 }}>
-              <button type="button" onClick={event=>{ event.stopPropagation(); setShowImagePreview(true); }} title="Tela cheia" aria-label="Tela cheia" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.35)', borderRadius:5, background:'rgba(0,0,0,0.72)', color:'#fff', cursor:'pointer' }}><Maximize2 size={13}/></button>
-              <button type="button" onClick={event=>{ event.stopPropagation(); downloadInventoryImage(itemImage, displayName); }} title="Baixar imagem original" aria-label="Baixar imagem original" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(52,211,153,0.45)', borderRadius:5, background:'rgba(0,0,0,0.72)', color:'#86efac', cursor:'pointer' }}><Download size={13}/></button>
+              <button type="button" onClick={event=>{ event.stopPropagation(); setPreviewImage(itemImage); }} title="Tela cheia" aria-label="Tela cheia" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.35)', borderRadius:5, background:'rgba(0,0,0,0.72)', color:'#fff', cursor:'pointer' }}><Maximize2 size={13}/></button>
+              <button type="button" onClick={event=>{ event.stopPropagation(); downloadInventoryImageWithFeedback(itemImage, displayName); }} title="Baixar imagem original" aria-label="Baixar imagem original" style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(52,211,153,0.45)', borderRadius:5, background:'rgba(0,0,0,0.72)', color:'#86efac', cursor:'pointer' }}><Download size={13}/></button>
             </div>
           </div>
         )}
@@ -1624,14 +1728,14 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
 
             {/* Header modal */}
             {itemImage && <div style={{ marginBottom:14, borderRadius:7, overflow:'hidden', border:`1px solid ${catColor}55`, background:'var(--bg-base)' }}>
-              <button type="button" onClick={()=>setShowImagePreview(true)} title="Visualizar imagem em tela cheia" style={{ display:'block', width:'100%', padding:0, border:0, background:'transparent', cursor:'zoom-in' }}>
+              <button type="button" onClick={()=>setPreviewImage(itemImage)} title="Visualizar imagem em tela cheia" style={{ display:'block', width:'100%', padding:0, border:0, background:'transparent', cursor:'zoom-in' }}>
                 <img src={itemImage.dataUrl} alt={itemImage.name || displayName} style={{ display:'block', width:'100%', maxHeight:220, objectFit:'cover' }}/>
               </button>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'7px 9px', borderTop:`1px solid ${catColor}33`, flexWrap:'wrap' }}>
                 <span style={{ minWidth:0, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'var(--text-secondary)', fontSize:10 }} title={itemImage.name}>{itemImage.name || 'Imagem original do item'}</span>
                 <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                  <button type="button" onClick={()=>setShowImagePreview(true)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(56,189,248,0.3)', background:'rgba(56,189,248,0.08)', color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Maximize2 size={11}/> Tela cheia</button>
-                  <button type="button" onClick={()=>downloadInventoryImage(itemImage, displayName)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(52,211,153,0.3)', background:'rgba(52,211,153,0.08)', color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Download size={11}/> Baixar original</button>
+                  <button type="button" onClick={()=>setPreviewImage(itemImage)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(56,189,248,0.3)', background:'rgba(56,189,248,0.08)', color:'var(--accent-primary)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Maximize2 size={11}/> Tela cheia</button>
+                  <button type="button" onClick={()=>downloadInventoryImageWithFeedback(itemImage, displayName)} style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'5px 8px', borderRadius:4, border:'1px solid rgba(52,211,153,0.3)', background:'rgba(52,211,153,0.08)', color:'var(--accent-green)', cursor:'pointer', fontSize:10, fontWeight:700 }}><Download size={11}/> Baixar original</button>
                 </div>
               </div>
             </div>}
@@ -1706,7 +1810,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
                 <div style={{fontSize:9,fontWeight:700,color:'var(--accent-gold)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>⚒️ Dados do craft</div>
                 {craftMaterials.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>MATERIAIS</div>{craftMaterials.map(material=><div key={material.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{material.material || 'Material não informado'}</span><span>{material.quantity || '—'} {material.unit}{material.quality ? ` · Q${material.quality}` : ''}</span></div>)}</div>}
                 {craftStatus.length > 0 && <div style={{marginBottom:9}}><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:4}}>STATUS</div>{craftStatus.map(status=><div key={status.id} style={{display:'flex',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'2px 0'}}><span style={{flex:1}}>{status.status || 'Status não informado'}</span><span>{status.value || status.bonus || '—'}{status.value ? ` ${status.value_unit}` : ''}</span></div>)}</div>}
-                {craftAttachments.length > 0 && <div><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:5}}>IMAGENS ({craftAttachments.length})</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{craftAttachments.map(image=><img key={image.id} src={image.dataUrl} alt={image.name} title="Clique para abrir" onClick={()=>window.open(image.dataUrl,'_blank','noopener,noreferrer')} style={{width:64,height:48,objectFit:'cover',borderRadius:4,border:'1px solid rgba(167,139,250,0.35)',cursor:'pointer'}}/>)}</div></div>}
+                {craftAttachments.length > 0 && <div><div style={{fontSize:9,color:'var(--text-muted)',fontWeight:700,marginBottom:5}}>IMAGENS ({craftAttachments.length})</div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{craftAttachments.map(image=><img key={image.id} src={image.dataUrl} alt={image.name} title="Clique para ampliar" onClick={()=>setPreviewImage(image)} style={{width:64,height:48,objectFit:'cover',borderRadius:4,border:'1px solid rgba(167,139,250,0.35)',cursor:'pointer'}}/>)}</div></div>}
               </div>
             )}
 
@@ -1749,17 +1853,7 @@ const ItemCard = React.memo(function ItemCard({ item, onEdit, onDelete, onScript
         </div>,
         document.body
       )}
-      {showImagePreview && itemImage && createPortal(
-        <div role="dialog" aria-modal="true" aria-label={`Imagem de ${displayName}`} onClick={()=>setShowImagePreview(false)} style={{ position:'fixed', inset:0, zIndex:1200, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:24, boxSizing:'border-box', background:'rgba(0,0,0,0.92)' }}>
-          <button type="button" onClick={()=>setShowImagePreview(false)} aria-label="Fechar visualização da imagem" title="Fechar" style={{ position:'fixed', top:18, right:18, width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(255,255,255,0.25)', borderRadius:7, background:'rgba(0,0,0,0.55)', color:'#fff', cursor:'pointer' }}><X size={18}/></button>
-          <img src={itemImage.dataUrl} alt={itemImage.name || displayName} onClick={event=>event.stopPropagation()} style={{ display:'block', maxWidth:'min(94vw, 1500px)', maxHeight:'82vh', width:'auto', height:'auto', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 70px rgba(0,0,0,0.65)' }}/>
-          <div onClick={event=>event.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:10, maxWidth:'94vw', padding:'8px 11px', borderRadius:6, background:'rgba(15,23,42,0.9)', border:'1px solid rgba(255,255,255,0.16)', color:'#fff', fontSize:11 }}>
-            <span style={{ maxWidth:'min(55vw, 560px)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{itemImage.name || displayName}</span>
-            <button type="button" onClick={()=>downloadInventoryImage(itemImage, displayName)} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'6px 9px', border:0, borderRadius:4, background:'rgba(52,211,153,0.18)', color:'#86efac', cursor:'pointer', fontSize:10, fontWeight:800 }}><Download size={12}/> Baixar original</button>
-          </div>
-        </div>,
-        document.body
-      )}
+      {previewImage && <InventoryImageLightbox image={previewImage} itemName={displayName} onClose={()=>setPreviewImage(null)} />}
       {craftImageExport && <CraftImageExportModal item={item} images={craftImageExport} onClose={()=>setCraftImageExport(null)} />}
     </>
   );

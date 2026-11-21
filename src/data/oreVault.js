@@ -705,7 +705,8 @@ export function findVaultMatches(
 // como Iron e um item que apenas contém Iron no nome.
 export function findExactVaultMatches(
   materialName,
-  qualityMin = 0
+  qualityMin = 0,
+  qualityOperator = '>='
 ) {
   const normalize = value =>
     String(value || '')
@@ -721,7 +722,9 @@ export function findExactVaultMatches(
     entry =>
       normalize(entry.ore_name) === target &&
       (Number(entry.quantity) || 0) > 0 &&
-      qualityMeetsMinimum(entry.quality, qualityMin)
+      // Antes o operador era ignorado (sempre ≥), então uma exigência Q≤ ou Q=
+      // podia consumir minério de qualidade errada.
+      qualityMeetsRequirement(entry.quality, qualityMin, qualityOperator)
   );
 }
 
