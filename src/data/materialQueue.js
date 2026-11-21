@@ -10,6 +10,7 @@ import {
 } from './cargoUnits';
 import { readJson, writeJson } from '../utils/storage';
 import { qualityMeetsRequirement, normalizeQualityOperator } from './oreVault';
+import { inventoryStockEntries, inventoryBlockedByQuality } from './inventoryStock';
 
 const KEY = 'sc_material_queue_v1';
 const MATERIAL_ORDER_KEY = 'sc_material_priority_order_v1';
@@ -293,7 +294,9 @@ function getVaultCollectedBase(stockEntries, materialName, qualityMin, requiredU
 // The old collectedMaterials map remains only as a compatibility fallback for
 // callers that do not yet provide the vault entries.
 // Returns: [{ material_name, needed_total, quality_min, collected, remaining, locations }]
-export function calcShoppingList(queue, stockEntries) {
+// `inventoryItems` (opcional): linhas do Inventário de Itens. Contam como estoque junto com o Baú,
+// respeitando reservas e unidade (ver inventoryStock.js). Sem a lista, só o Baú é considerado.
+export function calcShoppingList(queue, stockEntries, inventoryItems = null) {
   const map = {};
   const EPS = 1e-9;
   const newItem = (key, name, qualityMin, qualityOperator, unit, isManual) => ({
@@ -353,18 +356,35 @@ export function calcShoppingList(queue, stockEntries) {
     // Material 100% aplicado em crafts parciais não tem mais o que coletar: sai da lista.
     .filter(item => !(item.applied_base > EPS && item.needed_base <= EPS))
     .map(item => {
-      const collectedBase = Array.isArray(stockEntries)
+      const vaultBase = Array.isArray(stockEntries)
         ? getVaultCollectedBase(stockEntries, item.material_name, item.quality_min, item.unit, item.quality_operator)
         : getCollectedAmount(queue, item.material_name, item.quality_min, item.quality_operator);
+      const inventoryEntries = Array.isArray(inventoryItems) ? inventoryStockEntries(inventoryItems, item) : [];
+      const inventoryBase = roundCargo(inventoryEntries.reduce((total, entry) => total + entry.availableBase, 0));
+      const collectedBase = vaultBase + inventoryBase;
       const neededBase    = roundCargo(item.needed_base);
       const needed        = fromBase(neededBase, item.unit);
       const collected    = fromBase(Math.min(collectedBase, neededBase), item.unit);
       const remaining    = Math.max(0, needed - collected);
+      // Origem do que foi contado (o Baú é usado primeiro, depois o Inventário — a mesma ordem da baixa).
+      const fromVaultBase = Math.min(vaultBase, neededBase);
+      const fromInventoryBase = Math.min(inventoryBase, Math.max(0, neededBase - fromVaultBase));
+      const unitValue = value => parseFloat(Number(fromBase(roundCargo(value), item.unit)).toFixed(9));
       return {
         ...item,
         needed_total: parseFloat(Number(needed).toFixed(9)),
         collected: parseFloat(Number(collected).toFixed(9)),
         remaining: parseFloat(Number(remaining).toFixed(9)),
+        vault_total: unitValue(vaultBase),
+        inventory_total: unitValue(inventoryBase),
+        from_vault: unitValue(fromVaultBase),
+        from_inventory: unitValue(fromInventoryBase),
+        inventory_blocked_by_quality: Array.isArray(inventoryItems) && inventoryBlockedByQuality(inventoryItems, item),
+        inventory_entries: inventoryEntries.map(entry => ({
+          id: entry.id, name: entry.name, location_name: entry.location_name, container: entry.container, system: entry.system,
+          quantity: entry.quantity, reserved: entry.reserved, available: entry.available, unit: entry.unit,
+          availableInUnit: parseFloat(Number(entry.availableInRequirementUnit).toFixed(9)),
+        })),
         applied_total: parseFloat(Number(fromBase(roundCargo(item.applied_base), item.unit)).toFixed(9)),
         manual_total: parseFloat(Number(fromBase(roundCargo(item.manual_base), item.unit)).toFixed(9)),
       };

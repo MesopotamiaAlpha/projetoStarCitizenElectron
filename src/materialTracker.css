@@ -541,3 +541,42 @@
 }
 
 .mt-vault-strip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Origem do estoque: Baú de Minério x Inventário de Itens ── */
+.mt-chip.is-teal { border-color: rgba(45,212,191,0.35); background: rgba(45,212,191,0.1); color: #2dd4bf; }
+
+.mt-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.mt-src.is-vault { border-color: rgba(255,200,0,0.35); background: rgba(255,200,0,0.1); color: var(--accent-gold); }
+.mt-src.is-inventory { border-color: rgba(45,212,191,0.35); background: rgba(45,212,191,0.1); color: #2dd4bf; }
+
+.mt-tile-flag.is-inventory { top: 5px; right: 5px; left: auto; background: rgba(45,212,191,0.16); color: #2dd4bf; }
+
+.mt-split {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.mt-split.is-inventory { color: #2dd4bf; }
+
+/* Campo de quantidade + unidade na mesma linha; a origem (Baú/Inventário) vai logo abaixo. */
+.mt-craft-input { flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; }
+.mt-craft-input-row { display: flex; align-items: center; gap: 6px; }
